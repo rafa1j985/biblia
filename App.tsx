@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   Book, 
@@ -19,7 +20,15 @@ import {
   LogOut,
   Lock,
   UserCircle,
-  Loader2
+  Loader2,
+  ShieldAlert,
+  Users,
+  Search,
+  KeyRound,
+  ArrowLeft,
+  Mail,
+  User,
+  Send
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -30,7 +39,7 @@ import {
   Tooltip, 
   ResponsiveContainer 
 } from 'recharts';
-import { BIBLE_BOOKS, TOTAL_CHAPTERS_BIBLE } from './constants';
+import { BIBLE_BOOKS, TOTAL_CHAPTERS_BIBLE, ADMIN_EMAILS } from './constants';
 import { BibleBook, ReadChaptersMap, ReadingLog } from './types';
 import { generateDevotional } from './services/geminiService';
 import { supabase } from './services/supabase';
@@ -49,14 +58,14 @@ const ProgressBar = ({ current, total, color = "bg-indigo-600" }: { current: num
   );
 };
 
-const StatCard = ({ title, value, subtext, icon, highlight = false }: { title: string; value: string | number; subtext?: string; icon: React.ReactNode, highlight?: boolean }) => (
-  <div className={`rounded-xl p-6 shadow-sm border flex items-start justify-between ${highlight ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-gray-100'}`}>
+const StatCard = ({ title, value, subtext, icon, highlight = false, colorClass = "bg-indigo-600" }: { title: string; value: string | number; subtext?: string; icon: React.ReactNode, highlight?: boolean, colorClass?: string }) => (
+  <div className={`rounded-xl p-6 shadow-sm border flex items-start justify-between ${highlight ? `${colorClass} border-transparent text-white` : 'bg-white border-gray-100'}`}>
     <div>
       <p className={`text-sm font-medium mb-1 ${highlight ? 'text-indigo-100' : 'text-gray-500'}`}>{title}</p>
       <h3 className={`text-2xl font-bold ${highlight ? 'text-white' : 'text-gray-900'}`}>{value}</h3>
       {subtext && <p className={`text-xs mt-1 ${highlight ? 'text-indigo-200' : 'text-gray-400'}`}>{subtext}</p>}
     </div>
-    <div className={`p-2 rounded-lg ${highlight ? 'bg-indigo-500 text-white' : 'bg-indigo-50 text-indigo-600'}`}>
+    <div className={`p-2 rounded-lg ${highlight ? 'bg-white/20 text-white' : 'bg-indigo-50 text-indigo-600'}`}>
       {icon}
     </div>
   </div>
@@ -65,57 +74,74 @@ const StatCard = ({ title, value, subtext, icon, highlight = false }: { title: s
 // --- Auth Components ---
 
 const LoginScreen = ({ onLogin }: { onLogin: (user: any) => void }) => {
-  const [cpf, setCpf] = useState('');
+  const [authMode, setAuthMode] = useState<'login' | 'register' | 'forgot'>('login');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [name, setName] = useState(''); // Para cadastro
   const [error, setError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleLogin = async (e: React.FormEvent) => {
+  // Limpa mensagens ao trocar de modo
+  useEffect(() => {
+    setError('');
+    setSuccessMsg('');
+  }, [authMode]);
+
+  const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setSuccessMsg('');
     setLoading(true);
 
-    const cleanCpf = cpf.replace(/\D/g, '');
-    
-    if (cleanCpf.length < 11) {
-      setError('CPF inválido.');
-      setLoading(false);
-      return;
-    }
-
-    // Supabase usa Email, então vamos criar um email fake baseado no CPF
-    const email = `${cleanCpf}@bibletracker.com`;
-
     try {
-      // 1. Tentar Login
-      const { data, error: loginError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (loginError) {
-        // Se a senha for a padrão e o erro for "Invalid login credentials", pode ser o primeiro acesso
-        if (password === 'qwerty12' && loginError.message.includes('Invalid login')) {
-          // 2. Tentar Criar Conta (Primeiro Acesso)
-          const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-            email,
-            password,
-          });
-
-          if (signUpError) {
-            setError('Erro ao criar conta ou senha incorreta.');
-          } else if (signUpData.user) {
-            onLogin(signUpData.user);
+      if (authMode === 'login') {
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+        if (data.user) onLogin(data.user);
+      } 
+      else if (authMode === 'register') {
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              full_name: name,
+            }
           }
-        } else {
-           setError('Senha incorreta ou usuário inexistente.');
+        });
+
+        if (error) {
+          if (error.message.includes('already registered')) {
+            setError('Este e-mail já está cadastrado.');
+            // Sugere ir para o login ou recuperar senha
+            setTimeout(() => {
+                if(window.confirm("E-mail já cadastrado. Deseja recuperar sua senha?")) {
+                    setAuthMode('forgot');
+                }
+            }, 500);
+          } else {
+            throw error;
+          }
+        } else if (data.user) {
+          // Se o Supabase estiver configurado para confirmar email, avisar o usuário
+          if (data.user.identities?.length === 0) {
+              setError('Este e-mail já está cadastrado. Tente fazer login.');
+          } else {
+              // Auto login ou aviso de confirmação
+              onLogin(data.user);
+          }
         }
-      } else if (data.user) {
-        onLogin(data.user);
+      } 
+      else if (authMode === 'forgot') {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: window.location.origin, // Redireciona de volta para o app
+        });
+        if (error) throw error;
+        setSuccessMsg('E-mail de recuperação enviado! Verifique sua caixa de entrada.');
       }
-    } catch (err) {
-      setError('Ocorreu um erro inesperado.');
-      console.error(err);
+    } catch (err: any) {
+      setError(err.message || 'Ocorreu um erro. Tente novamente.');
     } finally {
       setLoading(false);
     }
@@ -123,58 +149,141 @@ const LoginScreen = ({ onLogin }: { onLogin: (user: any) => void }) => {
 
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-      <div className="bg-white p-8 rounded-2xl shadow-lg max-w-md w-full border border-gray-100">
+      <div className="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full border border-gray-100 relative overflow-hidden">
+        {/* Header Decorativo */}
+        <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-indigo-500 to-purple-500"></div>
+
         <div className="text-center mb-8">
-          <div className="bg-indigo-600 w-16 h-16 rounded-xl flex items-center justify-center text-white mx-auto mb-4 shadow-indigo-200 shadow-lg">
-            <Book size={32} />
+          <div className="bg-indigo-600 w-14 h-14 rounded-xl flex items-center justify-center text-white mx-auto mb-4 shadow-indigo-200 shadow-lg">
+            <Book size={28} />
           </div>
           <h1 className="text-2xl font-bold text-gray-900 serif">Bíblia Tracker</h1>
-          <p className="text-gray-500 mt-2">Faça login para acompanhar sua leitura</p>
+          <p className="text-gray-500 mt-2 text-sm">
+            {authMode === 'login' && 'Bem-vindo de volta!'}
+            {authMode === 'register' && 'Crie sua conta para começar'}
+            {authMode === 'forgot' && 'Recupere seu acesso'}
+          </p>
         </div>
 
-        <form onSubmit={handleLogin} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">CPF (apenas números)</label>
-            <input 
-              type="text" 
-              value={cpf}
-              onChange={(e) => setCpf(e.target.value)}
-              className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
-              placeholder="000.000.000-00"
-              required
-            />
+        {/* Abas de Navegação */}
+        {authMode !== 'forgot' && (
+          <div className="flex bg-gray-100 p-1 rounded-xl mb-6">
+            <button
+              onClick={() => setAuthMode('login')}
+              className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all ${authMode === 'login' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              Entrar
+            </button>
+            <button
+              onClick={() => setAuthMode('register')}
+              className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all ${authMode === 'register' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              Cadastrar
+            </button>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Senha</label>
-            <input 
-              type="password" 
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
-              placeholder="••••••••"
-              required
-            />
+        )}
+
+        <form onSubmit={handleAuth} className="space-y-4">
+          
+          {authMode === 'register' && (
+            <div className="space-y-1 animate-fade-in">
+              <label className="text-xs font-bold text-gray-500 uppercase tracking-wide ml-1">Nome Completo</label>
+              <div className="relative">
+                <User className="absolute left-3 top-3.5 text-gray-400" size={18} />
+                <input 
+                  type="text" 
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all bg-gray-50 focus:bg-white"
+                  placeholder="Seu nome"
+                  required
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-gray-500 uppercase tracking-wide ml-1">E-mail</label>
+            <div className="relative">
+              <Mail className="absolute left-3 top-3.5 text-gray-400" size={18} />
+              <input 
+                type="email" 
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all bg-gray-50 focus:bg-white"
+                placeholder="seu@email.com"
+                required
+              />
+            </div>
           </div>
 
+          {authMode !== 'forgot' && (
+            <div className="space-y-1 animate-fade-in">
+              <div className="flex justify-between items-center">
+                <label className="text-xs font-bold text-gray-500 uppercase tracking-wide ml-1">Senha</label>
+                {authMode === 'login' && (
+                  <button 
+                    type="button"
+                    onClick={() => setAuthMode('forgot')}
+                    className="text-xs text-indigo-600 hover:underline"
+                  >
+                    Esqueceu a senha?
+                  </button>
+                )}
+              </div>
+              <div className="relative">
+                <Lock className="absolute left-3 top-3.5 text-gray-400" size={18} />
+                <input 
+                  type="password" 
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all bg-gray-50 focus:bg-white"
+                  placeholder="••••••••"
+                  required
+                  minLength={6}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Mensagens de Erro e Sucesso */}
           {error && (
-            <div className="p-3 bg-red-50 text-red-600 text-sm rounded-lg flex items-center gap-2">
-              <span className="block w-1.5 h-1.5 bg-red-500 rounded-full"></span>
+            <div className="p-3 bg-red-50 text-red-600 text-sm rounded-lg flex items-center gap-2 border border-red-100">
+              <ShieldAlert size={16} />
               {error}
+            </div>
+          )}
+
+          {successMsg && (
+            <div className="p-3 bg-green-50 text-green-700 text-sm rounded-lg flex items-center gap-2 border border-green-100">
+              <CheckCircle2 size={16} />
+              {successMsg}
             </div>
           )}
 
           <button 
             type="submit"
             disabled={loading}
-            className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-200 mt-2 flex justify-center items-center"
+            className="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-bold hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-200 mt-4 flex justify-center items-center gap-2"
           >
-            {loading ? <Loader2 className="animate-spin" /> : 'Entrar'}
+            {loading ? <Loader2 className="animate-spin" /> : (
+              <>
+                {authMode === 'login' && 'Entrar'}
+                {authMode === 'register' && 'Criar Conta'}
+                {authMode === 'forgot' && 'Enviar Link de Recuperação'}
+              </>
+            )}
           </button>
         </form>
-        
-        <p className="text-center text-xs text-gray-400 mt-6">
-          Senha inicial padrão: <strong>qwerty12</strong>
-        </p>
+
+        {authMode === 'forgot' && (
+          <button 
+            onClick={() => setAuthMode('login')}
+            className="w-full mt-4 py-2 text-sm text-gray-500 hover:text-gray-800 font-medium"
+          >
+            Voltar para o Login
+          </button>
+        )}
       </div>
     </div>
   );
@@ -263,13 +372,18 @@ const App: React.FC = () => {
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
 
   // --- App State ---
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'tracker' | 'history'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'tracker' | 'history' | 'admin'>('dashboard');
   const [selectedBookId, setSelectedBookId] = useState<string>('GEN');
   
-  // Data State
+  // Data State (User)
   const [readChapters, setReadChapters] = useState<ReadChaptersMap>({});
   const [readingLogs, setReadingLogs] = useState<ReadingLog[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(false);
+
+  // Data State (Admin)
+  const [adminLogs, setAdminLogs] = useState<any[]>([]);
+  const [isAdminLoading, setIsAdminLoading] = useState(false);
+  const [selectedUserForAdmin, setSelectedUserForAdmin] = useState<string | null>(null);
 
   // Ephemeral State
   const [sessionSelectedChapters, setSessionSelectedChapters] = useState<number[]>([]);
@@ -279,6 +393,10 @@ const App: React.FC = () => {
   // Note Editing State
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [tempNoteContent, setTempNoteContent] = useState('');
+
+  const isAdmin = useMemo(() => {
+    return user && ADMIN_EMAILS.includes(user.email);
+  }, [user]);
 
   // --- Check Auth on Mount ---
   useEffect(() => {
@@ -296,7 +414,7 @@ const App: React.FC = () => {
     return () => subscription.unsubscribe();
   }, []);
 
-  // --- Fetch Data ---
+  // --- Fetch User Data ---
   const fetchData = useCallback(async () => {
     if (!user) return;
     setIsLoadingData(true);
@@ -304,12 +422,48 @@ const App: React.FC = () => {
     const { data, error } = await supabase
       .from('reading_logs')
       .select('*')
+      .eq('user_id', user.id) 
       .order('timestamp', { ascending: false });
 
     if (error) {
       console.error('Erro ao buscar dados:', error);
     } else if (data) {
-      // 1. Set Logs
+      processLogs(data, setReadingLogs, setReadChapters);
+    }
+    setIsLoadingData(false);
+  }, [user]);
+
+  // --- Fetch Admin Data (All Logs) ---
+  const fetchAdminData = useCallback(async () => {
+    if (!user || !isAdmin) return;
+    setIsAdminLoading(true);
+
+    // Fetch ALL logs without filtering by user_id
+    const { data, error } = await supabase
+      .from('reading_logs')
+      .select('*')
+      .order('timestamp', { ascending: false });
+
+    if (error) {
+      console.error('Erro ao buscar dados administrativos:', error);
+      alert("Erro ao carregar dados administrativos. Verifique as políticas RLS do Supabase.");
+    } else if (data) {
+      setAdminLogs(data);
+    }
+    setIsAdminLoading(false);
+  }, [user, isAdmin]);
+
+  useEffect(() => {
+    if (user) {
+      fetchData();
+      if (isAdmin) {
+          fetchAdminData();
+      }
+    }
+  }, [user, fetchData, fetchAdminData, isAdmin]);
+
+  // --- Helpers ---
+  const processLogs = (data: any[], setLogs: Function, setMap: Function) => {
       const logs = data.map((item: any) => ({
         id: item.id,
         date: item.date,
@@ -319,27 +473,17 @@ const App: React.FC = () => {
         aiReflection: item.ai_reflection,
         userNotes: item.user_notes
       })) as ReadingLog[];
-      setReadingLogs(logs);
+      setLogs(logs);
 
-      // 2. Reconstruct Read Map
       const map: ReadChaptersMap = {};
       logs.forEach(log => {
         if (!map[log.bookId]) map[log.bookId] = [];
-        // Add unique chapters
         map[log.bookId] = Array.from(new Set([...map[log.bookId], ...log.chapters]));
       });
-      setReadChapters(map);
-    }
-    setIsLoadingData(false);
-  }, [user]);
+      setMap(map);
+  };
 
-  useEffect(() => {
-    if (user) {
-      fetchData();
-    }
-  }, [user, fetchData]);
-
-  // --- Computed Stats ---
+  // --- Computed Stats (Current User) ---
   const totalReadCount = useMemo(() => {
     let count = 0;
     Object.values(readChapters).forEach((chapters) => {
@@ -350,16 +494,16 @@ const App: React.FC = () => {
 
   const completionPercentage = (totalReadCount / TOTAL_CHAPTERS_BIBLE) * 100;
 
-  const advancedStats = useMemo(() => {
+  const getAdvancedStats = (logs: ReadingLog[], chaptersMap: ReadChaptersMap, totalRead: number) => {
     let completedBooks = 0;
     BIBLE_BOOKS.forEach(book => {
-        const read = readChapters[book.id]?.length || 0;
+        const read = chaptersMap[book.id]?.length || 0;
         if (read === book.chapters) completedBooks++;
     });
     const remainingBooks = BIBLE_BOOKS.length - completedBooks;
 
     const chaptersByDate: Record<string, number> = {};
-    readingLogs.forEach(log => {
+    logs.forEach(log => {
         chaptersByDate[log.date] = (chaptersByDate[log.date] || 0) + log.chapters.length;
     });
     
@@ -375,14 +519,14 @@ const App: React.FC = () => {
     let estimatedCompletionDate = "N/A";
     let daysToFinish = 0;
     
-    if (readingLogs.length > 0) {
-        const sortedLogs = [...readingLogs].sort((a, b) => a.timestamp - b.timestamp);
+    if (logs.length > 0) {
+        const sortedLogs = [...logs].sort((a, b) => a.timestamp - b.timestamp);
         const firstLogDate = new Date(sortedLogs[0].date);
         const today = new Date();
         const timeDiff = Math.abs(today.getTime() - firstLogDate.getTime());
         const daysElapsed = Math.max(1, Math.ceil(timeDiff / (1000 * 3600 * 24)));
-        const avgChaptersPerDay = totalReadCount / daysElapsed;
-        const chaptersRemaining = TOTAL_CHAPTERS_BIBLE - totalReadCount;
+        const avgChaptersPerDay = totalRead / daysElapsed;
+        const chaptersRemaining = TOTAL_CHAPTERS_BIBLE - totalRead;
         
         if (avgChaptersPerDay > 0 && chaptersRemaining > 0) {
             daysToFinish = Math.ceil(chaptersRemaining / avgChaptersPerDay);
@@ -400,7 +544,9 @@ const App: React.FC = () => {
         bestDay: { date: bestDate, count: maxChapters },
         projection: { date: estimatedCompletionDate, days: daysToFinish }
     };
-  }, [readChapters, readingLogs, totalReadCount]);
+  };
+
+  const advancedStats = useMemo(() => getAdvancedStats(readingLogs, readChapters, totalReadCount), [readChapters, readingLogs, totalReadCount]);
 
   const currentStreak = useMemo(() => {
     if (readingLogs.length === 0) return 0;
@@ -512,8 +658,12 @@ const App: React.FC = () => {
     }
 
     // Insert into Supabase
+    // ADICIONADO: user_email e user_name para facilitar visualização no Admin
+    // Obs: O usuário precisa adicionar essas colunas na tabela reading_logs manualmente se quiser ver
     const { error } = await supabase.from('reading_logs').insert({
         user_id: user.id,
+        user_email: user.email, 
+        user_name: user.user_metadata?.full_name || 'Usuário',
         date: today,
         timestamp: Date.now(),
         book_id: selectedBookId,
@@ -525,9 +675,19 @@ const App: React.FC = () => {
     setIsGeneratingAI(false);
 
     if (error) {
+        // Ignora erro se for apenas por falta de coluna de nome/email (comum em setups iniciais)
+        if(error.message.includes("column") && (error.message.includes("user_email") || error.message.includes("user_name"))) {
+             alert("Leitura salva, mas aviso ao Admin: Adicione as colunas 'user_name' e 'user_email' no Supabase para ver quem salvou.");
+             await fetchData(); 
+             if(isAdmin) fetchAdminData();
+             setSessionSelectedChapters([]);
+             setActiveTab('history');
+             return;
+        }
         alert('Erro ao salvar: ' + error.message);
     } else {
-        await fetchData(); // Refresh local data
+        await fetchData(); 
+        if(isAdmin) fetchAdminData(); 
         setSessionSelectedChapters([]);
         alert("Leitura registrada e salva na nuvem!");
         setActiveTab('history');
@@ -542,6 +702,7 @@ const App: React.FC = () => {
 
       if (!error) {
           await fetchData();
+          if(isAdmin) fetchAdminData();
           setEditingNoteId(null);
           setTempNoteContent('');
       } else {
@@ -554,11 +715,227 @@ const App: React.FC = () => {
       setTempNoteContent(log.userNotes || '');
   };
 
-  // --- Render Functions ---
+  const handleSendPasswordReset = async (email: string) => {
+      if (!email || !email.includes('@')) {
+          alert('E-mail inválido ou não disponível para este usuário.');
+          return;
+      }
+      if (confirm(`Enviar e-mail de redefinição de senha para ${email}?`)) {
+          const { error } = await supabase.auth.resetPasswordForEmail(email, {
+              redirectTo: window.location.origin
+          });
+          if (error) {
+              alert('Erro ao enviar email: ' + error.message);
+          } else {
+              alert('E-mail de redefinição enviado com sucesso!');
+          }
+      }
+  };
+
+  // --- Admin Render Functions ---
+
+  const renderAdminDashboard = () => {
+    // 1. Group by User
+    const usersData: Record<string, any[]> = {};
+    const userProfiles: Record<string, {name: string, email: string}> = {};
+
+    adminLogs.forEach(log => {
+        if (!usersData[log.user_id]) usersData[log.user_id] = [];
+        usersData[log.user_id].push(log);
+
+        // Tenta pegar o perfil mais recente disponível nos logs (se a coluna existir)
+        if (!userProfiles[log.user_id] || log.timestamp > (userProfiles[log.user_id] as any).timestamp ) {
+             userProfiles[log.user_id] = {
+                 name: log.user_name || 'Desconhecido',
+                 email: log.user_email || 'Não registrado'
+             };
+        }
+    });
+
+    const totalUsers = Object.keys(usersData).length;
+    const totalChaptersGlobal = adminLogs.reduce((acc, log) => acc + log.chapters.length, 0);
+
+    // If a user is selected, show their details
+    if (selectedUserForAdmin) {
+        const userLogsRaw = usersData[selectedUserForAdmin] || [];
+        const profile = userProfiles[selectedUserForAdmin];
+        
+        // Process this user's data to fit into the standard components
+        const specificUserLogs = userLogsRaw.map((item: any) => ({
+            id: item.id,
+            date: item.date,
+            timestamp: item.timestamp,
+            bookId: item.book_id,
+            chapters: item.chapters,
+            aiReflection: item.ai_reflection,
+            userNotes: item.user_notes
+        })) as ReadingLog[];
+
+        const specificUserMap: ReadChaptersMap = {};
+        specificUserLogs.forEach(log => {
+            if (!specificUserMap[log.bookId]) specificUserMap[log.bookId] = [];
+            specificUserMap[log.bookId] = Array.from(new Set([...specificUserMap[log.bookId], ...log.chapters]));
+        });
+        
+        const specificTotalRead = Object.values(specificUserMap).reduce((acc, curr) => acc + curr.length, 0);
+        const specificStats = getAdvancedStats(specificUserLogs, specificUserMap, specificTotalRead);
+        const specificCompletion = (specificTotalRead / TOTAL_CHAPTERS_BIBLE) * 100;
+
+        return (
+            <div className="space-y-6 animate-fade-in">
+                <button 
+                    onClick={() => setSelectedUserForAdmin(null)}
+                    className="flex items-center gap-2 text-indigo-600 font-medium hover:underline"
+                >
+                    <ArrowLeft size={16} /> Voltar para Lista Geral
+                </button>
+
+                <div className="bg-slate-900 text-white p-6 rounded-xl shadow-lg border border-slate-700">
+                    <div className="flex justify-between items-start md:items-center flex-col md:flex-row gap-4">
+                        <div>
+                            <div className="flex items-center gap-2 mb-1">
+                                <UserCircle size={28} className="text-indigo-400" />
+                                <h2 className="text-2xl font-bold">{profile.name}</h2>
+                            </div>
+                            <div className="text-slate-400 text-sm space-y-1">
+                                <p className="flex items-center gap-2"><Mail size={14}/> {profile.email}</p>
+                                <p className="flex items-center gap-2 text-xs font-mono"><KeyRound size={14}/> ID: {selectedUserForAdmin}</p>
+                            </div>
+                        </div>
+                        <div>
+                            <button 
+                                onClick={() => handleSendPasswordReset(profile.email)}
+                                className="bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors shadow-lg shadow-red-900/20"
+                            >
+                                <Send size={16} /> Enviar Redefinição de Senha
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <StatCard 
+                        title="Progresso" 
+                        value={`${specificCompletion.toFixed(1)}%`} 
+                        subtext={`${specificTotalRead} caps`}
+                        icon={<BookOpen size={20} />} 
+                        highlight={true}
+                        colorClass="bg-slate-800"
+                    />
+                     <StatCard 
+                        title="Livros" 
+                        value={specificStats.completedBooks} 
+                        icon={<CheckCircle2 size={20} />} 
+                    />
+                    <StatCard 
+                        title="Recorde Dia" 
+                        value={specificStats.bestDay.count} 
+                        subtext={specificStats.bestDay.date}
+                        icon={<Trophy size={20} />} 
+                    />
+                     <StatCard 
+                        title="Última Leitura" 
+                        value={specificUserLogs.length > 0 ? new Date(specificUserLogs[0].date).toLocaleDateString('pt-BR') : 'N/A'} 
+                        icon={<Clock size={20} />} 
+                    />
+                </div>
+
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                    <h3 className="font-bold text-gray-800 mb-4">Progresso Visual</h3>
+                    <ProgressBar current={specificTotalRead} total={TOTAL_CHAPTERS_BIBLE} color="bg-slate-800" />
+                </div>
+            </div>
+        );
+    }
+
+    // Overview List
+    return (
+        <div className="space-y-6 animate-fade-in">
+             <div className="bg-slate-900 p-8 rounded-2xl shadow-xl text-white">
+                <div className="flex items-center gap-3 mb-6">
+                    <ShieldAlert size={32} className="text-red-400" />
+                    <h1 className="text-3xl font-bold serif">Painel Master</h1>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700">
+                        <p className="text-slate-400 text-sm">Total de Usuários Ativos</p>
+                        <p className="text-3xl font-bold mt-1">{totalUsers}</p>
+                    </div>
+                    <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700">
+                        <p className="text-slate-400 text-sm">Total Capítulos Lidos (Global)</p>
+                        <p className="text-3xl font-bold mt-1 text-indigo-400">{totalChaptersGlobal}</p>
+                    </div>
+                     <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700">
+                        <p className="text-slate-400 text-sm">Média por Usuário</p>
+                        <p className="text-3xl font-bold mt-1">{totalUsers ? Math.round(totalChaptersGlobal / totalUsers) : 0}</p>
+                    </div>
+                </div>
+             </div>
+
+             <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                <div className="p-6 border-b border-gray-100 flex justify-between items-center">
+                    <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                        <Users size={20} /> Usuários Registrados
+                    </h3>
+                    <span className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded">
+                        * Nomes/Emails aparecem se salvos no log
+                    </span>
+                </div>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                        <thead className="bg-gray-50 text-gray-500 text-xs uppercase font-medium">
+                            <tr>
+                                <th className="px-6 py-4">Usuário</th>
+                                <th className="px-6 py-4 text-center">Caps. Lidos</th>
+                                <th className="px-6 py-4 text-center">Livros</th>
+                                <th className="px-6 py-4 text-center">Última Ativ.</th>
+                                <th className="px-6 py-4 text-right">Ação</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                            {Object.entries(usersData).map(([userId, logs]) => {
+                                const uniqueChapters = new Set();
+                                const uniqueBooks = new Set();
+                                logs.forEach(l => {
+                                    l.chapters.forEach((c: number) => uniqueChapters.add(`${l.book_id}-${c}`));
+                                    uniqueBooks.add(l.book_id);
+                                });
+                                const lastActive = logs.length > 0 ? new Date(Math.max(...logs.map(l => l.timestamp))) : new Date();
+                                const profile = userProfiles[userId];
+
+                                return (
+                                    <tr key={userId} className="hover:bg-gray-50 transition-colors">
+                                        <td className="px-6 py-4">
+                                            <div className="flex flex-col">
+                                                <span className="font-bold text-gray-800 text-sm">{profile.name}</span>
+                                                <span className="text-xs text-gray-500">{profile.email}</span>
+                                                {user?.id === userId && <span className="mt-1 w-fit bg-green-100 text-green-700 px-1.5 py-0.5 rounded text-[10px] font-bold">VOCÊ</span>}
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4 text-center font-bold text-gray-800">{uniqueChapters.size}</td>
+                                        <td className="px-6 py-4 text-center text-gray-600">{uniqueBooks.size}</td>
+                                        <td className="px-6 py-4 text-center text-sm text-gray-500">{lastActive.toLocaleDateString('pt-BR')}</td>
+                                        <td className="px-6 py-4 text-right">
+                                            <button 
+                                                onClick={() => setSelectedUserForAdmin(userId)}
+                                                className="text-indigo-600 hover:text-indigo-800 font-medium text-sm flex items-center justify-end gap-1 ml-auto"
+                                            >
+                                                <Search size={16} /> Detalhes
+                                            </button>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+             </div>
+        </div>
+    );
+  };
 
   const renderDashboard = () => (
     <div className="space-y-6 animate-fade-in">
-       {/* ... (Same Dashboard code as before, simplified for XML length) ... */}
        {/* Primary Stats */}
        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard 
@@ -970,13 +1347,21 @@ const App: React.FC = () => {
               >
                 Histórico
               </button>
+              {isAdmin && (
+                  <button 
+                    onClick={() => setActiveTab('admin')}
+                    className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-bold ${activeTab === 'admin' ? 'border-red-500 text-red-600' : 'border-transparent text-red-400 hover:text-red-600 hover:border-red-300'}`}
+                  >
+                    Admin Master
+                  </button>
+              )}
             </div>
 
             {/* Desktop User Menu */}
             <div className="hidden md:flex items-center gap-4 ml-4 border-l border-gray-200 pl-4">
               <div className="flex flex-col items-end">
                 <span className="text-xs text-gray-400">Logado como</span>
-                <span className="text-sm font-bold text-gray-700">{user.email.split('@')[0].replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4')}</span>
+                <span className="text-sm font-bold text-gray-700">{user.email.split('@')[0]}</span>
               </div>
               <button onClick={() => setIsChangePasswordOpen(true)} className="p-2 text-gray-400 hover:text-indigo-600" title="Alterar Senha">
                 <Lock size={20} />
@@ -1001,7 +1386,7 @@ const App: React.FC = () => {
                 <div className="px-4 py-3 bg-indigo-50 border-b border-indigo-100 flex items-center justify-between">
                    <div className="flex items-center gap-2">
                       <UserCircle size={20} className="text-indigo-600" />
-                      <span className="font-bold text-indigo-900 text-sm">{user.email.split('@')[0].replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4')}</span>
+                      <span className="font-bold text-indigo-900 text-sm">{user.email.split('@')[0]}</span>
                    </div>
                 </div>
                 <div className="pt-2 pb-3 space-y-1">
@@ -1029,6 +1414,16 @@ const App: React.FC = () => {
                            <History size={18} /> Histórico
                         </div>
                     </button>
+                    {isAdmin && (
+                        <button
+                            onClick={() => { setActiveTab('admin'); setMobileMenuOpen(false); }}
+                            className={`block pl-3 pr-4 py-3 border-l-4 text-base font-medium w-full text-left ${activeTab === 'admin' ? 'bg-red-50 border-red-500 text-red-700' : 'border-transparent text-red-400 hover:bg-red-50 hover:border-red-300 hover:text-red-700'}`}
+                        >
+                             <div className="flex items-center gap-3">
+                               <ShieldAlert size={18} /> Admin Master
+                            </div>
+                        </button>
+                    )}
                     
                     <div className="border-t border-gray-100 my-2 pt-2">
                       <button
@@ -1058,6 +1453,7 @@ const App: React.FC = () => {
         {activeTab === 'dashboard' && renderDashboard()}
         {activeTab === 'tracker' && renderTracker()}
         {activeTab === 'history' && renderHistory()}
+        {activeTab === 'admin' && isAdmin && renderAdminDashboard()}
       </main>
 
       {/* Mobile Sticky Action Button (Only on Tracker) */}

@@ -1,4 +1,13 @@
+
 import { BibleBook } from './types';
+
+// Adicione aqui os e-mails que terão acesso Master
+export const ADMIN_EMAILS = [
+  'rafaelvollpilates@gmail.com', 
+  'rrajvpg@gmail.com',
+  // Adicione o seu email real aqui para testar, ex: 'seuemail@gmail.com'
+  'dev@teste.com' 
+];
 
 export const BIBLE_BOOKS: BibleBook[] = [
   // Antigo Testamento
