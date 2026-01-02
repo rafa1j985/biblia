@@ -1,3 +1,4 @@
+
 export interface BibleBook {
   id: string;
   name: string;
@@ -23,4 +24,24 @@ export interface UserStats {
   totalChaptersInBible: number;
   streak: number;
   lastReadDate: string | null;
+}
+
+export type PlanType = 'BIBLE_1Y' | 'NT_3M' | 'OT_9M' | 'CHRONO_1Y';
+
+export interface UserPlan {
+  id: PlanType;
+  title: string;
+  startDate: string;
+  targetDailyChapters: number;
+  scope: 'ALL' | 'OLD' | 'NEW';
+}
+
+export interface Achievement {
+  id: number;
+  title: string;
+  description: string;
+  category: 'Constancy' | 'BibleBlocks' | 'Depth' | 'Intensity' | 'Growth' | 'Super';
+  rarity: 'Common' | 'Rare' | 'Epic' | 'Legendary';
+  icon: string; // String identifier for the icon component
+  color: string;
 }

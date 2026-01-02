@@ -1,5 +1,5 @@
 
-import { BibleBook } from './types';
+import { BibleBook, PlanType, Achievement } from './types';
 
 // Adicione aqui os e-mails que terão acesso Master
 export const ADMIN_EMAILS = [
@@ -7,6 +7,76 @@ export const ADMIN_EMAILS = [
   'rrajvpg@gmail.com',
   // Adicione o seu email real aqui para testar, ex: 'seuemail@gmail.com'
   'dev@teste.com' 
+];
+
+export const PLANS_CONFIG: Record<PlanType, { title: string, days: number, scope: 'ALL' | 'OLD' | 'NEW', description: string }> = {
+  'BIBLE_1Y': { 
+    title: 'Bíblia Completa em 1 Ano', 
+    days: 365, 
+    scope: 'ALL',
+    description: 'A jornada clássica. Leia toda a Bíblia em ordem canônica ao longo de 12 meses.'
+  },
+  'NT_3M': { 
+    title: 'Novo Testamento em 3 Meses', 
+    days: 90, 
+    scope: 'NEW',
+    description: 'Foco na vida de Jesus e na igreja primitiva. Ideal para começar.'
+  },
+  'OT_9M': { 
+    title: 'Antigo Testamento em 9 Meses', 
+    days: 270, 
+    scope: 'OLD',
+    description: 'Mergulhe na história, lei e profecias de Israel.'
+  },
+  'CHRONO_1Y': {
+    title: 'Ordem Sequencial em 1 Ano', 
+    days: 365, 
+    scope: 'ALL',
+    description: 'Leia a Bíblia capa a capa no seu próprio ritmo.'
+  }
+};
+
+export const ACHIEVEMENTS: Achievement[] = [
+  // Constância
+  { id: 1, title: 'Leitor da Madrugada', description: 'Leu antes das 6h da manhã', category: 'Constancy', rarity: 'Common', icon: 'Moon', color: 'bg-blue-200' },
+  { id: 2, title: 'Primeiras Horas', description: 'Leu antes das 8h da manhã', category: 'Constancy', rarity: 'Common', icon: 'Sun', color: 'bg-green-200' },
+  { id: 3, title: 'Última Vigília', description: 'Leu após as 22h', category: 'Constancy', rarity: 'Common', icon: 'Star', color: 'bg-slate-300' },
+  { id: 4, title: 'Constância Inicial', description: '3 dias seguidos de leitura', category: 'Constancy', rarity: 'Common', icon: 'Footprints', color: 'bg-green-400' },
+  { id: 5, title: 'Semana Fiel', description: '7 dias seguidos de leitura', category: 'Constancy', rarity: 'Rare', icon: 'Calendar', color: 'bg-blue-400' },
+  { id: 6, title: 'Mês Consistente', description: '30 dias seguidos de leitura', category: 'Constancy', rarity: 'Rare', icon: 'CalendarRange', color: 'bg-blue-600' },
+  { id: 8, title: 'Ano de Perseverança', description: '365 dias seguidos', category: 'Constancy', rarity: 'Legendary', icon: 'Crown', color: 'bg-yellow-500' },
+  { id: 10, title: 'Retorno Honesto', description: 'Voltou a ler após uma pausa', category: 'Constancy', rarity: 'Common', icon: 'RefreshCcw', color: 'bg-emerald-200' },
+  { id: 20, title: 'Fidelidade Diária', description: 'Leitura todos os dias do mês', category: 'Constancy', rarity: 'Epic', icon: 'Flame', color: 'bg-purple-500' },
+
+  // Blocos Bíblicos
+  { id: 21, title: 'Mestre do Pentateuco', description: 'Concluiu Gênesis a Deuteronômio', category: 'BibleBlocks', rarity: 'Epic', icon: 'Scroll', color: 'bg-purple-400' },
+  { id: 22, title: 'Historiador de Israel', description: 'Concluiu todos os livros Históricos do AT', category: 'BibleBlocks', rarity: 'Epic', icon: 'Landmark', color: 'bg-purple-400' },
+  { id: 23, title: 'Poeta da Fé', description: 'Concluiu os livros Poéticos', category: 'BibleBlocks', rarity: 'Rare', icon: 'Feather', color: 'bg-blue-500' },
+  { id: 26, title: 'Caminho dos Evangelhos', description: 'Concluiu Mateus, Marcos, Lucas e João', category: 'BibleBlocks', rarity: 'Epic', icon: 'Cross', color: 'bg-purple-500' },
+  { id: 27, title: 'Testemunha da Igreja', description: 'Concluiu Atos dos Apóstolos', category: 'BibleBlocks', rarity: 'Rare', icon: 'Map', color: 'bg-blue-400' },
+  { id: 28, title: 'Teologia Paulina', description: 'Concluiu todas as cartas de Paulo', category: 'BibleBlocks', rarity: 'Epic', icon: 'BookOpen', color: 'bg-purple-400' },
+  { id: 30, title: 'Visão do Fim', description: 'Concluiu Apocalipse', category: 'BibleBlocks', rarity: 'Legendary', icon: 'Eye', color: 'bg-yellow-500' },
+  { id: 31, title: 'Antigo Testamento Completo', description: 'Leu todos os 39 livros do AT', category: 'BibleBlocks', rarity: 'Legendary', icon: 'TreeDeciduous', color: 'bg-yellow-500' },
+  { id: 32, title: 'Novo Testamento Completo', description: 'Leu todos os 27 livros do NT', category: 'BibleBlocks', rarity: 'Legendary', icon: 'SunMedium', color: 'bg-yellow-500' },
+  { id: 33, title: 'Bíblia Completa', description: 'Leu toda a Bíblia Sagrada', category: 'BibleBlocks', rarity: 'Legendary', icon: 'Book', color: 'bg-yellow-400' },
+  { id: 37, title: 'Sabedoria Viva', description: 'Concluiu Provérbios', category: 'BibleBlocks', rarity: 'Rare', icon: 'Lightbulb', color: 'bg-yellow-200' },
+  { id: 38, title: 'Clamor Humano', description: 'Concluiu Salmos', category: 'BibleBlocks', rarity: 'Rare', icon: 'Music', color: 'bg-blue-300' },
+
+  // Profundidade e Estudo
+  { id: 55, title: 'Pensador Bíblico', description: 'Escreveu sua primeira reflexão pessoal', category: 'Depth', rarity: 'Rare', icon: 'PenTool', color: 'bg-blue-500' },
+  { id: 56, title: 'Aluno da Palavra', description: 'Registrou 10 anotações pessoais', category: 'Depth', rarity: 'Rare', icon: 'GraduationCap', color: 'bg-blue-600' },
+  
+  // Intensidade
+  { id: 72, title: 'Maratonista Bíblico', description: 'Leu 10 capítulos em um único dia', category: 'Intensity', rarity: 'Rare', icon: 'Zap', color: 'bg-orange-500' },
+  { id: 73, title: 'Imersão Total', description: 'Leu um livro inteiro em um único dia', category: 'Intensity', rarity: 'Epic', icon: 'Waves', color: 'bg-purple-500' },
+  { id: 75, title: 'Fim de Semana Bíblico', description: 'Leu no Sábado e no Domingo', category: 'Intensity', rarity: 'Common', icon: 'Coffee', color: 'bg-orange-300' },
+
+  // Crescimento
+  { id: 92, title: 'Primeiro Passo', description: 'Completou a primeira semana no app', category: 'Growth', rarity: 'Common', icon: 'Sprout', color: 'bg-green-300' },
+  { id: 93, title: 'Raiz Criada', description: 'Completou o primeiro mês no app', category: 'Growth', rarity: 'Rare', icon: 'Trees', color: 'bg-green-500' },
+  
+  // Super Medalhas
+  { id: 117, title: 'Peregrino da Palavra', description: 'Bíblia completa + Constância Anual', category: 'Super', rarity: 'Legendary', icon: 'Shield', color: 'bg-yellow-600' },
 ];
 
 export const BIBLE_BOOKS: BibleBook[] = [

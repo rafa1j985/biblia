@@ -28,7 +28,36 @@ import {
   ArrowLeft,
   Mail,
   User,
-  Send
+  Send,
+  Map,
+  PlayCircle,
+  Award,
+  Moon,
+  Sun,
+  Star,
+  Footprints,
+  CalendarRange,
+  Crown,
+  RefreshCcw,
+  Flame,
+  Scroll,
+  Landmark,
+  Feather,
+  Cross,
+  TreeDeciduous,
+  SunMedium,
+  Lightbulb,
+  Music,
+  PenTool,
+  GraduationCap,
+  Zap,
+  Waves,
+  Coffee,
+  Sprout,
+  Trees,
+  Shield,
+  Eye,
+  ChevronLeft
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -39,10 +68,35 @@ import {
   Tooltip, 
   ResponsiveContainer 
 } from 'recharts';
-import { BIBLE_BOOKS, TOTAL_CHAPTERS_BIBLE, ADMIN_EMAILS } from './constants';
-import { BibleBook, ReadChaptersMap, ReadingLog } from './types';
+import { BIBLE_BOOKS, TOTAL_CHAPTERS_BIBLE, ADMIN_EMAILS, PLANS_CONFIG, ACHIEVEMENTS } from './constants';
+import { BibleBook, ReadChaptersMap, ReadingLog, UserPlan, PlanType, Achievement } from './types';
 import { generateDevotional } from './services/geminiService';
 import { supabase } from './services/supabase';
+
+// --- Icon Mapping Helper ---
+const IconMap: Record<string, React.ElementType> = {
+  Moon, Sun, Star, Footprints, Calendar, CalendarRange, Crown, RefreshCcw, Flame,
+  Scroll, Landmark, Feather, Cross, Map, BookOpen, Eye: Search, TreeDeciduous, SunMedium, Book, Lightbulb, Music,
+  PenTool, GraduationCap, Zap, Waves, Coffee, Sprout, Trees, Shield
+};
+
+// --- Mapeamento para API bible-api.com (Nomes em Inglês para query, retorno em PT) ---
+const BIBLE_API_MAPPING: Record<string, string> = {
+  'GEN': 'Genesis', 'EXO': 'Exodus', 'LEV': 'Leviticus', 'NUM': 'Numbers', 'DEU': 'Deuteronomy',
+  'JOS': 'Joshua', 'JDG': 'Judges', 'RUT': 'Ruth', '1SA': '1 Samuel', '2SA': '2 Samuel',
+  '1KI': '1 Kings', '2KI': '2 Kings', '1CH': '1 Chronicles', '2CH': '2 Chronicles', 'EZR': 'Ezra',
+  'NEH': 'Nehemiah', 'EST': 'Esther', 'JOB': 'Job', 'PSA': 'Psalms', 'PRO': 'Proverbs',
+  'ECC': 'Ecclesiastes', 'SNG': 'Song of Solomon', 'ISA': 'Isaiah', 'JER': 'Jeremiah', 'LAM': 'Lamentations',
+  'EZK': 'Ezekiel', 'DAN': 'Daniel', 'HOS': 'Hosea', 'JOL': 'Joel', 'AMO': 'Amos',
+  'OBA': 'Obadiah', 'JON': 'Jonah', 'MIC': 'Micah', 'NAM': 'Nahum', 'HAB': 'Habakkuk',
+  'ZEP': 'Zephaniah', 'HAG': 'Haggai', 'ZEC': 'Zechariah', 'MAL': 'Malachi',
+  'MAT': 'Matthew', 'MRK': 'Mark', 'LUK': 'Luke', 'JHN': 'John', 'ACT': 'Acts',
+  'ROM': 'Romans', '1CO': '1 Corinthians', '2CO': '2 Corinthians', 'GAL': 'Galatians', 'EPH': 'Ephesians',
+  'PHP': 'Philippians', 'COL': 'Colossians', '1TH': '1 Thessalonians', '2TH': '2 Thessalonians', '1TI': '1 Timothy',
+  '2TI': '2 Timothy', 'TIT': 'Titus', 'PHM': 'Philemon', 'HEB': 'Hebrews', 'JAM': 'James',
+  '1PE': '1 Peter', '2PE': '2 Peter', '1JN': '1 John', '2JN': '2 John', '3JN': '3 John',
+  'JUD': 'Jude', 'REV': 'Revelation'
+};
 
 // --- Helper Components ---
 
@@ -59,17 +113,123 @@ const ProgressBar = ({ current, total, color = "bg-indigo-600" }: { current: num
 };
 
 const StatCard = ({ title, value, subtext, icon, highlight = false, colorClass = "bg-indigo-600" }: { title: string; value: string | number; subtext?: string; icon: React.ReactNode, highlight?: boolean, colorClass?: string }) => (
-  <div className={`rounded-xl p-6 shadow-sm border flex items-start justify-between ${highlight ? `${colorClass} border-transparent text-white` : 'bg-white border-gray-100'}`}>
+  <div className={`rounded-xl p-6 shadow-sm border flex items-start justify-between transition-colors ${highlight ? `${colorClass} border-transparent text-white` : 'bg-white dark:bg-slate-900 border-gray-100 dark:border-slate-800'}`}>
     <div>
-      <p className={`text-sm font-medium mb-1 ${highlight ? 'text-indigo-100' : 'text-gray-500'}`}>{title}</p>
-      <h3 className={`text-2xl font-bold ${highlight ? 'text-white' : 'text-gray-900'}`}>{value}</h3>
-      {subtext && <p className={`text-xs mt-1 ${highlight ? 'text-indigo-200' : 'text-gray-400'}`}>{subtext}</p>}
+      <p className={`text-sm font-medium mb-1 ${highlight ? 'text-indigo-100' : 'text-gray-500 dark:text-gray-400'}`}>{title}</p>
+      <h3 className={`text-2xl font-bold ${highlight ? 'text-white' : 'text-gray-900 dark:text-white'}`}>{value}</h3>
+      {subtext && <p className={`text-xs mt-1 ${highlight ? 'text-indigo-200' : 'text-gray-400 dark:text-gray-500'}`}>{subtext}</p>}
     </div>
-    <div className={`p-2 rounded-lg ${highlight ? 'bg-white/20 text-white' : 'bg-indigo-50 text-indigo-600'}`}>
+    <div className={`p-2 rounded-lg ${highlight ? 'bg-white/20 text-white' : 'bg-indigo-50 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400'}`}>
       {icon}
     </div>
   </div>
 );
+
+// --- Bible Reader Modal (Integration Feature with Stable API) ---
+const BibleReaderModal = ({ book, chapter, onClose, onNext, onPrev }: { book: BibleBook, chapter: number, onClose: () => void, onNext?: () => void, onPrev?: () => void }) => {
+  const [text, setText] = useState<string>('');
+  const [verses, setVerses] = useState<{number: number, text: string}[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const fetchText = async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const queryBook = BIBLE_API_MAPPING[book.id];
+        if (!queryBook) throw new Error('Livro não mapeado.');
+
+        // Usando bible-api.com que é extremamente confiável e gratuita
+        const response = await fetch(`https://bible-api.com/${encodeURIComponent(queryBook)}+${chapter}?translation=almeida`);
+        
+        if (!response.ok) throw new Error('Falha ao obter texto da API.');
+        
+        const data = await response.json();
+        
+        // A API bible-api.com retorna versículos.
+        if (data.verses && Array.isArray(data.verses)) {
+            setVerses(data.verses.map((v: any) => ({
+                number: v.verse,
+                text: v.text
+            })));
+            setText(data.text || '');
+        } else {
+            setText(data.text || 'Texto não encontrado.');
+        }
+
+      } catch (err) {
+        console.error(err);
+        setError('Não foi possível carregar o texto. Verifique sua conexão.');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchText();
+  }, [book, chapter]);
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+      <div className="bg-white dark:bg-slate-900 w-full max-w-3xl h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-gray-200 dark:border-slate-700 transition-colors">
+        
+        {/* Header */}
+        <div className="p-4 border-b border-gray-100 dark:border-slate-800 flex justify-between items-center bg-gray-50 dark:bg-slate-950">
+          <div className="flex items-center gap-4">
+             <button onClick={onPrev} disabled={!onPrev} className="p-2 hover:bg-gray-200 dark:hover:bg-slate-800 rounded-full disabled:opacity-30 transition-colors">
+                <ChevronLeft size={20} className="text-gray-600 dark:text-gray-300" />
+             </button>
+             <div>
+                <h3 className="font-bold text-lg text-gray-900 dark:text-white serif">{book.name} {chapter}</h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400">Versão Almeida</p>
+             </div>
+             <button onClick={onNext} disabled={!onNext} className="p-2 hover:bg-gray-200 dark:hover:bg-slate-800 rounded-full disabled:opacity-30 transition-colors">
+                <ChevronRight size={20} className="text-gray-600 dark:text-gray-300" />
+             </button>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-gray-200 dark:hover:bg-slate-800 rounded-full text-gray-500 dark:text-gray-400 transition-colors">
+            <X size={24} />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-6 md:p-8 bg-white dark:bg-slate-900 text-gray-900 dark:text-gray-100">
+          {loading ? (
+             <div className="h-full flex flex-col items-center justify-center gap-3 text-gray-400 dark:text-gray-500">
+                <Loader2 size={32} className="animate-spin text-indigo-600" />
+                <p>Carregando as Escrituras...</p>
+             </div>
+          ) : error ? (
+            <div className="h-full flex flex-col items-center justify-center gap-3 text-red-500 text-center px-4">
+                <ShieldAlert size={32} />
+                <p>{error}</p>
+                <button onClick={onClose} className="text-sm underline mt-2 text-gray-500">Fechar</button>
+            </div>
+          ) : (
+            <div className="max-w-2xl mx-auto">
+                {verses.length > 0 ? (
+                    <div className="space-y-4">
+                        {verses.map((v) => (
+                            <p key={v.number} className="text-lg leading-relaxed text-gray-800 dark:text-gray-200 font-serif">
+                                <span className="text-xs font-bold text-indigo-500 dark:text-indigo-400 align-top mr-1 select-none">{v.number}</span>
+                                {v.text}
+                            </p>
+                        ))}
+                    </div>
+                ) : (
+                    <p className="text-lg leading-relaxed text-gray-800 dark:text-gray-200 font-serif whitespace-pre-wrap">{text}</p>
+                )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer Hint */}
+        <div className="p-3 border-t border-gray-100 dark:border-slate-800 bg-gray-50 dark:bg-slate-950 text-center">
+            <p className="text-xs text-gray-400">Não se esqueça de marcar como lido após terminar.</p>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 // --- Auth Components ---
 
@@ -114,7 +274,6 @@ const LoginScreen = ({ onLogin }: { onLogin: (user: any) => void }) => {
         if (error) {
           if (error.message.includes('already registered')) {
             setError('Este e-mail já está cadastrado.');
-            // Sugere ir para o login ou recuperar senha
             setTimeout(() => {
                 if(window.confirm("E-mail já cadastrado. Deseja recuperar sua senha?")) {
                     setAuthMode('forgot');
@@ -124,18 +283,16 @@ const LoginScreen = ({ onLogin }: { onLogin: (user: any) => void }) => {
             throw error;
           }
         } else if (data.user) {
-          // Se o Supabase estiver configurado para confirmar email, avisar o usuário
           if (data.user.identities?.length === 0) {
               setError('Este e-mail já está cadastrado. Tente fazer login.');
           } else {
-              // Auto login ou aviso de confirmação
               onLogin(data.user);
           }
         }
       } 
       else if (authMode === 'forgot') {
         const { error } = await supabase.auth.resetPasswordForEmail(email, {
-          redirectTo: window.location.origin, // Redireciona de volta para o app
+          redirectTo: window.location.origin, 
         });
         if (error) throw error;
         setSuccessMsg('E-mail de recuperação enviado! Verifique sua caixa de entrada.');
@@ -148,35 +305,33 @@ const LoginScreen = ({ onLogin }: { onLogin: (user: any) => void }) => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-      <div className="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full border border-gray-100 relative overflow-hidden">
-        {/* Header Decorativo */}
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-4 transition-colors">
+      <div className="bg-white dark:bg-slate-900 p-8 rounded-2xl shadow-xl max-w-md w-full border border-gray-100 dark:border-slate-800 relative overflow-hidden transition-colors">
         <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-indigo-500 to-purple-500"></div>
 
         <div className="text-center mb-8">
-          <div className="bg-indigo-600 w-14 h-14 rounded-xl flex items-center justify-center text-white mx-auto mb-4 shadow-indigo-200 shadow-lg">
+          <div className="bg-indigo-600 w-14 h-14 rounded-xl flex items-center justify-center text-white mx-auto mb-4 shadow-indigo-200 dark:shadow-none shadow-lg">
             <Book size={28} />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900 serif">Bíblia Tracker</h1>
-          <p className="text-gray-500 mt-2 text-sm">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white serif">Bíblia Tracker</h1>
+          <p className="text-gray-500 dark:text-gray-400 mt-2 text-sm">
             {authMode === 'login' && 'Bem-vindo de volta!'}
             {authMode === 'register' && 'Crie sua conta para começar'}
             {authMode === 'forgot' && 'Recupere seu acesso'}
           </p>
         </div>
 
-        {/* Abas de Navegação */}
         {authMode !== 'forgot' && (
-          <div className="flex bg-gray-100 p-1 rounded-xl mb-6">
+          <div className="flex bg-gray-100 dark:bg-slate-800 p-1 rounded-xl mb-6">
             <button
               onClick={() => setAuthMode('login')}
-              className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all ${authMode === 'login' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+              className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all ${authMode === 'login' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-white shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
             >
               Entrar
             </button>
             <button
               onClick={() => setAuthMode('register')}
-              className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all ${authMode === 'register' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+              className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all ${authMode === 'register' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-white shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
             >
               Cadastrar
             </button>
@@ -187,14 +342,14 @@ const LoginScreen = ({ onLogin }: { onLogin: (user: any) => void }) => {
           
           {authMode === 'register' && (
             <div className="space-y-1 animate-fade-in">
-              <label className="text-xs font-bold text-gray-500 uppercase tracking-wide ml-1">Nome Completo</label>
+              <label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide ml-1">Nome Completo</label>
               <div className="relative">
                 <User className="absolute left-3 top-3.5 text-gray-400" size={18} />
                 <input 
                   type="text" 
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all bg-gray-50 focus:bg-white"
+                  className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 dark:border-slate-700 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all bg-gray-50 dark:bg-slate-800 dark:text-white focus:bg-white dark:focus:bg-slate-900"
                   placeholder="Seu nome"
                   required
                 />
@@ -203,14 +358,14 @@ const LoginScreen = ({ onLogin }: { onLogin: (user: any) => void }) => {
           )}
 
           <div className="space-y-1">
-            <label className="text-xs font-bold text-gray-500 uppercase tracking-wide ml-1">E-mail</label>
+            <label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide ml-1">E-mail</label>
             <div className="relative">
               <Mail className="absolute left-3 top-3.5 text-gray-400" size={18} />
               <input 
                 type="email" 
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all bg-gray-50 focus:bg-white"
+                className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 dark:border-slate-700 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all bg-gray-50 dark:bg-slate-800 dark:text-white focus:bg-white dark:focus:bg-slate-900"
                 placeholder="seu@email.com"
                 required
               />
@@ -220,12 +375,12 @@ const LoginScreen = ({ onLogin }: { onLogin: (user: any) => void }) => {
           {authMode !== 'forgot' && (
             <div className="space-y-1 animate-fade-in">
               <div className="flex justify-between items-center">
-                <label className="text-xs font-bold text-gray-500 uppercase tracking-wide ml-1">Senha</label>
+                <label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide ml-1">Senha</label>
                 {authMode === 'login' && (
                   <button 
                     type="button"
                     onClick={() => setAuthMode('forgot')}
-                    className="text-xs text-indigo-600 hover:underline"
+                    className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
                   >
                     Esqueceu a senha?
                   </button>
@@ -237,7 +392,7 @@ const LoginScreen = ({ onLogin }: { onLogin: (user: any) => void }) => {
                   type="password" 
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all bg-gray-50 focus:bg-white"
+                  className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 dark:border-slate-700 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all bg-gray-50 dark:bg-slate-800 dark:text-white focus:bg-white dark:focus:bg-slate-900"
                   placeholder="••••••••"
                   required
                   minLength={6}
@@ -246,16 +401,15 @@ const LoginScreen = ({ onLogin }: { onLogin: (user: any) => void }) => {
             </div>
           )}
 
-          {/* Mensagens de Erro e Sucesso */}
           {error && (
-            <div className="p-3 bg-red-50 text-red-600 text-sm rounded-lg flex items-center gap-2 border border-red-100">
+            <div className="p-3 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-300 text-sm rounded-lg flex items-center gap-2 border border-red-100 dark:border-red-800">
               <ShieldAlert size={16} />
               {error}
             </div>
           )}
 
           {successMsg && (
-            <div className="p-3 bg-green-50 text-green-700 text-sm rounded-lg flex items-center gap-2 border border-green-100">
+            <div className="p-3 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 text-sm rounded-lg flex items-center gap-2 border border-green-100 dark:border-green-800">
               <CheckCircle2 size={16} />
               {successMsg}
             </div>
@@ -264,7 +418,7 @@ const LoginScreen = ({ onLogin }: { onLogin: (user: any) => void }) => {
           <button 
             type="submit"
             disabled={loading}
-            className="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-bold hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-200 mt-4 flex justify-center items-center gap-2"
+            className="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-bold hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-200 dark:shadow-none mt-4 flex justify-center items-center gap-2"
           >
             {loading ? <Loader2 className="animate-spin" /> : (
               <>
@@ -279,7 +433,7 @@ const LoginScreen = ({ onLogin }: { onLogin: (user: any) => void }) => {
         {authMode === 'forgot' && (
           <button 
             onClick={() => setAuthMode('login')}
-            className="w-full mt-4 py-2 text-sm text-gray-500 hover:text-gray-800 font-medium"
+            className="w-full mt-4 py-2 text-sm text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 font-medium"
           >
             Voltar para o Login
           </button>
@@ -322,10 +476,10 @@ const ChangePasswordModal = ({ onClose }: { onClose: () => void }) => {
 
   return (
     <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl animate-fade-in">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 max-w-sm w-full shadow-2xl animate-fade-in">
         <div className="flex justify-between items-center mb-4">
-          <h3 className="font-bold text-lg text-gray-900">Alterar Senha</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+          <h3 className="font-bold text-lg text-gray-900 dark:text-white">Alterar Senha</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
             <X size={20} />
           </button>
         </div>
@@ -336,7 +490,7 @@ const ChangePasswordModal = ({ onClose }: { onClose: () => void }) => {
             placeholder="Nova Senha"
             value={newPassword}
             onChange={e => setNewPassword(e.target.value)}
-            className="w-full p-3 rounded-lg border border-gray-200 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+            className="w-full p-3 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
             required
           />
           <input 
@@ -344,12 +498,12 @@ const ChangePasswordModal = ({ onClose }: { onClose: () => void }) => {
             placeholder="Confirmar Nova Senha"
             value={confirmPassword}
             onChange={e => setConfirmPassword(e.target.value)}
-            className="w-full p-3 rounded-lg border border-gray-200 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+            className="w-full p-3 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
             required
           />
 
           {message && (
-            <div className={`p-3 text-sm rounded-lg ${message.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
+            <div className={`p-3 text-sm rounded-lg ${message.type === 'success' ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300' : 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-300'}`}>
               {message.text}
             </div>
           )}
@@ -358,6 +512,48 @@ const ChangePasswordModal = ({ onClose }: { onClose: () => void }) => {
              {loading ? <Loader2 size={16} className="animate-spin" /> : 'Salvar Nova Senha'}
           </button>
         </form>
+      </div>
+    </div>
+  );
+};
+
+const PlanSelectionModal = ({ onClose, onSelectPlan }: { onClose: () => void, onSelectPlan: (planId: PlanType) => void }) => {
+  return (
+    <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-2xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+        <div className="p-6 border-b border-gray-100 dark:border-slate-800 flex justify-between items-center bg-indigo-600 text-white">
+          <div>
+            <h3 className="font-bold text-xl">Escolha seu GPS de Leitura</h3>
+            <p className="text-indigo-200 text-sm">Selecione um plano para guiar sua jornada.</p>
+          </div>
+          <button onClick={onClose} className="text-indigo-200 hover:text-white bg-indigo-500/30 p-2 rounded-full">
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="overflow-y-auto p-6 space-y-4 bg-white dark:bg-slate-900">
+          {Object.entries(PLANS_CONFIG).map(([key, config]) => (
+            <button 
+              key={key}
+              onClick={() => onSelectPlan(key as PlanType)}
+              className="w-full text-left bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-5 hover:border-indigo-400 dark:hover:border-indigo-500 hover:shadow-md transition-all group relative overflow-hidden"
+            >
+              <div className="absolute top-0 right-0 w-2 h-full bg-gray-100 dark:bg-slate-700 group-hover:bg-indigo-500 transition-colors"></div>
+              <div className="flex justify-between items-start">
+                <div>
+                  <h4 className="font-bold text-gray-900 dark:text-white text-lg group-hover:text-indigo-700 dark:group-hover:text-indigo-400 transition-colors">{config.title}</h4>
+                  <p className="text-gray-500 dark:text-gray-400 text-sm mt-1 pr-4">{config.description}</p>
+                </div>
+                <div className="bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-300 px-3 py-1 rounded-lg text-xs font-bold whitespace-nowrap">
+                  {config.days} dias
+                </div>
+              </div>
+              <div className="mt-3 flex items-center gap-2 text-xs font-medium text-indigo-600 dark:text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                Começar este plano <ChevronRight size={14} />
+              </div>
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -372,13 +568,29 @@ const App: React.FC = () => {
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
 
   // --- App State ---
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'tracker' | 'history' | 'admin'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'tracker' | 'history' | 'admin' | 'achievements'>('dashboard');
   const [selectedBookId, setSelectedBookId] = useState<string>('GEN');
   
+  // Theme State
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('theme') === 'dark' ? 'dark' : 'light';
+    }
+    return 'light';
+  });
+
+  // Reading Mode State
+  const [trackerMode, setTrackerMode] = useState<'select' | 'read'>('select');
+  const [readingChapter, setReadingChapter] = useState<{book: BibleBook, chapter: number} | null>(null);
+
   // Data State (User)
   const [readChapters, setReadChapters] = useState<ReadChaptersMap>({});
   const [readingLogs, setReadingLogs] = useState<ReadingLog[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(false);
+  
+  // Plan State
+  const [userPlan, setUserPlan] = useState<UserPlan | null>(null);
+  const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
 
   // Data State (Admin)
   const [adminLogs, setAdminLogs] = useState<any[]>([]);
@@ -398,6 +610,18 @@ const App: React.FC = () => {
     return user && ADMIN_EMAILS.includes(user.email);
   }, [user]);
 
+  // --- Theme Effect ---
+  useEffect(() => {
+    const root = window.document.documentElement;
+    root.classList.remove('light', 'dark');
+    root.classList.add(theme);
+    localStorage.setItem('theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme(prev => prev === 'light' ? 'dark' : 'light');
+  };
+
   // --- Check Auth on Mount ---
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -413,6 +637,16 @@ const App: React.FC = () => {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  // --- Load Plan from LocalStorage ---
+  useEffect(() => {
+    if (user) {
+      const storedPlan = localStorage.getItem(`bible_plan_${user.id}`);
+      if (storedPlan) {
+        setUserPlan(JSON.parse(storedPlan));
+      }
+    }
+  }, [user]);
 
   // --- Fetch User Data ---
   const fetchData = useCallback(async () => {
@@ -481,6 +715,220 @@ const App: React.FC = () => {
         map[log.bookId] = Array.from(new Set([...map[log.bookId], ...log.chapters]));
       });
       setMap(map);
+  };
+
+  // --- Achievement Logic ---
+  const unlockedAchievements = useMemo(() => {
+    if (!readingLogs.length) return new Set<number>();
+
+    const unlocked = new Set<number>();
+    
+    // 1. Time Based
+    const hasEarlyMorning = readingLogs.some(l => {
+        const hour = new Date(l.timestamp).getHours();
+        return hour >= 0 && hour < 6;
+    });
+    if (hasEarlyMorning) unlocked.add(1); // Leitor da Madrugada
+
+    const hasMorning = readingLogs.some(l => {
+        const hour = new Date(l.timestamp).getHours();
+        return hour >= 0 && hour < 8;
+    });
+    if (hasMorning) unlocked.add(2); // Primeiras Horas
+
+    const hasLateNight = readingLogs.some(l => {
+        const hour = new Date(l.timestamp).getHours();
+        return hour >= 22;
+    });
+    if (hasLateNight) unlocked.add(3); // Última Vigília
+
+    // 2. Streak Based
+    let maxStreak = 0;
+    if (readingLogs.length > 0) {
+        const sortedDates = [...new Set(readingLogs.map(l => l.date))].sort();
+        let currentRun = 1;
+        for (let i = 1; i < sortedDates.length; i++) {
+            const prev = new Date(sortedDates[i-1]);
+            const curr = new Date(sortedDates[i]);
+            const diffDays = Math.round((curr.getTime() - prev.getTime()) / (1000 * 60 * 60 * 24));
+            if (diffDays === 1) currentRun++;
+            else currentRun = 1;
+            maxStreak = Math.max(maxStreak, currentRun);
+        }
+        if (sortedDates.length === 1) maxStreak = 1;
+    }
+
+    if (maxStreak >= 3) unlocked.add(4);
+    if (maxStreak >= 7) unlocked.add(5);
+    if (maxStreak >= 30) unlocked.add(6);
+    if (maxStreak >= 365) unlocked.add(8);
+
+    // 3. Return Logic (Gap > 7 days then read)
+    const sortedDates = [...new Set(readingLogs.map(l => l.date))].sort();
+    for(let i = 1; i < sortedDates.length; i++) {
+        const prev = new Date(sortedDates[i-1]);
+        const curr = new Date(sortedDates[i]);
+        const diffDays = Math.round((curr.getTime() - prev.getTime()) / (1000 * 60 * 60 * 24));
+        if (diffDays > 7) {
+            unlocked.add(10); // Retorno Honesto
+            break;
+        }
+    }
+
+    // 4. Book Completion Logic
+    const isBookComplete = (id: string) => (readChapters[id]?.length || 0) === BIBLE_BOOKS.find(b => b.id === id)?.chapters;
+    
+    // Pentateuch (GEN, EXO, LEV, NUM, DEU)
+    if (['GEN', 'EXO', 'LEV', 'NUM', 'DEU'].every(isBookComplete)) unlocked.add(21);
+    
+    // History OT
+    const historyOT = ['JOS', 'JDG', 'RUT', '1SA', '2SA', '1KI', '2KI', '1CH', '2CH', 'EZR', 'NEH', 'EST'];
+    if (historyOT.every(isBookComplete)) unlocked.add(22);
+
+    // Poetic
+    const poetic = ['JOB', 'PSA', 'PRO', 'ECC', 'SNG'];
+    if (poetic.every(isBookComplete)) unlocked.add(23);
+
+    // Gospels
+    if (['MAT', 'MRK', 'LUK', 'JHN'].every(isBookComplete)) unlocked.add(26);
+
+    // Acts
+    if (isBookComplete('ACT')) unlocked.add(27);
+
+    // Paul
+    const paul = ['ROM', '1CO', '2CO', 'GAL', 'EPH', 'PHP', 'COL', '1TH', '2TH', '1TI', '2TI', 'TIT', 'PHM'];
+    if (paul.every(isBookComplete)) unlocked.add(28);
+
+    // Revelation
+    if (isBookComplete('REV')) unlocked.add(30);
+
+    // Single Books
+    if (isBookComplete('PRO')) unlocked.add(37);
+    if (isBookComplete('PSA')) unlocked.add(38);
+
+    // Full Testaments
+    const allOT = BIBLE_BOOKS.filter(b => b.testament === 'Old').every(b => isBookComplete(b.id));
+    if (allOT) unlocked.add(31);
+
+    const allNT = BIBLE_BOOKS.filter(b => b.testament === 'New').every(b => isBookComplete(b.id));
+    if (allNT) unlocked.add(32);
+
+    if (allOT && allNT) unlocked.add(33);
+
+    // 5. Intensity
+    const maxChaptersInDay = readingLogs.reduce((max, log) => Math.max(max, log.chapters.length), 0);
+    if (maxChaptersInDay >= 10) unlocked.add(72);
+
+    const weekendRead = readingLogs.some(l => {
+        const d = new Date(l.date);
+        return d.getDay() === 0 || d.getDay() === 6; // Sunday or Saturday
+    });
+    if (weekendRead) unlocked.add(75);
+
+    // 6. Depth
+    const hasNote = readingLogs.some(l => l.userNotes && l.userNotes.length > 5);
+    if (hasNote) unlocked.add(55); // Pensador Bíblico
+
+    const notesCount = readingLogs.filter(l => l.userNotes && l.userNotes.length > 0).length;
+    if (notesCount >= 10) unlocked.add(56);
+
+    // 7. Growth
+    if (readingLogs.length > 0) {
+        const firstLog = readingLogs[readingLogs.length - 1]; // sorted desc
+        const now = new Date();
+        const diffTime = Math.abs(now.getTime() - new Date(firstLog.date).getTime());
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+        
+        if (diffDays >= 7) unlocked.add(92);
+        if (diffDays >= 30) unlocked.add(93);
+    }
+
+    return unlocked;
+
+  }, [readingLogs, readChapters]);
+
+  // --- Plan Logic Helpers ---
+  
+  const handleSelectPlan = (planId: PlanType) => {
+    if (!user) return;
+    
+    const config = PLANS_CONFIG[planId];
+    
+    // Calculate total chapters in scope
+    let totalChaptersInScope = 0;
+    BIBLE_BOOKS.forEach(book => {
+      if (config.scope === 'ALL' || 
+         (config.scope === 'OLD' && book.testament === 'Old') ||
+         (config.scope === 'NEW' && book.testament === 'New')) {
+        totalChaptersInScope += book.chapters;
+      }
+    });
+
+    const dailyTarget = Math.ceil(totalChaptersInScope / config.days);
+
+    const newPlan: UserPlan = {
+      id: planId,
+      title: config.title,
+      startDate: new Date().toISOString(),
+      targetDailyChapters: dailyTarget,
+      scope: config.scope
+    };
+
+    setUserPlan(newPlan);
+    localStorage.setItem(`bible_plan_${user.id}`, JSON.stringify(newPlan));
+    setIsPlanModalOpen(false);
+    alert(`Plano "${config.title}" ativado! Seu GPS foi configurado.`);
+  };
+
+  const getPlanProgress = useMemo(() => {
+    if (!userPlan) return null;
+
+    let readInScope = 0;
+    let totalInScope = 0;
+    const flatList: {bookId: string, chapter: number}[] = [];
+
+    BIBLE_BOOKS.forEach(book => {
+      const isInScope = userPlan.scope === 'ALL' || 
+                       (userPlan.scope === 'OLD' && book.testament === 'Old') ||
+                       (userPlan.scope === 'NEW' && book.testament === 'New');
+      
+      if (isInScope) {
+        totalInScope += book.chapters;
+        const readCount = readChapters[book.id]?.length || 0;
+        readInScope += readCount;
+        
+        for(let i = 1; i <= book.chapters; i++) {
+          flatList.push({bookId: book.id, chapter: i});
+        }
+      }
+    });
+
+    // Find Next Reading Logic (Self-Paced)
+    const unreadChapters = flatList.filter(item => {
+      const isRead = readChapters[item.bookId]?.includes(item.chapter);
+      return !isRead;
+    });
+
+    const nextBatch = unreadChapters.slice(0, userPlan.targetDailyChapters);
+
+    return {
+      readInScope,
+      totalInScope,
+      percent: (readInScope / totalInScope) * 100,
+      nextBatch
+    };
+  }, [userPlan, readChapters]);
+
+
+  const handleQuickRead = (batch: {bookId: string, chapter: number}[]) => {
+    if (batch.length === 0) return;
+    
+    const targetBook = batch[0].bookId;
+    const targetChapters = batch.filter(b => b.bookId === targetBook).map(b => b.chapter);
+
+    setSelectedBookId(targetBook);
+    setSessionSelectedChapters(targetChapters);
+    setActiveTab('tracker');
   };
 
   // --- Computed Stats (Current User) ---
@@ -631,6 +1079,12 @@ const App: React.FC = () => {
   };
 
   const handleToggleChapter = (chapter: number) => {
+    if (trackerMode === 'read') {
+      const book = BIBLE_BOOKS.find(b => b.id === selectedBookId)!;
+      setReadingChapter({ book, chapter });
+      return;
+    }
+
     setSessionSelectedChapters(prev => 
       prev.includes(chapter) 
         ? prev.filter(c => c !== chapter) 
@@ -657,9 +1111,6 @@ const App: React.FC = () => {
         console.error(e);
     }
 
-    // Insert into Supabase
-    // ADICIONADO: user_email e user_name para facilitar visualização no Admin
-    // Obs: O usuário precisa adicionar essas colunas na tabela reading_logs manualmente se quiser ver
     const { error } = await supabase.from('reading_logs').insert({
         user_id: user.id,
         user_email: user.email, 
@@ -675,7 +1126,6 @@ const App: React.FC = () => {
     setIsGeneratingAI(false);
 
     if (error) {
-        // Ignora erro se for apenas por falta de coluna de nome/email (comum em setups iniciais)
         if(error.message.includes("column") && (error.message.includes("user_email") || error.message.includes("user_name"))) {
              alert("Leitura salva, mas aviso ao Admin: Adicione as colunas 'user_name' e 'user_email' no Supabase para ver quem salvou.");
              await fetchData(); 
@@ -732,210 +1182,311 @@ const App: React.FC = () => {
       }
   };
 
-  // --- Admin Render Functions ---
+  // --- Render Functions ---
 
-  const renderAdminDashboard = () => {
-    // 1. Group by User
-    const usersData: Record<string, any[]> = {};
-    const userProfiles: Record<string, {name: string, email: string}> = {};
+  const renderAchievements = () => {
+    const categories: Record<string, string> = {
+        'Constancy': 'Constância e Ritmo',
+        'BibleBlocks': 'Blocos Bíblicos',
+        'Depth': 'Profundidade e Estudo',
+        'Intensity': 'Intensidade',
+        'Growth': 'Crescimento',
+        'Super': 'Super Medalhas'
+    };
 
-    adminLogs.forEach(log => {
-        if (!usersData[log.user_id]) usersData[log.user_id] = [];
-        usersData[log.user_id].push(log);
-
-        // Tenta pegar o perfil mais recente disponível nos logs (se a coluna existir)
-        if (!userProfiles[log.user_id] || log.timestamp > (userProfiles[log.user_id] as any).timestamp ) {
-             userProfiles[log.user_id] = {
-                 name: log.user_name || 'Desconhecido',
-                 email: log.user_email || 'Não registrado'
-             };
-        }
-    });
-
-    const totalUsers = Object.keys(usersData).length;
-    const totalChaptersGlobal = adminLogs.reduce((acc, log) => acc + log.chapters.length, 0);
-
-    // If a user is selected, show their details
-    if (selectedUserForAdmin) {
-        const userLogsRaw = usersData[selectedUserForAdmin] || [];
-        const profile = userProfiles[selectedUserForAdmin];
-        
-        // Process this user's data to fit into the standard components
-        const specificUserLogs = userLogsRaw.map((item: any) => ({
-            id: item.id,
-            date: item.date,
-            timestamp: item.timestamp,
-            bookId: item.book_id,
-            chapters: item.chapters,
-            aiReflection: item.ai_reflection,
-            userNotes: item.user_notes
-        })) as ReadingLog[];
-
-        const specificUserMap: ReadChaptersMap = {};
-        specificUserLogs.forEach(log => {
-            if (!specificUserMap[log.bookId]) specificUserMap[log.bookId] = [];
-            specificUserMap[log.bookId] = Array.from(new Set([...specificUserMap[log.bookId], ...log.chapters]));
-        });
-        
-        const specificTotalRead = Object.values(specificUserMap).reduce((acc, curr) => acc + curr.length, 0);
-        const specificStats = getAdvancedStats(specificUserLogs, specificUserMap, specificTotalRead);
-        const specificCompletion = (specificTotalRead / TOTAL_CHAPTERS_BIBLE) * 100;
-
-        return (
-            <div className="space-y-6 animate-fade-in">
-                <button 
-                    onClick={() => setSelectedUserForAdmin(null)}
-                    className="flex items-center gap-2 text-indigo-600 font-medium hover:underline"
-                >
-                    <ArrowLeft size={16} /> Voltar para Lista Geral
-                </button>
-
-                <div className="bg-slate-900 text-white p-6 rounded-xl shadow-lg border border-slate-700">
-                    <div className="flex justify-between items-start md:items-center flex-col md:flex-row gap-4">
-                        <div>
-                            <div className="flex items-center gap-2 mb-1">
-                                <UserCircle size={28} className="text-indigo-400" />
-                                <h2 className="text-2xl font-bold">{profile.name}</h2>
-                            </div>
-                            <div className="text-slate-400 text-sm space-y-1">
-                                <p className="flex items-center gap-2"><Mail size={14}/> {profile.email}</p>
-                                <p className="flex items-center gap-2 text-xs font-mono"><KeyRound size={14}/> ID: {selectedUserForAdmin}</p>
-                            </div>
+    return (
+        <div className="space-y-8 animate-fade-in pb-12">
+            <div className="bg-gradient-to-r from-yellow-500 to-amber-600 rounded-2xl p-8 text-white shadow-xl relative overflow-hidden">
+                <div className="relative z-10">
+                    <h2 className="text-3xl font-bold font-serif mb-2">Sala de Troféus</h2>
+                    <p className="text-yellow-100 max-w-lg mb-6">
+                        Desbloqueie conquistas mantendo sua constância e explorando as Escrituras. Transforme sua disciplina espiritual em marcos visuais.
+                    </p>
+                    <div className="flex items-center gap-4">
+                        <div className="bg-white/20 backdrop-blur-sm px-4 py-2 rounded-lg flex items-center gap-2">
+                             <Trophy size={20} className="text-yellow-200" />
+                             <span className="font-bold text-xl">{unlockedAchievements.size}</span>
+                             <span className="text-sm text-yellow-100 uppercase tracking-wide">Desbloqueadas</span>
                         </div>
-                        <div>
-                            <button 
-                                onClick={() => handleSendPasswordReset(profile.email)}
-                                className="bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors shadow-lg shadow-red-900/20"
-                            >
-                                <Send size={16} /> Enviar Redefinição de Senha
-                            </button>
+                        <div className="text-sm text-yellow-100">
+                             de {ACHIEVEMENTS.length} medalhas totais
                         </div>
                     </div>
                 </div>
-
-                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <StatCard 
-                        title="Progresso" 
-                        value={`${specificCompletion.toFixed(1)}%`} 
-                        subtext={`${specificTotalRead} caps`}
-                        icon={<BookOpen size={20} />} 
-                        highlight={true}
-                        colorClass="bg-slate-800"
-                    />
-                     <StatCard 
-                        title="Livros" 
-                        value={specificStats.completedBooks} 
-                        icon={<CheckCircle2 size={20} />} 
-                    />
-                    <StatCard 
-                        title="Recorde Dia" 
-                        value={specificStats.bestDay.count} 
-                        subtext={specificStats.bestDay.date}
-                        icon={<Trophy size={20} />} 
-                    />
-                     <StatCard 
-                        title="Última Leitura" 
-                        value={specificUserLogs.length > 0 ? new Date(specificUserLogs[0].date).toLocaleDateString('pt-BR') : 'N/A'} 
-                        icon={<Clock size={20} />} 
-                    />
-                </div>
-
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                    <h3 className="font-bold text-gray-800 mb-4">Progresso Visual</h3>
-                    <ProgressBar current={specificTotalRead} total={TOTAL_CHAPTERS_BIBLE} color="bg-slate-800" />
+                <div className="absolute right-0 bottom-0 opacity-10 transform translate-y-10 translate-x-10">
+                    <Trophy size={300} />
                 </div>
             </div>
-        );
-    }
 
-    // Overview List
-    return (
-        <div className="space-y-6 animate-fade-in">
-             <div className="bg-slate-900 p-8 rounded-2xl shadow-xl text-white">
-                <div className="flex items-center gap-3 mb-6">
-                    <ShieldAlert size={32} className="text-red-400" />
-                    <h1 className="text-3xl font-bold serif">Painel Master</h1>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700">
-                        <p className="text-slate-400 text-sm">Total de Usuários Ativos</p>
-                        <p className="text-3xl font-bold mt-1">{totalUsers}</p>
-                    </div>
-                    <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700">
-                        <p className="text-slate-400 text-sm">Total Capítulos Lidos (Global)</p>
-                        <p className="text-3xl font-bold mt-1 text-indigo-400">{totalChaptersGlobal}</p>
-                    </div>
-                     <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700">
-                        <p className="text-slate-400 text-sm">Média por Usuário</p>
-                        <p className="text-3xl font-bold mt-1">{totalUsers ? Math.round(totalChaptersGlobal / totalUsers) : 0}</p>
-                    </div>
-                </div>
-             </div>
+            {Object.entries(categories).map(([catKey, catTitle]) => {
+                const categoryAchievements = ACHIEVEMENTS.filter(a => a.category === catKey);
+                if (categoryAchievements.length === 0) return null;
 
-             <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                <div className="p-6 border-b border-gray-100 flex justify-between items-center">
-                    <h3 className="font-bold text-gray-800 flex items-center gap-2">
-                        <Users size={20} /> Usuários Registrados
-                    </h3>
-                    <span className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded">
-                        * Nomes/Emails aparecem se salvos no log
-                    </span>
-                </div>
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left">
-                        <thead className="bg-gray-50 text-gray-500 text-xs uppercase font-medium">
-                            <tr>
-                                <th className="px-6 py-4">Usuário</th>
-                                <th className="px-6 py-4 text-center">Caps. Lidos</th>
-                                <th className="px-6 py-4 text-center">Livros</th>
-                                <th className="px-6 py-4 text-center">Última Ativ.</th>
-                                <th className="px-6 py-4 text-right">Ação</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100">
-                            {Object.entries(usersData).map(([userId, logs]) => {
-                                const uniqueChapters = new Set();
-                                const uniqueBooks = new Set();
-                                logs.forEach(l => {
-                                    l.chapters.forEach((c: number) => uniqueChapters.add(`${l.book_id}-${c}`));
-                                    uniqueBooks.add(l.book_id);
-                                });
-                                const lastActive = logs.length > 0 ? new Date(Math.max(...logs.map(l => l.timestamp))) : new Date();
-                                const profile = userProfiles[userId];
-
+                return (
+                    <div key={catKey}>
+                        <h3 className="font-bold text-gray-800 dark:text-gray-200 text-lg mb-4 flex items-center gap-2 border-b border-gray-200 dark:border-gray-700 pb-2">
+                            {catKey === 'Super' ? <Sparkles size={20} className="text-yellow-500"/> : <Award size={20} className="text-gray-400"/>}
+                            {catTitle}
+                        </h3>
+                        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                            {categoryAchievements.map(ach => {
+                                const isUnlocked = unlockedAchievements.has(ach.id);
+                                const IconComponent = IconMap[ach.icon] || Award;
+                                
                                 return (
-                                    <tr key={userId} className="hover:bg-gray-50 transition-colors">
-                                        <td className="px-6 py-4">
-                                            <div className="flex flex-col">
-                                                <span className="font-bold text-gray-800 text-sm">{profile.name}</span>
-                                                <span className="text-xs text-gray-500">{profile.email}</span>
-                                                {user?.id === userId && <span className="mt-1 w-fit bg-green-100 text-green-700 px-1.5 py-0.5 rounded text-[10px] font-bold">VOCÊ</span>}
+                                    <div 
+                                        key={ach.id}
+                                        className={`
+                                            relative p-4 rounded-xl border transition-all duration-300 group
+                                            ${isUnlocked 
+                                                ? 'bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-700 shadow-sm hover:shadow-md hover:border-indigo-300 dark:hover:border-indigo-500' 
+                                                : 'bg-gray-50 dark:bg-slate-900 border-gray-100 dark:border-slate-800 opacity-60 grayscale hover:grayscale-0 hover:opacity-100'
+                                            }
+                                        `}
+                                    >
+                                        <div className={`
+                                            w-12 h-12 rounded-full flex items-center justify-center mb-3 mx-auto
+                                            ${isUnlocked ? ach.color : 'bg-gray-200 dark:bg-slate-700 text-gray-400'}
+                                            ${isUnlocked ? 'text-white shadow-lg' : ''}
+                                        `}>
+                                            <IconComponent size={24} />
+                                        </div>
+                                        
+                                        <div className="text-center">
+                                            <h4 className={`font-bold text-sm leading-tight mb-1 ${isUnlocked ? 'text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400'}`}>
+                                                {ach.title}
+                                            </h4>
+                                            <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2">
+                                                {ach.description}
+                                            </p>
+                                        </div>
+
+                                        {!isUnlocked && (
+                                            <div className="absolute top-2 right-2">
+                                                <Lock size={12} className="text-gray-400" />
                                             </div>
-                                        </td>
-                                        <td className="px-6 py-4 text-center font-bold text-gray-800">{uniqueChapters.size}</td>
-                                        <td className="px-6 py-4 text-center text-gray-600">{uniqueBooks.size}</td>
-                                        <td className="px-6 py-4 text-center text-sm text-gray-500">{lastActive.toLocaleDateString('pt-BR')}</td>
-                                        <td className="px-6 py-4 text-right">
-                                            <button 
-                                                onClick={() => setSelectedUserForAdmin(userId)}
-                                                className="text-indigo-600 hover:text-indigo-800 font-medium text-sm flex items-center justify-end gap-1 ml-auto"
-                                            >
-                                                <Search size={16} /> Detalhes
-                                            </button>
-                                        </td>
-                                    </tr>
+                                        )}
+                                        {isUnlocked && (
+                                             <div className="absolute top-2 right-2 bg-green-100 dark:bg-green-900 p-1 rounded-full">
+                                                <CheckCircle2 size={12} className="text-green-600 dark:text-green-400" />
+                                            </div>
+                                        )}
+                                    </div>
                                 );
                             })}
-                        </tbody>
-                    </table>
-                </div>
-             </div>
+                        </div>
+                    </div>
+                );
+            })}
         </div>
     );
   };
 
-  const renderDashboard = () => (
+  const renderAdminDashboard = () => {
+    // Group logs by user
+    const usersData: Record<string, { email: string, name: string, logs: any[], lastActive: number }> = {};
+    
+    adminLogs.forEach(log => {
+        const email = log.user_email || 'Unknown';
+        if (!usersData[email]) {
+            usersData[email] = {
+                email: email,
+                name: log.user_name || 'User',
+                logs: [],
+                lastActive: 0
+            };
+        }
+        usersData[email].logs.push(log);
+        if (log.timestamp > usersData[email].lastActive) {
+            usersData[email].lastActive = log.timestamp;
+        }
+    });
+
+    const usersList = Object.values(usersData).sort((a, b) => b.lastActive - a.lastActive);
+
+    return (
+        <div className="space-y-6 animate-fade-in">
+            <div className="flex justify-between items-center">
+                <h2 className="text-2xl font-bold text-gray-800 dark:text-white serif">Painel Administrativo</h2>
+                <div className="text-sm text-gray-500 dark:text-gray-400">
+                    Total de leituras registradas: <span className="font-bold text-indigo-600 dark:text-indigo-400">{adminLogs.length}</span>
+                </div>
+            </div>
+
+            {selectedUserForAdmin ? (
+                <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden">
+                    <div className="p-4 bg-gray-50 dark:bg-slate-950 border-b border-gray-100 dark:border-slate-800 flex justify-between items-center">
+                         <button 
+                            onClick={() => setSelectedUserForAdmin(null)}
+                            className="text-indigo-600 dark:text-indigo-400 font-medium flex items-center gap-1 hover:underline"
+                        >
+                            <ArrowLeft size={16} /> Voltar para lista
+                        </button>
+                        <h3 className="font-bold text-gray-700 dark:text-gray-300">{selectedUserForAdmin}</h3>
+                    </div>
+                    <div className="p-4">
+                        <div className="flex justify-between items-center mb-4">
+                            <h4 className="font-bold text-gray-600 dark:text-gray-400">Histórico de Leitura</h4>
+                             <button
+                                onClick={() => handleSendPasswordReset(selectedUserForAdmin!)}
+                                className="px-3 py-1 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-xs font-bold rounded hover:bg-red-100 dark:hover:bg-red-900/30 flex items-center gap-1"
+                            >
+                                <KeyRound size={14} /> Redefinir Senha
+                            </button>
+                        </div>
+                        <div className="space-y-2 max-h-96 overflow-y-auto">
+                            {usersData[selectedUserForAdmin]?.logs.sort((a, b) => b.timestamp - a.timestamp).map((log: any) => (
+                                <div key={log.id} className="p-3 bg-gray-50 dark:bg-slate-800 rounded border border-gray-100 dark:border-slate-700 text-sm flex justify-between items-center">
+                                    <div>
+                                        <span className="font-bold text-gray-700 dark:text-gray-200">{BIBLE_BOOKS.find(b => b.id === log.book_id)?.name || log.book_id}</span>
+                                        <span className="mx-2 text-gray-400">|</span>
+                                        <span className="text-gray-600 dark:text-gray-400">Caps. {log.chapters.join(', ')}</span>
+                                    </div>
+                                    <span className="text-gray-400 text-xs">
+                                        {new Date(log.date).toLocaleDateString()}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            ) : (
+                <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden">
+                     <div className="overflow-x-auto">
+                        <table className="w-full text-left text-sm">
+                            <thead className="bg-gray-50 dark:bg-slate-800 text-gray-500 dark:text-gray-400 font-bold">
+                                <tr>
+                                    <th className="p-4">Usuário</th>
+                                    <th className="p-4">Leituras</th>
+                                    <th className="p-4">Última Atividade</th>
+                                    <th className="p-4 text-right">Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
+                                {usersList.map((userData) => (
+                                    <tr key={userData.email} className="hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors text-gray-800 dark:text-gray-200">
+                                        <td className="p-4">
+                                            <div className="font-bold">{userData.name}</div>
+                                            <div className="text-xs text-gray-500 dark:text-gray-400">{userData.email}</div>
+                                        </td>
+                                        <td className="p-4">
+                                            <div className="font-bold text-indigo-600 dark:text-indigo-400">{userData.logs.length}</div>
+                                        </td>
+                                        <td className="p-4 text-gray-600 dark:text-gray-400">
+                                            {new Date(userData.lastActive).toLocaleDateString()} {new Date(userData.lastActive).toLocaleTimeString()}
+                                        </td>
+                                        <td className="p-4 text-right">
+                                            <button 
+                                                onClick={() => setSelectedUserForAdmin(userData.email)}
+                                                className="px-3 py-1.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-lg text-xs font-bold hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors"
+                                            >
+                                                Detalhes
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))}
+                                {usersList.length === 0 && (
+                                    <tr>
+                                        <td colSpan={4} className="p-8 text-center text-gray-400">
+                                            Nenhum dado encontrado.
+                                        </td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+  };
+
+  const renderDashboard = () => {
+    const planProgress = getPlanProgress;
+    
+    return (
     <div className="space-y-6 animate-fade-in">
+       
+       {/* PLAN SECTION */}
+       <div className="bg-gradient-to-r from-violet-600 to-indigo-600 rounded-2xl p-6 text-white shadow-xl relative overflow-hidden">
+          <div className="relative z-10">
+            <div className="flex justify-between items-start">
+              <div>
+                <h2 className="text-2xl font-bold font-serif mb-1">
+                  {userPlan ? userPlan.title : 'Comece seu Plano de Leitura'}
+                </h2>
+                <p className="text-indigo-100 text-sm max-w-lg mb-4">
+                  {userPlan 
+                    ? `Progresso: ${planProgress ? Math.floor(planProgress.percent) : 0}% • Meta: ${userPlan.targetDailyChapters} caps/dia` 
+                    : 'Escolha um guia para sua jornada bíblica e mantenha a constância.'}
+                </p>
+              </div>
+              <button 
+                onClick={() => setIsPlanModalOpen(true)}
+                className="bg-white/20 hover:bg-white/30 p-2 rounded-lg backdrop-blur-sm transition-colors"
+                title="Configurar Plano"
+              >
+                <Target size={20} />
+              </button>
+            </div>
+
+            {userPlan && planProgress ? (
+              <div className="bg-white/10 rounded-xl p-4 backdrop-blur-sm border border-white/10">
+                 <div className="flex justify-between items-center mb-3">
+                    <div className="flex items-center gap-2">
+                      <PlayCircle className="text-yellow-400" size={20} />
+                      <span className="font-bold text-sm uppercase tracking-wide">Próxima Leitura (GPS)</span>
+                    </div>
+                    <span className="text-xs bg-indigo-500/50 px-2 py-1 rounded">Auto-Paced</span>
+                 </div>
+                 
+                 {planProgress.nextBatch.length > 0 ? (
+                    <div className="flex items-center justify-between">
+                       <div>
+                         <span className="text-lg font-bold block">
+                           {BIBLE_BOOKS.find(b => b.id === planProgress.nextBatch[0].bookId)?.name} {planProgress.nextBatch.map(b => b.chapter).join(', ')}
+                         </span>
+                       </div>
+                       <button 
+                        onClick={() => handleQuickRead(planProgress.nextBatch)}
+                        className="bg-white text-indigo-600 px-4 py-2 rounded-lg font-bold text-sm hover:bg-indigo-50 transition-colors shadow-sm"
+                       >
+                         Ler Agora
+                       </button>
+                    </div>
+                 ) : (
+                   <div className="text-center py-2">
+                     <p className="font-bold text-lg">🎉 Você concluiu este plano!</p>
+                     <p className="text-sm opacity-80">Parabéns pela jornada.</p>
+                   </div>
+                 )}
+                 
+                 <div className="mt-4">
+                   <div className="flex justify-between text-xs mb-1 opacity-75">
+                     <span>{planProgress.readInScope} lidos</span>
+                     <span>{planProgress.totalInScope} total</span>
+                   </div>
+                   <div className="w-full bg-black/20 rounded-full h-1.5">
+                     <div className="bg-yellow-400 h-1.5 rounded-full transition-all duration-700" style={{width: `${planProgress.percent}%`}}></div>
+                   </div>
+                 </div>
+              </div>
+            ) : (
+              <button 
+                onClick={() => setIsPlanModalOpen(true)}
+                className="mt-2 bg-white text-indigo-600 px-6 py-3 rounded-xl font-bold text-sm hover:bg-indigo-50 transition-all shadow-lg flex items-center gap-2"
+              >
+                <Map size={18} /> Ativar GPS de Leitura
+              </button>
+            )}
+
+          </div>
+          
+          {/* Decoratice Circles */}
+          <div className="absolute -top-10 -right-10 w-40 h-40 bg-white/10 rounded-full blur-2xl"></div>
+          <div className="absolute bottom-0 left-10 w-20 h-20 bg-purple-500/20 rounded-full blur-xl"></div>
+       </div>
+
        {/* Primary Stats */}
        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard 
@@ -943,7 +1494,7 @@ const App: React.FC = () => {
           value={`${completionPercentage.toFixed(1)}%`} 
           subtext={`${totalReadCount} de ${TOTAL_CHAPTERS_BIBLE} capítulos`}
           icon={<BookOpen size={20} />} 
-          highlight={true}
+          highlight={false}
         />
         <StatCard 
           title="Ofensiva Atual" 
@@ -951,12 +1502,19 @@ const App: React.FC = () => {
           subtext={currentStreak > 0 ? "Mantenha o ritmo!" : "Comece hoje!"}
           icon={<Calendar size={20} />} 
         />
-        <StatCard 
-          title="Livros Concluídos" 
-          value={advancedStats.completedBooks} 
-          subtext={`Restam ${advancedStats.remainingBooks} livros`}
-          icon={<CheckCircle2 size={20} />} 
-        />
+        <div 
+            onClick={() => setActiveTab('achievements')}
+            className="cursor-pointer transition-transform hover:scale-105"
+        >
+            <StatCard 
+                title="Conquistas" 
+                value={unlockedAchievements.size} 
+                subtext={`de ${ACHIEVEMENTS.length} medalhas`}
+                icon={<Trophy size={20} />} 
+                highlight={true}
+                colorClass="bg-gradient-to-br from-yellow-500 to-amber-600"
+            />
+        </div>
          <StatCard 
           title="Estimativa de Fim" 
           value={advancedStats.projection.days > 0 ? `${advancedStats.projection.days} dias` : "N/A"} 
@@ -966,17 +1524,17 @@ const App: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-            <h3 className="text-lg font-bold text-gray-800 mb-4 serif">Ritmo Semanal</h3>
+        <div className="lg:col-span-2 bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800">
+            <h3 className="text-lg font-bold text-gray-800 dark:text-gray-200 mb-4 serif">Ritmo Semanal</h3>
             <div className="h-64 w-full">
                 <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="name" tick={{fontSize: 12}} />
-                    <YAxis allowDecimals={false} tick={{fontSize: 12}} />
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme === 'dark' ? '#334155' : '#e5e7eb'} />
+                    <XAxis dataKey="name" tick={{fontSize: 12, fill: theme === 'dark' ? '#94a3b8' : '#6b7280'}} />
+                    <YAxis allowDecimals={false} tick={{fontSize: 12, fill: theme === 'dark' ? '#94a3b8' : '#6b7280'}} />
                     <Tooltip 
-                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                    cursor={{fill: '#f3f4f6'}}
+                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', backgroundColor: theme === 'dark' ? '#1e293b' : '#fff', color: theme === 'dark' ? '#fff' : '#000' }}
+                    cursor={{fill: theme === 'dark' ? '#334155' : '#f3f4f6'}}
                     />
                     <Bar dataKey="chapters" fill="#4f46e5" radius={[4, 4, 0, 0]} name="Capítulos" />
                 </BarChart>
@@ -984,15 +1542,15 @@ const App: React.FC = () => {
             </div>
         </div>
          <div className="space-y-4">
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 h-full">
-                <h3 className="text-lg font-bold text-gray-800 mb-4 serif">Recorde Pessoal</h3>
+            <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 h-full">
+                <h3 className="text-lg font-bold text-gray-800 dark:text-gray-200 mb-4 serif">Recorde Pessoal</h3>
                 {advancedStats.bestDay.count > 0 ? (
                     <div className="text-center py-4">
-                        <div className="inline-flex p-4 bg-yellow-50 rounded-full text-yellow-600 mb-3">
+                        <div className="inline-flex p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-full text-yellow-600 dark:text-yellow-400 mb-3">
                             <Trophy size={32} />
                         </div>
-                        <h4 className="text-3xl font-bold text-gray-900">{advancedStats.bestDay.count}</h4>
-                        <p className="text-gray-500 font-medium">Capítulos em um dia</p>
+                        <h4 className="text-3xl font-bold text-gray-900 dark:text-white">{advancedStats.bestDay.count}</h4>
+                        <p className="text-gray-500 dark:text-gray-400 font-medium">Capítulos em um dia</p>
                         <p className="text-sm text-gray-400 mt-2">
                             {new Date(advancedStats.bestDay.date).toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' })}
                         </p>
@@ -1006,52 +1564,52 @@ const App: React.FC = () => {
         </div>
       </div>
        {/* Recent Chapters List */}
-       <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+       <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800">
           <div className="flex items-center gap-2 mb-4">
-            <History size={20} className="text-indigo-600" />
-            <h3 className="text-lg font-bold text-gray-800 serif">Últimos 10 Capítulos Lidos</h3>
+            <History size={20} className="text-indigo-600 dark:text-indigo-400" />
+            <h3 className="text-lg font-bold text-gray-800 dark:text-gray-200 serif">Últimos 10 Capítulos Lidos</h3>
           </div>
           
           {lastReadChaptersList.length > 0 ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
                 {lastReadChaptersList.map(item => (
-                    <div key={item.id} className="bg-gray-50 p-3 rounded-lg border border-gray-100 hover:border-indigo-300 transition-all group">
-                        <p className="text-xs text-gray-400 mb-1 group-hover:text-indigo-500 transition-colors">
+                    <div key={item.id} className="bg-gray-50 dark:bg-slate-800 p-3 rounded-lg border border-gray-100 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-500 transition-all group">
+                        <p className="text-xs text-gray-400 mb-1 group-hover:text-indigo-500 dark:group-hover:text-indigo-400 transition-colors">
                             {new Date(item.date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
                         </p>
                         <div className="flex items-baseline justify-between">
-                             <span className="font-bold text-gray-800 text-sm truncate mr-1" title={item.bookName}>{item.bookName}</span>
-                             <span className="text-indigo-600 font-bold text-lg">{item.chapter}</span>
+                             <span className="font-bold text-gray-800 dark:text-gray-200 text-sm truncate mr-1" title={item.bookName}>{item.bookName}</span>
+                             <span className="text-indigo-600 dark:text-indigo-400 font-bold text-lg">{item.chapter}</span>
                         </div>
                     </div>
                 ))}
             </div>
           ) : (
-             <div className="text-center py-6 text-gray-400 border border-dashed border-gray-200 rounded-lg">
+             <div className="text-center py-6 text-gray-400 border border-dashed border-gray-200 dark:border-slate-700 rounded-lg">
                 <p className="italic text-sm">Nenhuma leitura registrada ainda. Comece a ler para ver seu histórico recente aqui.</p>
              </div>
           )}
       </div>
 
-       <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+       <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800">
           <div className="flex justify-between items-end mb-2">
-            <h3 className="font-bold text-gray-700">Progresso da Bíblia</h3>
-            <span className="text-sm font-medium text-indigo-600">{totalReadCount} / {TOTAL_CHAPTERS_BIBLE}</span>
+            <h3 className="font-bold text-gray-700 dark:text-gray-200">Progresso da Bíblia</h3>
+            <span className="text-sm font-medium text-indigo-600 dark:text-indigo-400">{totalReadCount} / {TOTAL_CHAPTERS_BIBLE}</span>
           </div>
           <ProgressBar current={totalReadCount} total={TOTAL_CHAPTERS_BIBLE} />
       </div>
 
        {readingLogs.length > 0 && readingLogs[0].aiReflection && (
-        <div className="bg-gradient-to-r from-indigo-50 to-white border border-indigo-100 p-6 rounded-xl relative overflow-hidden">
+        <div className="bg-gradient-to-r from-indigo-50 to-white dark:from-slate-800 dark:to-slate-900 border border-indigo-100 dark:border-slate-700 p-6 rounded-xl relative overflow-hidden">
           <div className="relative z-10">
-            <div className="flex items-center gap-2 mb-2 text-indigo-700">
+            <div className="flex items-center gap-2 mb-2 text-indigo-700 dark:text-indigo-400">
               <Sparkles size={18} />
               <h3 className="font-bold">Insight Devocional Recente (Estilo Luiz Sayão)</h3>
             </div>
-            <p className="text-indigo-900 italic serif leading-relaxed">
+            <p className="text-indigo-900 dark:text-indigo-100 italic serif leading-relaxed">
               "{readingLogs[0].aiReflection}"
             </p>
-            <p className="text-xs text-indigo-500 mt-2 font-medium uppercase tracking-wide">
+            <p className="text-xs text-indigo-500 dark:text-indigo-400 mt-2 font-medium uppercase tracking-wide">
               Gerado por IA • {new Date(readingLogs[0].date).toLocaleDateString('pt-BR')}
             </p>
           </div>
@@ -1059,6 +1617,7 @@ const App: React.FC = () => {
       )}
     </div>
   );
+  };
 
   const renderTracker = () => {
     const currentBook = BIBLE_BOOKS.find(b => b.id === selectedBookId)!;
@@ -1066,9 +1625,9 @@ const App: React.FC = () => {
     return (
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 animate-fade-in">
         {/* Sidebar Book Selector */}
-        <div className="lg:col-span-1 bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col max-h-[600px]">
-          <div className="p-4 border-b border-gray-100 bg-gray-50">
-            <h3 className="font-bold text-gray-700">Livros</h3>
+        <div className="lg:col-span-1 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden flex flex-col max-h-[600px]">
+          <div className="p-4 border-b border-gray-100 dark:border-slate-800 bg-gray-50 dark:bg-slate-950">
+            <h3 className="font-bold text-gray-700 dark:text-gray-300">Livros</h3>
           </div>
           <div className="overflow-y-auto flex-1 p-2 space-y-1">
             {BIBLE_BOOKS.map(book => (
@@ -1080,8 +1639,8 @@ const App: React.FC = () => {
                 }}
                 className={`w-full text-left px-3 py-2 rounded-lg text-sm flex justify-between items-center transition-colors ${
                   selectedBookId === book.id 
-                    ? 'bg-indigo-50 text-indigo-700 font-medium' 
-                    : 'text-gray-600 hover:bg-gray-50'
+                    ? 'bg-indigo-50 dark:bg-slate-800 text-indigo-700 dark:text-indigo-300 font-medium' 
+                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-800'
                 }`}
               >
                 <span>{book.name}</span>
@@ -1095,14 +1654,31 @@ const App: React.FC = () => {
 
         {/* Main Content */}
         <div className="lg:col-span-3 space-y-6">
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-                <div className="flex justify-between items-center mb-6">
+            <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 p-6">
+                <div className="flex justify-between items-center mb-6 flex-wrap gap-4">
                     <div>
-                        <h2 className="text-2xl font-bold text-gray-800 serif">{currentBook.name}</h2>
-                        <p className="text-gray-500 text-sm mt-1">{currentBook.category} • {currentBook.testament === 'Old' ? 'Antigo Testamento' : 'Novo Testamento'}</p>
+                        <h2 className="text-2xl font-bold text-gray-800 dark:text-white serif">{currentBook.name}</h2>
+                        <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">{currentBook.category} • {currentBook.testament === 'Old' ? 'Antigo Testamento' : 'Novo Testamento'}</p>
                     </div>
-                    <div className="text-right">
-                        <span className="text-2xl font-bold text-indigo-600">
+                    
+                    {/* Toggle Mode */}
+                    <div className="flex bg-gray-100 dark:bg-slate-800 p-1 rounded-lg">
+                        <button 
+                            onClick={() => setTrackerMode('select')}
+                            className={`px-4 py-2 rounded-md text-sm font-medium transition-all flex items-center gap-2 ${trackerMode === 'select' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}`}
+                        >
+                            <CheckCircle2 size={16} /> Marcar
+                        </button>
+                        <button 
+                            onClick={() => setTrackerMode('read')}
+                            className={`px-4 py-2 rounded-md text-sm font-medium transition-all flex items-center gap-2 ${trackerMode === 'read' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}`}
+                        >
+                            <Eye size={16} /> Ler Texto
+                        </button>
+                    </div>
+
+                    <div className="text-right w-full sm:w-auto">
+                        <span className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">
                              {readChapters[currentBook.id]?.length || 0}
                              <span className="text-gray-400 text-lg font-normal">/{currentBook.chapters}</span>
                         </span>
@@ -1117,7 +1693,11 @@ const App: React.FC = () => {
                     />
                 </div>
                 
-                <h4 className="text-sm font-medium text-gray-700 mb-3 uppercase tracking-wider">Selecione os capítulos lidos hoje:</h4>
+                <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 uppercase tracking-wider flex items-center gap-2">
+                    {trackerMode === 'read' ? <Eye size={16} className="text-indigo-500" /> : <CheckCircle2 size={16} className="text-gray-400" />}
+                    {trackerMode === 'read' ? 'Clique para ler o capítulo' : 'Selecione para marcar como lido'}
+                </h4>
+                
                 <div className="grid grid-cols-5 sm:grid-cols-8 md:grid-cols-10 gap-2 mb-8">
                     {Array.from({ length: currentBook.chapters }, (_, i) => i + 1).map(chapter => {
                         const isReadGlobal = isChapterReadGlobal(currentBook.id, chapter);
@@ -1126,32 +1706,43 @@ const App: React.FC = () => {
                         return (
                             <button
                                 key={chapter}
-                                disabled={isReadGlobal}
+                                disabled={trackerMode === 'select' && isReadGlobal}
                                 onClick={() => handleToggleChapter(chapter)}
                                 className={`
-                                    h-10 w-full rounded-md font-medium text-sm flex items-center justify-center transition-all
-                                    ${isReadGlobal 
-                                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200' 
-                                        : isSelectedSession
-                                            ? 'bg-indigo-600 text-white shadow-md ring-2 ring-indigo-200 ring-offset-1'
-                                            : 'bg-white border border-gray-200 text-gray-700 hover:border-indigo-300 hover:text-indigo-600'
+                                    h-10 w-full rounded-md font-medium text-sm flex items-center justify-center transition-all relative
+                                    ${trackerMode === 'select' 
+                                        ? (isReadGlobal 
+                                            ? 'bg-gray-100 dark:bg-slate-800 text-gray-400 cursor-not-allowed border border-gray-200 dark:border-slate-700' 
+                                            : isSelectedSession
+                                                ? 'bg-indigo-600 text-white shadow-md ring-2 ring-indigo-200 dark:ring-indigo-900 ring-offset-1 dark:ring-offset-slate-900'
+                                                : 'bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-700 dark:text-gray-300 hover:border-indigo-300 dark:hover:border-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-400')
+                                        : (
+                                            'bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-700 dark:text-gray-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 hover:border-indigo-300 dark:hover:border-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-400 group'
+                                        )
                                     }
                                 `}
                             >
                                 {chapter}
+                                {trackerMode === 'read' && (
+                                    <span className="absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <div className="bg-indigo-500 text-white rounded-full p-0.5">
+                                            <Eye size={8} />
+                                        </div>
+                                    </span>
+                                )}
                             </button>
                         );
                     })}
                 </div>
 
-                <div className="flex justify-end pt-4 border-t border-gray-100">
+                <div className="flex justify-end pt-4 border-t border-gray-100 dark:border-slate-800">
                     <button
                         onClick={handleSaveSession}
                         disabled={sessionSelectedChapters.length === 0 || isGeneratingAI}
                         className={`
                             px-6 py-3 rounded-xl font-medium flex items-center gap-2 shadow-sm transition-all
                             ${sessionSelectedChapters.length === 0 || isGeneratingAI
-                                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                ? 'bg-gray-100 dark:bg-slate-800 text-gray-400 cursor-not-allowed'
                                 : 'bg-indigo-600 text-white hover:bg-indigo-700 hover:shadow-md'
                             }
                         `}
@@ -1177,14 +1768,14 @@ const App: React.FC = () => {
 
   const renderHistory = () => (
     <div className="max-w-3xl mx-auto space-y-6 animate-fade-in">
-        <h2 className="text-2xl font-bold text-gray-800 serif mb-4">Histórico de Leitura</h2>
+        <h2 className="text-2xl font-bold text-gray-800 dark:text-white serif mb-4">Histórico de Leitura</h2>
         {readingLogs.length === 0 ? (
-            <div className="text-center py-12 bg-white rounded-xl border border-dashed border-gray-300">
-                <Book className="mx-auto h-12 w-12 text-gray-300 mb-3" />
-                <p className="text-gray-500">Nenhuma leitura registrada ainda.</p>
+            <div className="text-center py-12 bg-white dark:bg-slate-900 rounded-xl border border-dashed border-gray-300 dark:border-slate-700">
+                <Book className="mx-auto h-12 w-12 text-gray-300 dark:text-gray-600 mb-3" />
+                <p className="text-gray-500 dark:text-gray-400">Nenhuma leitura registrada ainda.</p>
                 <button 
                     onClick={() => setActiveTab('tracker')}
-                    className="mt-4 text-indigo-600 font-medium hover:underline"
+                    className="mt-4 text-indigo-600 dark:text-indigo-400 font-medium hover:underline"
                 >
                     Começar a ler agora
                 </button>
@@ -1196,11 +1787,11 @@ const App: React.FC = () => {
                     const isEditing = editingNoteId === log.id;
 
                     return (
-                        <div key={log.id} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                            <div className="p-5 border-b border-gray-50">
+                        <div key={log.id} className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden">
+                            <div className="p-5 border-b border-gray-50 dark:border-slate-800">
                                 <div className="flex justify-between items-start mb-2">
                                     <div>
-                                        <h4 className="font-bold text-lg text-gray-800 flex items-center gap-2">
+                                        <h4 className="font-bold text-lg text-gray-800 dark:text-gray-200 flex items-center gap-2">
                                             {book?.name} <ChevronRight size={16} className="text-gray-300" /> Caps. {log.chapters.join(', ')}
                                         </h4>
                                         <p className="text-sm text-gray-400 flex items-center gap-1 mt-1">
@@ -1208,7 +1799,7 @@ const App: React.FC = () => {
                                             {new Date(log.date).toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
                                         </p>
                                     </div>
-                                    <div className="px-3 py-1 bg-green-50 text-green-700 text-xs font-medium rounded-full">
+                                    <div className="px-3 py-1 bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400 text-xs font-medium rounded-full">
                                         Concluído
                                     </div>
                                 </div>
@@ -1216,36 +1807,36 @@ const App: React.FC = () => {
 
                             {/* AI Reflection Section */}
                             {log.aiReflection && (
-                                <div className="px-5 py-4 bg-gray-50/50">
+                                <div className="px-5 py-4 bg-gray-50/50 dark:bg-slate-800/50">
                                     <div className="flex gap-3">
                                         <div className="mt-1">
-                                            <div className="bg-indigo-100 p-1.5 rounded-full text-indigo-600">
+                                            <div className="bg-indigo-100 dark:bg-indigo-900/50 p-1.5 rounded-full text-indigo-600 dark:text-indigo-400">
                                                 <Sparkles size={14} />
                                             </div>
                                         </div>
                                         <div>
-                                            <p className="text-xs font-bold text-indigo-600 uppercase tracking-wide mb-1">Insight Sayão (IA)</p>
-                                            <p className="text-sm text-gray-600 italic leading-relaxed">"{log.aiReflection}"</p>
+                                            <p className="text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wide mb-1">Insight Sayão (IA)</p>
+                                            <p className="text-sm text-gray-600 dark:text-gray-300 italic leading-relaxed">"{log.aiReflection}"</p>
                                         </div>
                                     </div>
                                 </div>
                             )}
 
                             {/* User Notes Section */}
-                            <div className="px-5 py-4 bg-yellow-50/30 border-t border-yellow-100/50">
+                            <div className="px-5 py-4 bg-yellow-50/30 dark:bg-yellow-900/10 border-t border-yellow-100/50 dark:border-yellow-900/20">
                                 <div className="flex gap-3">
                                     <div className="mt-1">
-                                        <div className="bg-yellow-100 p-1.5 rounded-full text-yellow-600">
+                                        <div className="bg-yellow-100 dark:bg-yellow-900/40 p-1.5 rounded-full text-yellow-600 dark:text-yellow-500">
                                             <PenLine size={14} />
                                         </div>
                                     </div>
                                     <div className="flex-1">
                                         <div className="flex justify-between items-center mb-1">
-                                            <p className="text-xs font-bold text-yellow-700 uppercase tracking-wide">Minhas Anotações</p>
+                                            <p className="text-xs font-bold text-yellow-700 dark:text-yellow-500 uppercase tracking-wide">Minhas Anotações</p>
                                             {!isEditing && (
                                                 <button 
                                                     onClick={() => startEditingNote(log)}
-                                                    className="text-xs text-gray-400 hover:text-indigo-600 flex items-center gap-1 underline"
+                                                    className="text-xs text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 flex items-center gap-1 underline"
                                                 >
                                                     Editar
                                                 </button>
@@ -1257,7 +1848,7 @@ const App: React.FC = () => {
                                                 <textarea
                                                     value={tempNoteContent}
                                                     onChange={(e) => setTempNoteContent(e.target.value)}
-                                                    className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-yellow-400 focus:border-transparent outline-none"
+                                                    className="w-full border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-white rounded-lg p-3 text-sm focus:ring-2 focus:ring-yellow-400 focus:border-transparent outline-none"
                                                     rows={3}
                                                     placeholder="Escreva o que Deus falou com você..."
                                                     autoFocus
@@ -1265,7 +1856,7 @@ const App: React.FC = () => {
                                                 <div className="flex justify-end gap-2 mt-2">
                                                     <button 
                                                         onClick={() => setEditingNoteId(null)}
-                                                        className="px-3 py-1 text-xs text-gray-500 hover:bg-gray-100 rounded"
+                                                        className="px-3 py-1 text-xs text-gray-500 hover:bg-gray-100 dark:hover:bg-slate-700 rounded"
                                                     >
                                                         Cancelar
                                                     </button>
@@ -1278,7 +1869,7 @@ const App: React.FC = () => {
                                                 </div>
                                             </div>
                                         ) : (
-                                            <p className="text-sm text-gray-700 whitespace-pre-wrap">
+                                            <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
                                                 {log.userNotes ? log.userNotes : <span className="text-gray-400 italic">Sem anotações pessoais. Clique em editar para adicionar.</span>}
                                             </p>
                                         )}
@@ -1293,17 +1884,12 @@ const App: React.FC = () => {
     </div>
   );
 
-  // --- Auth & Loading Screen ---
+  // --- Main Render ---
 
   if (loadingAuth) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-         <div className="text-center">
-             <div className="bg-indigo-600 p-3 rounded-xl inline-block mb-4 shadow-lg shadow-indigo-200">
-                <Book size={32} className="text-white" />
-             </div>
-             <p className="text-gray-500 font-medium animate-pulse">Carregando...</p>
-         </div>
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
+        <Loader2 className="animate-spin text-indigo-600" size={40} />
       </div>
     );
   }
@@ -1312,45 +1898,49 @@ const App: React.FC = () => {
     return <LoginScreen onLogin={setUser} />;
   }
 
-  // --- Main Render ---
-
   return (
-    <div className="min-h-screen bg-slate-50 text-gray-900 pb-20 md:pb-0">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-gray-900 dark:text-gray-100 pb-20 md:pb-0 transition-colors duration-200">
       {/* Top Navigation */}
-      <nav className="sticky top-0 z-50 bg-white border-b border-gray-200 shadow-sm">
+      <nav className="sticky top-0 z-50 bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-800 shadow-sm transition-colors">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16">
             <div className="flex items-center gap-2">
               <div className="bg-indigo-600 p-2 rounded-lg text-white">
                 <Book size={24} />
               </div>
-              <span className="font-bold text-xl tracking-tight text-gray-900 hidden sm:block">Bíblia Tracker</span>
+              <span className="font-bold text-xl tracking-tight text-gray-900 dark:text-white hidden sm:block">Bíblia Tracker</span>
             </div>
             
             {/* Desktop Nav */}
             <div className="hidden md:flex space-x-8">
               <button 
                 onClick={() => setActiveTab('dashboard')}
-                className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${activeTab === 'dashboard' ? 'border-indigo-500 text-gray-900' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}
+                className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${activeTab === 'dashboard' ? 'border-indigo-500 text-gray-900 dark:text-white' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300 dark:hover:border-slate-700'}`}
               >
                 Dashboard
               </button>
               <button 
                 onClick={() => setActiveTab('tracker')}
-                className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${activeTab === 'tracker' ? 'border-indigo-500 text-gray-900' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}
+                className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${activeTab === 'tracker' ? 'border-indigo-500 text-gray-900 dark:text-white' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300 dark:hover:border-slate-700'}`}
               >
                 Leitura
               </button>
               <button 
                 onClick={() => setActiveTab('history')}
-                className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${activeTab === 'history' ? 'border-indigo-500 text-gray-900' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}
+                className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${activeTab === 'history' ? 'border-indigo-500 text-gray-900 dark:text-white' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300 dark:hover:border-slate-700'}`}
               >
                 Histórico
+              </button>
+               <button 
+                onClick={() => setActiveTab('achievements')}
+                className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${activeTab === 'achievements' ? 'border-yellow-500 text-yellow-600 dark:text-yellow-400' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-yellow-600 dark:hover:text-yellow-400 hover:border-yellow-300 dark:hover:border-yellow-600'}`}
+              >
+                Conquistas
               </button>
               {isAdmin && (
                   <button 
                     onClick={() => setActiveTab('admin')}
-                    className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-bold ${activeTab === 'admin' ? 'border-red-500 text-red-600' : 'border-transparent text-red-400 hover:text-red-600 hover:border-red-300'}`}
+                    className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-bold ${activeTab === 'admin' ? 'border-red-500 text-red-600 dark:text-red-400' : 'border-transparent text-red-400 dark:text-red-500/70 hover:text-red-600 dark:hover:text-red-400 hover:border-red-300 dark:hover:border-red-500/50'}`}
                   >
                     Admin Master
                   </button>
@@ -1358,22 +1948,28 @@ const App: React.FC = () => {
             </div>
 
             {/* Desktop User Menu */}
-            <div className="hidden md:flex items-center gap-4 ml-4 border-l border-gray-200 pl-4">
+            <div className="hidden md:flex items-center gap-4 ml-4 border-l border-gray-200 dark:border-slate-800 pl-4">
+              <button onClick={toggleTheme} className="p-2 text-gray-400 hover:text-yellow-500 transition-colors" title="Alternar Tema">
+                 {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
+              </button>
               <div className="flex flex-col items-end">
                 <span className="text-xs text-gray-400">Logado como</span>
-                <span className="text-sm font-bold text-gray-700">{user.email.split('@')[0]}</span>
+                <span className="text-sm font-bold text-gray-700 dark:text-gray-300">{user.email.split('@')[0]}</span>
               </div>
-              <button onClick={() => setIsChangePasswordOpen(true)} className="p-2 text-gray-400 hover:text-indigo-600" title="Alterar Senha">
+              <button onClick={() => setIsChangePasswordOpen(true)} className="p-2 text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400" title="Alterar Senha">
                 <Lock size={20} />
               </button>
-              <button onClick={handleLogout} className="p-2 text-gray-400 hover:text-red-600" title="Sair">
+              <button onClick={handleLogout} className="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400" title="Sair">
                 <LogOut size={20} />
               </button>
             </div>
 
             {/* Mobile Menu Button */}
-            <div className="flex items-center md:hidden">
-              <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100">
+            <div className="flex items-center md:hidden gap-3">
+              <button onClick={toggleTheme} className="p-2 text-gray-400 hover:text-yellow-500 transition-colors">
+                 {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
+              </button>
+              <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="p-2 rounded-md text-gray-400 hover:text-gray-500 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-800">
                 {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
               </button>
             </div>
@@ -1382,17 +1978,17 @@ const App: React.FC = () => {
 
         {/* Mobile Nav Menu */}
         {mobileMenuOpen && (
-            <div className="md:hidden bg-white border-b border-gray-100 shadow-xl">
-                <div className="px-4 py-3 bg-indigo-50 border-b border-indigo-100 flex items-center justify-between">
+            <div className="md:hidden bg-white dark:bg-slate-900 border-b border-gray-100 dark:border-slate-800 shadow-xl">
+                <div className="px-4 py-3 bg-indigo-50 dark:bg-indigo-900/20 border-b border-indigo-100 dark:border-indigo-900/30 flex items-center justify-between">
                    <div className="flex items-center gap-2">
-                      <UserCircle size={20} className="text-indigo-600" />
-                      <span className="font-bold text-indigo-900 text-sm">{user.email.split('@')[0]}</span>
+                      <UserCircle size={20} className="text-indigo-600 dark:text-indigo-400" />
+                      <span className="font-bold text-indigo-900 dark:text-indigo-200 text-sm">{user.email.split('@')[0]}</span>
                    </div>
                 </div>
                 <div className="pt-2 pb-3 space-y-1">
                     <button
                         onClick={() => { setActiveTab('dashboard'); setMobileMenuOpen(false); }}
-                        className={`block pl-3 pr-4 py-3 border-l-4 text-base font-medium w-full text-left ${activeTab === 'dashboard' ? 'bg-indigo-50 border-indigo-500 text-indigo-700' : 'border-transparent text-gray-500 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-700'}`}
+                        className={`block pl-3 pr-4 py-3 border-l-4 text-base font-medium w-full text-left ${activeTab === 'dashboard' ? 'bg-indigo-50 dark:bg-indigo-900/10 border-indigo-500 text-indigo-700 dark:text-indigo-300' : 'border-transparent text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-800 hover:border-gray-300 dark:hover:border-slate-600 hover:text-gray-700 dark:hover:text-gray-200'}`}
                     >
                         <div className="flex items-center gap-3">
                            <LayoutDashboard size={18} /> Dashboard
@@ -1400,7 +1996,7 @@ const App: React.FC = () => {
                     </button>
                     <button
                         onClick={() => { setActiveTab('tracker'); setMobileMenuOpen(false); }}
-                        className={`block pl-3 pr-4 py-3 border-l-4 text-base font-medium w-full text-left ${activeTab === 'tracker' ? 'bg-indigo-50 border-indigo-500 text-indigo-700' : 'border-transparent text-gray-500 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-700'}`}
+                        className={`block pl-3 pr-4 py-3 border-l-4 text-base font-medium w-full text-left ${activeTab === 'tracker' ? 'bg-indigo-50 dark:bg-indigo-900/10 border-indigo-500 text-indigo-700 dark:text-indigo-300' : 'border-transparent text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-800 hover:border-gray-300 dark:hover:border-slate-600 hover:text-gray-700 dark:hover:text-gray-200'}`}
                     >
                          <div className="flex items-center gap-3">
                            <BookOpen size={18} /> Leitura
@@ -1408,16 +2004,24 @@ const App: React.FC = () => {
                     </button>
                     <button
                         onClick={() => { setActiveTab('history'); setMobileMenuOpen(false); }}
-                        className={`block pl-3 pr-4 py-3 border-l-4 text-base font-medium w-full text-left ${activeTab === 'history' ? 'bg-indigo-50 border-indigo-500 text-indigo-700' : 'border-transparent text-gray-500 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-700'}`}
+                        className={`block pl-3 pr-4 py-3 border-l-4 text-base font-medium w-full text-left ${activeTab === 'history' ? 'bg-indigo-50 dark:bg-indigo-900/10 border-indigo-500 text-indigo-700 dark:text-indigo-300' : 'border-transparent text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-800 hover:border-gray-300 dark:hover:border-slate-600 hover:text-gray-700 dark:hover:text-gray-200'}`}
                     >
                          <div className="flex items-center gap-3">
                            <History size={18} /> Histórico
                         </div>
                     </button>
+                    <button
+                        onClick={() => { setActiveTab('achievements'); setMobileMenuOpen(false); }}
+                        className={`block pl-3 pr-4 py-3 border-l-4 text-base font-medium w-full text-left ${activeTab === 'achievements' ? 'bg-yellow-50 dark:bg-yellow-900/10 border-yellow-500 text-yellow-700 dark:text-yellow-300' : 'border-transparent text-gray-500 dark:text-gray-400 hover:bg-yellow-50 dark:hover:bg-yellow-900/20 hover:border-yellow-300 dark:hover:border-yellow-700 hover:text-yellow-700 dark:hover:text-yellow-300'}`}
+                    >
+                         <div className="flex items-center gap-3">
+                           <Trophy size={18} /> Conquistas
+                        </div>
+                    </button>
                     {isAdmin && (
                         <button
                             onClick={() => { setActiveTab('admin'); setMobileMenuOpen(false); }}
-                            className={`block pl-3 pr-4 py-3 border-l-4 text-base font-medium w-full text-left ${activeTab === 'admin' ? 'bg-red-50 border-red-500 text-red-700' : 'border-transparent text-red-400 hover:bg-red-50 hover:border-red-300 hover:text-red-700'}`}
+                            className={`block pl-3 pr-4 py-3 border-l-4 text-base font-medium w-full text-left ${activeTab === 'admin' ? 'bg-red-50 dark:bg-red-900/10 border-red-500 text-red-700 dark:text-red-300' : 'border-transparent text-red-400 dark:text-red-400/70 hover:bg-red-50 dark:hover:bg-red-900/20 hover:border-red-300 dark:hover:border-red-700 hover:text-red-700 dark:hover:text-red-300'}`}
                         >
                              <div className="flex items-center gap-3">
                                <ShieldAlert size={18} /> Admin Master
@@ -1425,10 +2029,10 @@ const App: React.FC = () => {
                         </button>
                     )}
                     
-                    <div className="border-t border-gray-100 my-2 pt-2">
+                    <div className="border-t border-gray-100 dark:border-slate-800 my-2 pt-2">
                       <button
                           onClick={() => { setIsChangePasswordOpen(true); setMobileMenuOpen(false); }}
-                          className="block pl-3 pr-4 py-3 text-base font-medium w-full text-left text-gray-500 hover:bg-gray-50 hover:text-indigo-600"
+                          className="block pl-3 pr-4 py-3 text-base font-medium w-full text-left text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-800 hover:text-indigo-600 dark:hover:text-indigo-400"
                       >
                            <div className="flex items-center gap-3">
                              <Lock size={18} /> Alterar Senha
@@ -1436,7 +2040,7 @@ const App: React.FC = () => {
                       </button>
                       <button
                           onClick={handleLogout}
-                          className="block pl-3 pr-4 py-3 text-base font-medium w-full text-left text-red-500 hover:bg-red-50"
+                          className="block pl-3 pr-4 py-3 text-base font-medium w-full text-left text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
                       >
                            <div className="flex items-center gap-3">
                              <LogOut size={18} /> Sair
@@ -1453,12 +2057,13 @@ const App: React.FC = () => {
         {activeTab === 'dashboard' && renderDashboard()}
         {activeTab === 'tracker' && renderTracker()}
         {activeTab === 'history' && renderHistory()}
+        {activeTab === 'achievements' && renderAchievements()}
         {activeTab === 'admin' && isAdmin && renderAdminDashboard()}
       </main>
 
       {/* Mobile Sticky Action Button (Only on Tracker) */}
-      {activeTab === 'tracker' && sessionSelectedChapters.length > 0 && (
-          <div className="fixed bottom-4 left-4 right-4 md:hidden">
+      {activeTab === 'tracker' && sessionSelectedChapters.length > 0 && trackerMode === 'select' && (
+          <div className="fixed bottom-4 left-4 right-4 md:hidden z-40">
                <button
                     onClick={handleSaveSession}
                     disabled={isGeneratingAI}
@@ -1473,6 +2078,25 @@ const App: React.FC = () => {
       {/* Change Password Modal */}
       {isChangePasswordOpen && user && (
         <ChangePasswordModal onClose={() => setIsChangePasswordOpen(false)} />
+      )}
+
+      {/* Plan Selection Modal */}
+      {isPlanModalOpen && (
+        <PlanSelectionModal 
+          onClose={() => setIsPlanModalOpen(false)} 
+          onSelectPlan={handleSelectPlan} 
+        />
+      )}
+
+      {/* Bible Reader Modal */}
+      {readingChapter && (
+        <BibleReaderModal 
+            book={readingChapter.book} 
+            chapter={readingChapter.chapter} 
+            onClose={() => setReadingChapter(null)}
+            onPrev={readingChapter.chapter > 1 ? () => setReadingChapter({ ...readingChapter, chapter: readingChapter.chapter - 1 }) : undefined}
+            onNext={readingChapter.chapter < readingChapter.book.chapters ? () => setReadingChapter({ ...readingChapter, chapter: readingChapter.chapter + 1 }) : undefined}
+        />
       )}
     </div>
   );
