@@ -57,7 +57,9 @@ import {
   Trees,
   Shield,
   Eye,
-  ChevronLeft
+  ChevronLeft,
+  TrendingUp,
+  Activity
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -66,7 +68,12 @@ import {
   YAxis, 
   CartesianGrid, 
   Tooltip, 
-  ResponsiveContainer 
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  PieChart,
+  Pie,
+  Cell
 } from 'recharts';
 import { BIBLE_BOOKS, TOTAL_CHAPTERS_BIBLE, ADMIN_EMAILS, PLANS_CONFIG, ACHIEVEMENTS } from './constants';
 import { BibleBook, ReadChaptersMap, ReadingLog, UserPlan, PlanType, Achievement } from './types';
@@ -1075,7 +1082,9 @@ const App: React.FC = () => {
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
+    setUser(null); // Fix: Force state update immediately
     setMobileMenuOpen(false);
+    setActiveTab('dashboard');
   };
 
   const handleToggleChapter = (chapter: number) => {
@@ -1283,9 +1292,26 @@ const App: React.FC = () => {
   };
 
   const renderAdminDashboard = () => {
-    // Group logs by user
+    // Process Data
     const usersData: Record<string, { email: string, name: string, logs: any[], lastActive: number }> = {};
-    
+    const bookPopularity: Record<string, number> = {};
+    let totalChaptersReadGlobal = 0;
+    const activityMap: Record<string, number> = {};
+
+    // Helper to format date for chart
+    const getDaysArray = (days: number) => {
+        const arr = [];
+        for(let i=days-1; i>=0; i--) {
+            const d = new Date();
+            d.setDate(d.getDate() - i);
+            arr.push(d.toISOString().split('T')[0]);
+        }
+        return arr;
+    };
+    const last14Days = getDaysArray(14);
+    last14Days.forEach(d => activityMap[d] = 0);
+
+    // Aggregate Logs
     adminLogs.forEach(log => {
         const email = log.user_email || 'Unknown';
         if (!usersData[email]) {
@@ -1300,49 +1326,87 @@ const App: React.FC = () => {
         if (log.timestamp > usersData[email].lastActive) {
             usersData[email].lastActive = log.timestamp;
         }
+
+        // Global Stats
+        totalChaptersReadGlobal += log.chapters.length;
+        
+        // Book Pop
+        bookPopularity[log.book_id] = (bookPopularity[log.book_id] || 0) + log.chapters.length;
+
+        // Activity Trend
+        if (activityMap[log.date] !== undefined) {
+            activityMap[log.date] += log.chapters.length;
+        }
     });
 
     const usersList = Object.values(usersData).sort((a, b) => b.lastActive - a.lastActive);
+    const chartData = last14Days.map(date => ({
+        name: new Date(date).toLocaleDateString('pt-BR', {day: '2-digit', month: '2-digit'}),
+        chapters: activityMap[date] || 0
+    }));
+
+    // KPI Calculations
+    const totalUsers = Object.keys(usersData).length;
+    const activeToday = adminLogs.filter(l => l.date === new Date().toISOString().split('T')[0]).map(l => l.user_email).filter((v, i, a) => a.indexOf(v) === i).length;
+    const mostPopularBookId = Object.keys(bookPopularity).reduce((a, b) => bookPopularity[a] > bookPopularity[b] ? a : b, 'GEN');
+    const mostPopularBookName = BIBLE_BOOKS.find(b => b.id === mostPopularBookId)?.name || mostPopularBookId;
+
+    // Recent Feed
+    const recentLogs = [...adminLogs].sort((a, b) => b.timestamp - a.timestamp).slice(0, 10);
 
     return (
-        <div className="space-y-6 animate-fade-in">
-            <div className="flex justify-between items-center">
-                <h2 className="text-2xl font-bold text-gray-800 dark:text-white serif">Painel Administrativo</h2>
-                <div className="text-sm text-gray-500 dark:text-gray-400">
-                    Total de leituras registradas: <span className="font-bold text-indigo-600 dark:text-indigo-400">{adminLogs.length}</span>
+        <div className="space-y-8 animate-fade-in">
+            {/* Header */}
+            <div className="flex justify-between items-center border-b border-gray-200 dark:border-slate-800 pb-4">
+                <div>
+                    <h2 className="text-2xl font-bold text-gray-800 dark:text-white serif flex items-center gap-2">
+                        <ShieldAlert className="text-red-500" /> Painel de Controle Master
+                    </h2>
+                    <p className="text-gray-500 dark:text-gray-400 text-sm">Visão geral do ecossistema do Bíblia Tracker.</p>
+                </div>
+                <div className="text-xs bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 px-3 py-1 rounded-full font-bold">
+                    Admin Mode
                 </div>
             </div>
 
             {selectedUserForAdmin ? (
+                // User Detail View (Existing logic preserved but wrapped nicely)
                 <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden">
                     <div className="p-4 bg-gray-50 dark:bg-slate-950 border-b border-gray-100 dark:border-slate-800 flex justify-between items-center">
                          <button 
                             onClick={() => setSelectedUserForAdmin(null)}
                             className="text-indigo-600 dark:text-indigo-400 font-medium flex items-center gap-1 hover:underline"
                         >
-                            <ArrowLeft size={16} /> Voltar para lista
+                            <ArrowLeft size={16} /> Voltar para Dashboard
                         </button>
                         <h3 className="font-bold text-gray-700 dark:text-gray-300">{selectedUserForAdmin}</h3>
                     </div>
-                    <div className="p-4">
-                        <div className="flex justify-between items-center mb-4">
-                            <h4 className="font-bold text-gray-600 dark:text-gray-400">Histórico de Leitura</h4>
+                    <div className="p-6">
+                        <div className="flex justify-between items-center mb-6">
+                            <div>
+                                <h4 className="font-bold text-xl text-gray-800 dark:text-white">Histórico de Leitura</h4>
+                                <p className="text-sm text-gray-500">Log completo de atividades.</p>
+                            </div>
                              <button
                                 onClick={() => handleSendPasswordReset(selectedUserForAdmin!)}
-                                className="px-3 py-1 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-xs font-bold rounded hover:bg-red-100 dark:hover:bg-red-900/30 flex items-center gap-1"
+                                className="px-4 py-2 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm font-bold rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 flex items-center gap-2 transition-colors border border-red-100 dark:border-red-900/30"
                             >
-                                <KeyRound size={14} /> Redefinir Senha
+                                <KeyRound size={16} /> Enviar Redefinição de Senha
                             </button>
                         </div>
-                        <div className="space-y-2 max-h-96 overflow-y-auto">
+                        <div className="space-y-2 max-h-[600px] overflow-y-auto pr-2">
                             {usersData[selectedUserForAdmin]?.logs.sort((a, b) => b.timestamp - a.timestamp).map((log: any) => (
-                                <div key={log.id} className="p-3 bg-gray-50 dark:bg-slate-800 rounded border border-gray-100 dark:border-slate-700 text-sm flex justify-between items-center">
-                                    <div>
-                                        <span className="font-bold text-gray-700 dark:text-gray-200">{BIBLE_BOOKS.find(b => b.id === log.book_id)?.name || log.book_id}</span>
-                                        <span className="mx-2 text-gray-400">|</span>
-                                        <span className="text-gray-600 dark:text-gray-400">Caps. {log.chapters.join(', ')}</span>
+                                <div key={log.id} className="p-4 bg-gray-50 dark:bg-slate-800/50 rounded-xl border border-gray-100 dark:border-slate-700 flex justify-between items-center hover:bg-white dark:hover:bg-slate-800 transition-colors shadow-sm">
+                                    <div className="flex items-center gap-3">
+                                        <div className="bg-indigo-100 dark:bg-indigo-900/30 p-2 rounded-lg text-indigo-600 dark:text-indigo-400">
+                                            <BookOpen size={18} />
+                                        </div>
+                                        <div>
+                                            <span className="font-bold text-gray-700 dark:text-gray-200 block">{BIBLE_BOOKS.find(b => b.id === log.book_id)?.name || log.book_id}</span>
+                                            <span className="text-xs text-gray-500 dark:text-gray-400">Capítulos: {log.chapters.join(', ')}</span>
+                                        </div>
                                     </div>
-                                    <span className="text-gray-400 text-xs">
+                                    <span className="text-gray-400 text-xs font-medium bg-white dark:bg-slate-900 px-2 py-1 rounded border border-gray-100 dark:border-slate-700">
                                         {new Date(log.date).toLocaleDateString()}
                                     </span>
                                 </div>
@@ -1351,51 +1415,151 @@ const App: React.FC = () => {
                     </div>
                 </div>
             ) : (
-                <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden">
-                     <div className="overflow-x-auto">
-                        <table className="w-full text-left text-sm">
-                            <thead className="bg-gray-50 dark:bg-slate-800 text-gray-500 dark:text-gray-400 font-bold">
-                                <tr>
-                                    <th className="p-4">Usuário</th>
-                                    <th className="p-4">Leituras</th>
-                                    <th className="p-4">Última Atividade</th>
-                                    <th className="p-4 text-right">Ações</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
-                                {usersList.map((userData) => (
-                                    <tr key={userData.email} className="hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors text-gray-800 dark:text-gray-200">
-                                        <td className="p-4">
-                                            <div className="font-bold">{userData.name}</div>
-                                            <div className="text-xs text-gray-500 dark:text-gray-400">{userData.email}</div>
-                                        </td>
-                                        <td className="p-4">
-                                            <div className="font-bold text-indigo-600 dark:text-indigo-400">{userData.logs.length}</div>
-                                        </td>
-                                        <td className="p-4 text-gray-600 dark:text-gray-400">
-                                            {new Date(userData.lastActive).toLocaleDateString()} {new Date(userData.lastActive).toLocaleTimeString()}
-                                        </td>
-                                        <td className="p-4 text-right">
-                                            <button 
-                                                onClick={() => setSelectedUserForAdmin(userData.email)}
-                                                className="px-3 py-1.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-lg text-xs font-bold hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors"
-                                            >
-                                                Detalhes
-                                            </button>
-                                        </td>
-                                    </tr>
-                                ))}
-                                {usersList.length === 0 && (
-                                    <tr>
-                                        <td colSpan={4} className="p-8 text-center text-gray-400">
-                                            Nenhum dado encontrado.
-                                        </td>
-                                    </tr>
-                                )}
-                            </tbody>
-                        </table>
+                <>
+                    {/* KPI Cards Grid */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <StatCard 
+                            title="Total de Usuários" 
+                            value={totalUsers} 
+                            icon={<Users size={20} />} 
+                            colorClass="bg-blue-600"
+                            highlight={true}
+                        />
+                        <StatCard 
+                            title="Leituras Globais" 
+                            value={totalChaptersReadGlobal} 
+                            subtext="capítulos lidos na plataforma"
+                            icon={<BookOpen size={20} />} 
+                        />
+                        <StatCard 
+                            title="Ativos Hoje" 
+                            value={activeToday} 
+                            subtext="usuários lendo agora"
+                            icon={<Activity size={20} />} 
+                            colorClass="bg-green-600"
+                            highlight={activeToday > 0}
+                        />
+                        <StatCard 
+                            title="Livro + Popular" 
+                            value={mostPopularBookName} 
+                            subtext={`${bookPopularity[mostPopularBookId] || 0} capítulos lidos`}
+                            icon={<TrendingUp size={20} />} 
+                        />
                     </div>
-                </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        {/* Chart Section */}
+                        <div className="lg:col-span-2 bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800">
+                            <h3 className="text-lg font-bold text-gray-800 dark:text-gray-200 mb-6 flex items-center gap-2">
+                                <TrendingUp size={18} className="text-indigo-500" /> Volume de Leitura (14 Dias)
+                            </h3>
+                            <div className="h-72 w-full">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <AreaChart data={chartData}>
+                                        <defs>
+                                            <linearGradient id="colorChapters" x1="0" y1="0" x2="0" y2="1">
+                                                <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/>
+                                                <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                                            </linearGradient>
+                                        </defs>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme === 'dark' ? '#334155' : '#e5e7eb'} />
+                                        <XAxis dataKey="name" tick={{fontSize: 12, fill: theme === 'dark' ? '#94a3b8' : '#6b7280'}} />
+                                        <YAxis allowDecimals={false} tick={{fontSize: 12, fill: theme === 'dark' ? '#94a3b8' : '#6b7280'}} />
+                                        <Tooltip 
+                                            contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', backgroundColor: theme === 'dark' ? '#1e293b' : '#fff', color: theme === 'dark' ? '#fff' : '#000' }}
+                                        />
+                                        <Area type="monotone" dataKey="chapters" stroke="#6366f1" fillOpacity={1} fill="url(#colorChapters)" />
+                                    </AreaChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </div>
+
+                        {/* Recent Activity Feed */}
+                        <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden flex flex-col">
+                            <div className="p-4 border-b border-gray-100 dark:border-slate-800 bg-gray-50 dark:bg-slate-950">
+                                <h3 className="font-bold text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                                    <Activity size={18} className="text-orange-500" /> Feed Recente
+                                </h3>
+                            </div>
+                            <div className="flex-1 overflow-y-auto p-4 space-y-3 max-h-[350px]">
+                                {recentLogs.map((log, idx) => (
+                                    <div key={idx} className="flex gap-3 items-start pb-3 border-b border-gray-50 dark:border-slate-800 last:border-0 last:pb-0">
+                                        <div className="mt-1 min-w-[32px] h-8 bg-indigo-50 dark:bg-slate-800 rounded-full flex items-center justify-center text-xs font-bold text-indigo-600 dark:text-indigo-400">
+                                            {log.user_name ? log.user_name.charAt(0).toUpperCase() : 'U'}
+                                        </div>
+                                        <div>
+                                            <p className="text-sm text-gray-800 dark:text-gray-200 leading-tight">
+                                                <span className="font-bold">{log.user_name || log.user_email?.split('@')[0]}</span> leu <span className="font-bold text-indigo-600 dark:text-indigo-400">{BIBLE_BOOKS.find(b => b.id === log.book_id)?.name}</span>
+                                            </p>
+                                            <p className="text-xs text-gray-400 mt-1">
+                                                Caps. {log.chapters.join(', ')} • {new Date(log.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                            </p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Users Table */}
+                    <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden">
+                         <div className="p-6 border-b border-gray-100 dark:border-slate-800 flex justify-between items-center">
+                            <h3 className="font-bold text-lg text-gray-800 dark:text-gray-200">Gerenciamento de Usuários</h3>
+                         </div>
+                         <div className="overflow-x-auto">
+                            <table className="w-full text-left text-sm">
+                                <thead className="bg-gray-50 dark:bg-slate-950 text-gray-500 dark:text-gray-400 font-bold uppercase tracking-wider text-xs">
+                                    <tr>
+                                        <th className="p-4">Usuário</th>
+                                        <th className="p-4">Total Lido</th>
+                                        <th className="p-4">Última Atividade</th>
+                                        <th className="p-4 text-right">Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
+                                    {usersList.map((userData) => (
+                                        <tr key={userData.email} className="hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors text-gray-800 dark:text-gray-200">
+                                            <td className="p-4">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-8 h-8 bg-gray-100 dark:bg-slate-800 rounded-full flex items-center justify-center text-xs font-bold text-gray-500">
+                                                        {userData.name.charAt(0)}
+                                                    </div>
+                                                    <div>
+                                                        <div className="font-bold">{userData.name}</div>
+                                                        <div className="text-xs text-gray-500 dark:text-gray-400">{userData.email}</div>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td className="p-4">
+                                                <div className="font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20 inline-block px-2 py-1 rounded">
+                                                    {userData.logs.reduce((acc: number, curr: any) => acc + curr.chapters.length, 0)} caps
+                                                </div>
+                                            </td>
+                                            <td className="p-4 text-gray-600 dark:text-gray-400 text-xs">
+                                                {new Date(userData.lastActive).toLocaleDateString()} <span className="text-gray-400">•</span> {new Date(userData.lastActive).toLocaleTimeString()}
+                                            </td>
+                                            <td className="p-4 text-right">
+                                                <button 
+                                                    onClick={() => setSelectedUserForAdmin(userData.email)}
+                                                    className="px-3 py-1.5 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-600 dark:text-gray-300 rounded-lg text-xs font-bold hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors shadow-sm"
+                                                >
+                                                    Detalhes
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                    {usersList.length === 0 && (
+                                        <tr>
+                                            <td colSpan={4} className="p-8 text-center text-gray-400">
+                                                Nenhum dado encontrado.
+                                            </td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </>
             )}
         </div>
     );
