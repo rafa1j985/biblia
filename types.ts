@@ -26,14 +26,14 @@ export interface UserStats {
   lastReadDate: string | null;
 }
 
-export type PlanType = 'BIBLE_1Y' | 'NT_3M' | 'OT_9M' | 'CHRONO_1Y';
+export type PlanType = 'BIBLE_1Y' | 'BIBLE_6M' | 'BIBLE_3M' | 'NT_3M' | 'OT_9M' | 'CHRONO_1Y' | 'PAUL_3C';
 
 export interface UserPlan {
   id: PlanType;
   title: string;
   startDate: string;
   targetDailyChapters: number;
-  scope: 'ALL' | 'OLD' | 'NEW';
+  scope: 'ALL' | 'OLD' | 'NEW' | 'PAUL';
 }
 
 export interface Achievement {
@@ -54,4 +54,11 @@ export interface SupportTicket {
   message: string;
   created_at: string;
   status: 'open' | 'resolved';
+}
+
+export interface UserProfile {
+  id: string; // matches auth.users id
+  email: string;
+  full_name: string;
+  avatar_url?: string;
 }

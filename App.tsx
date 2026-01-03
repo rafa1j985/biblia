@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   Book, 
@@ -63,7 +62,10 @@ import {
   LifeBuoy,
   MessageSquare,
   AlertTriangle,
-  Inbox
+  Inbox,
+  Check,
+  XCircle,
+  Filter
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -80,7 +82,7 @@ import {
   Cell
 } from 'recharts';
 import { BIBLE_BOOKS, TOTAL_CHAPTERS_BIBLE, ADMIN_EMAILS, PLANS_CONFIG, ACHIEVEMENTS } from './constants';
-import { BibleBook, ReadChaptersMap, ReadingLog, UserPlan, PlanType, Achievement, SupportTicket } from './types';
+import { BibleBook, ReadChaptersMap, ReadingLog, UserPlan, PlanType, Achievement, SupportTicket, UserProfile } from './types';
 import { generateDevotional } from './services/geminiService';
 import { supabase } from './services/supabase';
 
@@ -108,6 +110,9 @@ const BIBLE_API_MAPPING: Record<string, string> = {
   '1PE': '1 Peter', '2PE': '2 Peter', '1JN': '1 John', '2JN': '2 John', '3JN': '3 John',
   'JUD': 'Jude', 'REV': 'Revelation'
 };
+
+// Constants specific for logic
+const PAULINE_BOOKS = ['ROM', '1CO', '2CO', 'GAL', 'EPH', 'PHP', 'COL', '1TH', '2TH', '1TI', '2TI', 'TIT', 'PHM'];
 
 // --- Helper Components ---
 
@@ -609,10 +614,13 @@ const App: React.FC = () => {
   const [selectedUserForAdmin, setSelectedUserForAdmin] = useState<string | null>(null);
   const [adminView, setAdminView] = useState<'overview' | 'messages'>('overview');
   const [supportTickets, setSupportTickets] = useState<SupportTicket[]>([]);
+  const [updatingTicketId, setUpdatingTicketId] = useState<string | null>(null);
+  const [messageFilter, setMessageFilter] = useState<'all' | 'open' | 'resolved'>('all');
 
   // Support State (User)
   const [supportForm, setSupportForm] = useState({ type: 'question', message: '' });
   const [isSubmittingSupport, setIsSubmittingSupport] = useState(false);
+  const [supportSuccess, setSupportSuccess] = useState(false);
 
   // Ephemeral State
   const [sessionSelectedChapters, setSessionSelectedChapters] = useState<number[]>([]);
@@ -641,19 +649,66 @@ const App: React.FC = () => {
 
   // --- Check Auth on Mount ---
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      setLoadingAuth(false);
-    });
+    // Handle initial session check with error handling for refresh token
+    const initAuth = async () => {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        
+        if (error) {
+           // Explicitly check for refresh token errors and sign out if found
+           if (error.message.includes('Refresh Token') || error.message.includes('refresh_token')) {
+             console.warn("Invalid refresh token, signing out to clear state.");
+             await supabase.auth.signOut();
+             setUser(null);
+           } else {
+             console.error("Session check error:", error.message);
+           }
+        }
+        
+        setUser(session?.user ?? null);
+      } catch (err) {
+        console.error("Unexpected auth initialization error:", err);
+        setUser(null);
+      } finally {
+        setLoadingAuth(false);
+      }
+    };
+
+    initAuth();
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      const e = event as string;
+      if (e === 'SIGNED_OUT' || e === 'USER_DELETED') {
+        setUser(null);
+      } else if (e === 'TOKEN_REFRESH_REVOKED') {
+        console.warn("Token revoked, signing out");
+        await supabase.auth.signOut();
+        setUser(null);
+      } else {
+        setUser(session?.user ?? null);
+      }
     });
 
     return () => subscription.unsubscribe();
   }, []);
+
+  // --- Auto-create Profile on Auth ---
+  useEffect(() => {
+    if (user) {
+        const createProfile = async () => {
+            const { error } = await supabase.from('profiles').upsert({
+                id: user.id,
+                email: user.email,
+                full_name: user.user_metadata?.full_name || user.email.split('@')[0],
+                avatar_url: ''
+            });
+            if (error) console.error("Error syncing profile:", error);
+        };
+        createProfile();
+    }
+  }, [user]);
 
   // --- Load Plan from LocalStorage ---
   useEffect(() => {
@@ -684,47 +739,12 @@ const App: React.FC = () => {
     setIsLoadingData(false);
   }, [user]);
 
-  // --- Fetch Admin Data (All Logs) ---
-  const fetchAdminData = useCallback(async () => {
-    if (!user || !isAdmin) return;
-    setIsAdminLoading(true);
-
-    // Fetch Reading Logs
-    const { data: logsData, error: logsError } = await supabase
-      .from('reading_logs')
-      .select('*')
-      .order('timestamp', { ascending: false });
-
-    if (logsError) {
-      console.error('Erro ao buscar logs administrativos:', logsError);
-    } else if (logsData) {
-      setAdminLogs(logsData);
-    }
-
-    // Fetch Support Tickets
-    const { data: ticketsData, error: ticketsError } = await supabase
-      .from('support_tickets')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (ticketsError) {
-       // Silent fail or create table alert handled elsewhere ideally
-       console.log('Tabela support_tickets pode não existir ou erro de permissão.');
-    } else if (ticketsData) {
-       setSupportTickets(ticketsData as SupportTicket[]);
-    }
-
-    setIsAdminLoading(false);
-  }, [user, isAdmin]);
-
   useEffect(() => {
     if (user) {
       fetchData();
-      if (isAdmin) {
-          fetchAdminData();
-      }
+      if (isAdmin) fetchAdminData();
     }
-  }, [user, fetchData, fetchAdminData, isAdmin]);
+  }, [user, fetchData, isAdmin]);
 
   // --- Helpers ---
   const processLogs = (data: any[], setLogs: Function, setMap: Function) => {
@@ -747,35 +767,35 @@ const App: React.FC = () => {
       setMap(map);
   };
 
-  // --- Achievement Logic ---
-  const unlockedAchievements = useMemo(() => {
-    if (!readingLogs.length) return new Set<number>();
+  // --- Achievement Logic (Reusable) ---
+  const calculateAchievements = (logs: ReadingLog[], chaptersMap: ReadChaptersMap) => {
+    if (!logs.length) return new Set<number>();
 
     const unlocked = new Set<number>();
     
     // 1. Time Based
-    const hasEarlyMorning = readingLogs.some(l => {
+    const hasEarlyMorning = logs.some(l => {
         const hour = new Date(l.timestamp).getHours();
         return hour >= 0 && hour < 6;
     });
-    if (hasEarlyMorning) unlocked.add(1); // Leitor da Madrugada
+    if (hasEarlyMorning) unlocked.add(1); 
 
-    const hasMorning = readingLogs.some(l => {
+    const hasMorning = logs.some(l => {
         const hour = new Date(l.timestamp).getHours();
         return hour >= 0 && hour < 8;
     });
-    if (hasMorning) unlocked.add(2); // Primeiras Horas
+    if (hasMorning) unlocked.add(2); 
 
-    const hasLateNight = readingLogs.some(l => {
+    const hasLateNight = logs.some(l => {
         const hour = new Date(l.timestamp).getHours();
         return hour >= 22;
     });
-    if (hasLateNight) unlocked.add(3); // Última Vigília
+    if (hasLateNight) unlocked.add(3);
 
     // 2. Streak Based
     let maxStreak = 0;
-    if (readingLogs.length > 0) {
-        const sortedDates = [...new Set(readingLogs.map(l => l.date))].sort();
+    if (logs.length > 0) {
+        const sortedDates = [...new Set(logs.map(l => l.date))].sort();
         let currentRun = 1;
         for (let i = 1; i < sortedDates.length; i++) {
             const prev = new Date(sortedDates[i-1]);
@@ -793,89 +813,34 @@ const App: React.FC = () => {
     if (maxStreak >= 30) unlocked.add(6);
     if (maxStreak >= 365) unlocked.add(8);
 
-    // 3. Return Logic (Gap > 7 days then read)
-    const sortedDates = [...new Set(readingLogs.map(l => l.date))].sort();
-    for(let i = 1; i < sortedDates.length; i++) {
-        const prev = new Date(sortedDates[i-1]);
-        const curr = new Date(sortedDates[i]);
-        const diffDays = Math.round((curr.getTime() - prev.getTime()) / (1000 * 60 * 60 * 24));
-        if (diffDays > 7) {
-            unlocked.add(10); // Retorno Honesto
-            break;
-        }
-    }
-
-    // 4. Book Completion Logic
-    const isBookComplete = (id: string) => (readChapters[id]?.length || 0) === BIBLE_BOOKS.find(b => b.id === id)?.chapters;
-    
-    // Pentateuch (GEN, EXO, LEV, NUM, DEU)
+    // 4. Book Completion
+    const isBookComplete = (id: string) => (chaptersMap[id]?.length || 0) === BIBLE_BOOKS.find(b => b.id === id)?.chapters;
     if (['GEN', 'EXO', 'LEV', 'NUM', 'DEU'].every(isBookComplete)) unlocked.add(21);
-    
-    // History OT
-    const historyOT = ['JOS', 'JDG', 'RUT', '1SA', '2SA', '1KI', '2KI', '1CH', '2CH', 'EZR', 'NEH', 'EST'];
-    if (historyOT.every(isBookComplete)) unlocked.add(22);
-
-    // Poetic
-    const poetic = ['JOB', 'PSA', 'PRO', 'ECC', 'SNG'];
-    if (poetic.every(isBookComplete)) unlocked.add(23);
-
-    // Gospels
     if (['MAT', 'MRK', 'LUK', 'JHN'].every(isBookComplete)) unlocked.add(26);
-
-    // Acts
     if (isBookComplete('ACT')) unlocked.add(27);
-
-    // Paul
-    const paul = ['ROM', '1CO', '2CO', 'GAL', 'EPH', 'PHP', 'COL', '1TH', '2TH', '1TI', '2TI', 'TIT', 'PHM'];
-    if (paul.every(isBookComplete)) unlocked.add(28);
-
-    // Revelation
-    if (isBookComplete('REV')) unlocked.add(30);
-
-    // Single Books
-    if (isBookComplete('PRO')) unlocked.add(37);
-    if (isBookComplete('PSA')) unlocked.add(38);
-
-    // Full Testaments
-    const allOT = BIBLE_BOOKS.filter(b => b.testament === 'Old').every(b => isBookComplete(b.id));
-    if (allOT) unlocked.add(31);
-
-    const allNT = BIBLE_BOOKS.filter(b => b.testament === 'New').every(b => isBookComplete(b.id));
-    if (allNT) unlocked.add(32);
-
-    if (allOT && allNT) unlocked.add(33);
-
+    
     // 5. Intensity
-    const maxChaptersInDay = readingLogs.reduce((max, log) => Math.max(max, log.chapters.length), 0);
+    const maxChaptersInDay = logs.reduce((max, log) => Math.max(max, log.chapters.length), 0);
     if (maxChaptersInDay >= 10) unlocked.add(72);
 
-    const weekendRead = readingLogs.some(l => {
-        const d = new Date(l.date);
-        return d.getDay() === 0 || d.getDay() === 6; // Sunday or Saturday
-    });
-    if (weekendRead) unlocked.add(75);
-
-    // 6. Depth
-    const hasNote = readingLogs.some(l => l.userNotes && l.userNotes.length > 5);
-    if (hasNote) unlocked.add(55); // Pensador Bíblico
-
-    const notesCount = readingLogs.filter(l => l.userNotes && l.userNotes.length > 0).length;
-    if (notesCount >= 10) unlocked.add(56);
-
-    // 7. Growth
-    if (readingLogs.length > 0) {
-        const firstLog = readingLogs[readingLogs.length - 1]; // sorted desc
-        const now = new Date();
-        const diffTime = Math.abs(now.getTime() - new Date(firstLog.date).getTime());
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
-        
-        if (diffDays >= 7) unlocked.add(92);
-        if (diffDays >= 30) unlocked.add(93);
-    }
-
     return unlocked;
+  };
 
-  }, [readingLogs, readChapters]);
+  const unlockedAchievements = useMemo(() => calculateAchievements(readingLogs, readChapters), [readingLogs, readChapters]);
+
+  // --- Admin Logic ---
+  const fetchAdminData = useCallback(async () => {
+    if (!user || !isAdmin) return;
+    setIsAdminLoading(true);
+
+    const { data: logsData } = await supabase.from('reading_logs').select('*').order('timestamp', { ascending: false });
+    if (logsData) setAdminLogs(logsData);
+
+    const { data: ticketsData } = await supabase.from('support_tickets').select('*').order('created_at', { ascending: false });
+    if (ticketsData) setSupportTickets(ticketsData as SupportTicket[]);
+
+    setIsAdminLoading(false);
+  }, [user, isAdmin]);
 
   // --- Plan Logic Helpers ---
   
@@ -884,13 +849,16 @@ const App: React.FC = () => {
     
     const config = PLANS_CONFIG[planId];
     
-    // Calculate total chapters in scope
     let totalChaptersInScope = 0;
     BIBLE_BOOKS.forEach(book => {
-      if (config.scope === 'ALL' || 
-         (config.scope === 'OLD' && book.testament === 'Old') ||
-         (config.scope === 'NEW' && book.testament === 'New')) {
-        totalChaptersInScope += book.chapters;
+      if (config.scope === 'PAUL') {
+          if (PAULINE_BOOKS.includes(book.id)) totalChaptersInScope += book.chapters;
+      } else {
+          if (config.scope === 'ALL' || 
+             (config.scope === 'OLD' && book.testament === 'Old') ||
+             (config.scope === 'NEW' && book.testament === 'New')) {
+            totalChaptersInScope += book.chapters;
+          }
       }
     });
 
@@ -918,22 +886,25 @@ const App: React.FC = () => {
     const flatList: {bookId: string, chapter: number}[] = [];
 
     BIBLE_BOOKS.forEach(book => {
-      const isInScope = userPlan.scope === 'ALL' || 
+      let isInScope = false;
+      if (userPlan.scope === 'PAUL') {
+          isInScope = PAULINE_BOOKS.includes(book.id);
+      } else {
+          isInScope = userPlan.scope === 'ALL' || 
                        (userPlan.scope === 'OLD' && book.testament === 'Old') ||
                        (userPlan.scope === 'NEW' && book.testament === 'New');
+      }
       
       if (isInScope) {
         totalInScope += book.chapters;
         const readCount = readChapters[book.id]?.length || 0;
         readInScope += readCount;
-        
         for(let i = 1; i <= book.chapters; i++) {
           flatList.push({bookId: book.id, chapter: i});
         }
       }
     });
 
-    // Find Next Reading Logic (Self-Paced)
     const unreadChapters = flatList.filter(item => {
       const isRead = readChapters[item.bookId]?.includes(item.chapter);
       return !isRead;
@@ -952,16 +923,14 @@ const App: React.FC = () => {
 
   const handleQuickRead = (batch: {bookId: string, chapter: number}[]) => {
     if (batch.length === 0) return;
-    
     const targetBook = batch[0].bookId;
     const targetChapters = batch.filter(b => b.bookId === targetBook).map(b => b.chapter);
-
     setSelectedBookId(targetBook);
     setSessionSelectedChapters(targetChapters);
     setActiveTab('tracker');
   };
 
-  // --- Computed Stats (Current User) ---
+  // --- Computed Stats ---
   const totalReadCount = useMemo(() => {
     let count = 0;
     Object.values(readChapters).forEach((chapters) => {
@@ -1194,6 +1163,7 @@ const App: React.FC = () => {
 
   const handleSupportSubmit = async (e: React.FormEvent) => {
       e.preventDefault();
+      setSupportSuccess(false);
       if (!supportForm.message.trim() || !user) return;
 
       setIsSubmittingSupport(true);
@@ -1216,8 +1186,10 @@ const App: React.FC = () => {
               alert('Erro ao enviar mensagem: ' + error.message);
           }
       } else {
-          alert('Mensagem enviada com sucesso! A equipe analisará em breve.');
+          setSupportSuccess(true);
           setSupportForm({ ...supportForm, message: '' });
+          // Hide success message after 5 seconds
+          setTimeout(() => setSupportSuccess(false), 5000);
       }
   };
 
@@ -1243,6 +1215,28 @@ const App: React.FC = () => {
       }
   };
 
+  const handleToggleTicketStatus = async (ticketId: string, currentStatus: string | undefined | null) => {
+      setUpdatingTicketId(ticketId);
+      // Treat null/undefined as 'open'. Switch logic: if 'resolved' -> 'open', else -> 'resolved'
+      const newStatus = currentStatus === 'resolved' ? 'open' : 'resolved';
+      
+      // Optimistic update
+      setSupportTickets(prev => prev.map(t => t.id === ticketId ? { ...t, status: newStatus } : t));
+      
+      const { error } = await supabase
+          .from('support_tickets')
+          .update({ status: newStatus })
+          .eq('id', ticketId);
+          
+      setUpdatingTicketId(null);
+
+      if (error) {
+          console.error("Error updating ticket:", error);
+          alert('Erro ao atualizar status: ' + error.message);
+          if(isAdmin) fetchAdminData();
+      }
+  };
+
   // --- Render Functions ---
 
   const renderSupport = () => (
@@ -1254,6 +1248,19 @@ const App: React.FC = () => {
               <h2 className="text-2xl font-bold text-gray-900 dark:text-white serif">Como podemos ajudar?</h2>
               <p className="text-gray-500 dark:text-gray-400 mt-2">Encontrou um bug, tem uma ideia ou precisa de ajuda? Escreva para nós.</p>
           </div>
+
+          {supportSuccess && (
+             <div className="bg-green-100 dark:bg-green-900/30 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-300 px-4 py-3 rounded-xl flex items-center gap-3 animate-fade-in shadow-sm">
+                 <CheckCircle2 size={24} className="flex-shrink-0" />
+                 <div>
+                     <p className="font-bold text-sm">Mensagem enviada com sucesso!</p>
+                     <p className="text-xs opacity-90">Nossa equipe analisará sua solicitação em breve.</p>
+                 </div>
+                 <button onClick={() => setSupportSuccess(false)} className="ml-auto text-green-600 dark:text-green-400 hover:bg-green-200 dark:hover:bg-green-800/50 p-1 rounded-full">
+                     <X size={16} />
+                 </button>
+             </div>
+          )}
 
           <form onSubmit={handleSupportSubmit} className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 space-y-4">
               <div>
@@ -1461,6 +1468,14 @@ const App: React.FC = () => {
     // Recent Feed
     const recentLogs = [...adminLogs].sort((a, b) => b.timestamp - a.timestamp).slice(0, 10);
 
+    // Filter Logic for Messages
+    const filteredTickets = supportTickets.filter(t => {
+       if (messageFilter === 'all') return true;
+       // Trata nulos/undefined como 'open'
+       const status = t.status || 'open';
+       return status === messageFilter;
+    });
+
     return (
         <div className="space-y-8 animate-fade-in">
             {/* Header */}
@@ -1483,7 +1498,7 @@ const App: React.FC = () => {
                         onClick={() => setAdminView('messages')}
                         className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-1 ${adminView === 'messages' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'}`}
                     >
-                        Mensagens <span className="bg-red-500 text-white px-1.5 rounded-full text-[10px]">{supportTickets.filter(t => t.status === 'open').length}</span>
+                        Mensagens <span className="bg-red-500 text-white px-1.5 rounded-full text-[10px]">{supportTickets.filter(t => (t.status || 'open') === 'open').length}</span>
                     </button>
                 </div>
             </div>
@@ -1495,14 +1510,37 @@ const App: React.FC = () => {
                             <Inbox size={20} /> Central de Suporte
                         </h3>
                     </div>
-                    {supportTickets.length === 0 ? (
+                    
+                    {/* Filtros */}
+                    <div className="px-6 py-4 border-b border-gray-100 dark:border-slate-800 flex gap-2 overflow-x-auto">
+                        <button 
+                            onClick={() => setMessageFilter('all')}
+                            className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors border ${messageFilter === 'all' ? 'bg-gray-800 text-white border-gray-800 dark:bg-white dark:text-slate-900' : 'bg-transparent text-gray-500 border-gray-200 dark:border-slate-700 dark:text-gray-400'}`}
+                        >
+                            Todas
+                        </button>
+                        <button 
+                            onClick={() => setMessageFilter('open')}
+                            className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors border ${messageFilter === 'open' ? 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800' : 'bg-transparent text-gray-500 border-gray-200 dark:border-slate-700 dark:text-gray-400'}`}
+                        >
+                            Pendentes
+                        </button>
+                        <button 
+                            onClick={() => setMessageFilter('resolved')}
+                            className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors border ${messageFilter === 'resolved' ? 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-800' : 'bg-transparent text-gray-500 border-gray-200 dark:border-slate-700 dark:text-gray-400'}`}
+                        >
+                            Resolvidas
+                        </button>
+                    </div>
+
+                    {filteredTickets.length === 0 ? (
                         <div className="p-12 text-center text-gray-400">
-                            <p>Nenhuma mensagem recebida ainda.</p>
+                            <p>Nenhuma mensagem encontrada com este filtro.</p>
                         </div>
                     ) : (
                         <div className="divide-y divide-gray-100 dark:divide-slate-800">
-                            {supportTickets.map((ticket) => (
-                                <div key={ticket.id} className="p-6 hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors">
+                            {filteredTickets.map((ticket) => (
+                                <div key={ticket.id} className={`p-6 transition-colors ${ticket.status === 'resolved' ? 'bg-gray-50/80 dark:bg-slate-800/30' : 'hover:bg-gray-50 dark:hover:bg-slate-800/50'}`}>
                                     <div className="flex justify-between items-start mb-2">
                                         <div className="flex items-center gap-2">
                                             <span className={`px-2 py-1 rounded text-xs font-bold uppercase ${
@@ -1512,13 +1550,38 @@ const App: React.FC = () => {
                                             }`}>
                                                 {ticket.type === 'problem' ? 'Problema' : ticket.type === 'suggestion' ? 'Sugestão' : 'Dúvida'}
                                             </span>
+                                            {ticket.status === 'resolved' && (
+                                                <span className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 px-2 py-1 rounded text-xs font-bold uppercase flex items-center gap-1">
+                                                    <CheckCircle2 size={12} /> Resolvido
+                                                </span>
+                                            )}
                                             <span className="text-xs text-gray-400">{new Date(ticket.created_at).toLocaleDateString()} {new Date(ticket.created_at).toLocaleTimeString()}</span>
                                         </div>
-                                        <div className="text-xs font-bold text-gray-500">
-                                            {ticket.user_email}
+                                        <div className="flex items-center gap-4">
+                                            <div className="text-xs font-bold text-gray-500">
+                                                {ticket.user_email}
+                                            </div>
+                                            <button 
+                                                onClick={() => handleToggleTicketStatus(ticket.id, ticket.status)}
+                                                disabled={updatingTicketId === ticket.id}
+                                                className={`p-2 rounded-lg transition-colors flex items-center gap-2 text-xs font-bold ${
+                                                    (ticket.status || 'open') === 'open' 
+                                                    ? 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:text-indigo-400 dark:hover:bg-indigo-900/40' 
+                                                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-slate-800 dark:text-gray-400'
+                                                }`}
+                                                title={(ticket.status || 'open') === 'open' ? "Marcar como Resolvido" : "Reabrir"}
+                                            >
+                                                {updatingTicketId === ticket.id ? (
+                                                    <Loader2 size={14} className="animate-spin" />
+                                                ) : (ticket.status || 'open') === 'open' ? (
+                                                    <><Check size={14} /> Marcar como Lida</>
+                                                ) : (
+                                                    <><RefreshCcw size={14} /> Reabrir</>
+                                                )}
+                                            </button>
                                         </div>
                                     </div>
-                                    <p className="text-gray-800 dark:text-gray-200 text-sm whitespace-pre-wrap">{ticket.message}</p>
+                                    <p className={`text-sm whitespace-pre-wrap ${(ticket.status || 'open') === 'resolved' ? 'text-gray-400 dark:text-gray-500' : 'text-gray-800 dark:text-gray-200'}`}>{ticket.message}</p>
                                 </div>
                             ))}
                         </div>
@@ -1663,56 +1726,38 @@ const App: React.FC = () => {
                          </div>
                          <div className="overflow-x-auto">
                             <table className="w-full text-left text-sm">
-                                <thead className="bg-gray-50 dark:bg-slate-950 text-gray-500 dark:text-gray-400 font-bold uppercase tracking-wider text-xs">
-                                    <tr>
-                                        <th className="p-4">Usuário</th>
-                                        <th className="p-4">Total Lido</th>
-                                        <th className="p-4">Última Atividade</th>
-                                        <th className="p-4 text-right">Ações</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
-                                    {usersList.map((userData) => (
-                                        <tr key={userData.email} className="hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors text-gray-800 dark:text-gray-200">
-                                            <td className="p-4">
-                                                <div className="flex items-center gap-3">
-                                                    <div className="w-8 h-8 bg-gray-100 dark:bg-slate-800 rounded-full flex items-center justify-center text-xs font-bold text-gray-500">
-                                                        {userData.name.charAt(0)}
-                                                    </div>
-                                                    <div>
-                                                        <div className="font-bold">{userData.name}</div>
-                                                        <div className="text-xs text-gray-500 dark:text-gray-400">{userData.email}</div>
-                                                    </div>
-                                                </div>
-                                            </td>
-                                            <td className="p-4">
-                                                <div className="font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20 inline-block px-2 py-1 rounded">
-                                                    {userData.logs.reduce((acc: number, curr: any) => acc + curr.chapters.length, 0)} caps
-                                                </div>
-                                            </td>
-                                            <td className="p-4 text-gray-600 dark:text-gray-400 text-xs">
-                                                {new Date(userData.lastActive).toLocaleDateString()} <span className="text-gray-400">•</span> {new Date(userData.lastActive).toLocaleTimeString()}
-                                            </td>
-                                            <td className="p-4 text-right">
-                                                <button 
-                                                    onClick={() => setSelectedUserForAdmin(userData.email)}
-                                                    className="px-3 py-1.5 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-600 dark:text-gray-300 rounded-lg text-xs font-bold hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors shadow-sm"
-                                                >
-                                                    Detalhes
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                    {usersList.length === 0 && (
-                                        <tr>
-                                            <td colSpan={4} className="p-8 text-center text-gray-400">
-                                                Nenhum dado encontrado.
-                                            </td>
-                                        </tr>
-                                    )}
-                                </tbody>
+                              <thead className="bg-gray-50 dark:bg-slate-950 text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-slate-800">
+                                <tr>
+                                  <th className="p-4 font-bold">Usuário</th>
+                                  <th className="p-4 font-bold hidden md:table-cell">Email</th>
+                                  <th className="p-4 font-bold hidden sm:table-cell">Última Atividade</th>
+                                  <th className="p-4 font-bold text-right">Ações</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
+                                {usersList.map((u) => (
+                                  <tr key={u.email} className="hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors">
+                                    <td className="p-4">
+                                      <div className="font-bold text-gray-900 dark:text-white">{u.name}</div>
+                                      <div className="text-xs text-gray-500 md:hidden">{u.email}</div>
+                                    </td>
+                                    <td className="p-4 text-gray-600 dark:text-gray-300 hidden md:table-cell">{u.email}</td>
+                                    <td className="p-4 text-gray-600 dark:text-gray-300 hidden sm:table-cell">
+                                       {u.lastActive ? new Date(u.lastActive).toLocaleDateString() : 'N/A'}
+                                    </td>
+                                    <td className="p-4 text-right">
+                                      <button 
+                                        onClick={() => setSelectedUserForAdmin(u.email)}
+                                        className="text-indigo-600 dark:text-indigo-400 font-bold text-xs hover:underline"
+                                      >
+                                        Detalhes
+                                      </button>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
                             </table>
-                        </div>
+                         </div>
                     </div>
                 </>
             )}
@@ -1720,719 +1765,432 @@ const App: React.FC = () => {
     );
   };
 
-  const renderDashboard = () => {
-    const planProgress = getPlanProgress;
-    
-    return (
-    <div className="space-y-6 animate-fade-in">
-       
-       {/* PLAN SECTION */}
-       <div className="bg-gradient-to-r from-violet-600 to-indigo-600 rounded-2xl p-6 text-white shadow-xl relative overflow-hidden">
-          <div className="relative z-10">
-            <div className="flex justify-between items-start">
-              <div>
-                <h2 className="text-2xl font-bold font-serif mb-1">
-                  {userPlan ? userPlan.title : 'Comece seu Plano de Leitura'}
-                </h2>
-                <p className="text-indigo-100 text-sm max-w-lg mb-4">
-                  {userPlan 
-                    ? `Progresso: ${planProgress ? Math.floor(planProgress.percent) : 0}% • Meta: ${userPlan.targetDailyChapters} caps/dia` 
-                    : 'Escolha um guia para sua jornada bíblica e mantenha a constância.'}
-                </p>
-              </div>
-              <button 
-                onClick={() => setIsPlanModalOpen(true)}
-                className="bg-white/20 hover:bg-white/30 p-2 rounded-lg backdrop-blur-sm transition-colors"
-                title="Configurar Plano"
-              >
-                <Target size={20} />
-              </button>
-            </div>
-
-            {userPlan && planProgress ? (
-              <div className="bg-white/10 rounded-xl p-4 backdrop-blur-sm border border-white/10">
-                 <div className="flex justify-between items-center mb-3">
-                    <div className="flex items-center gap-2">
-                      <PlayCircle className="text-yellow-400" size={20} />
-                      <span className="font-bold text-sm uppercase tracking-wide">Próxima Leitura (GPS)</span>
-                    </div>
-                    <span className="text-xs bg-indigo-500/50 px-2 py-1 rounded">Auto-Paced</span>
-                 </div>
-                 
-                 {planProgress.nextBatch.length > 0 ? (
-                    <div className="flex items-center justify-between">
-                       <div>
-                         <span className="text-lg font-bold block">
-                           {BIBLE_BOOKS.find(b => b.id === planProgress.nextBatch[0].bookId)?.name} {planProgress.nextBatch.map(b => b.chapter).join(', ')}
-                         </span>
-                       </div>
-                       <button 
-                        onClick={() => handleQuickRead(planProgress.nextBatch)}
-                        className="bg-white text-indigo-600 px-4 py-2 rounded-lg font-bold text-sm hover:bg-indigo-50 transition-colors shadow-sm"
-                       >
-                         Ler Agora
-                       </button>
-                    </div>
-                 ) : (
-                   <div className="text-center py-2">
-                     <p className="font-bold text-lg">🎉 Você concluiu este plano!</p>
-                     <p className="text-sm opacity-80">Parabéns pela jornada.</p>
-                   </div>
-                 )}
-                 
-                 <div className="mt-4">
-                   <div className="flex justify-between text-xs mb-1 opacity-75">
-                     <span>{planProgress.readInScope} lidos</span>
-                     <span>{planProgress.totalInScope} total</span>
-                   </div>
-                   <div className="w-full bg-black/20 rounded-full h-1.5">
-                     <div className="bg-yellow-400 h-1.5 rounded-full transition-all duration-700" style={{width: `${planProgress.percent}%`}}></div>
-                   </div>
-                 </div>
-              </div>
-            ) : (
-              <button 
-                onClick={() => setIsPlanModalOpen(true)}
-                className="mt-2 bg-white text-indigo-600 px-6 py-3 rounded-xl font-bold text-sm hover:bg-indigo-50 transition-all shadow-lg flex items-center gap-2"
-              >
-                <Map size={18} /> Ativar GPS de Leitura
-              </button>
-            )}
-
-          </div>
-          
-          {/* Decoratice Circles */}
-          <div className="absolute -top-10 -right-10 w-40 h-40 bg-white/10 rounded-full blur-2xl"></div>
-          <div className="absolute bottom-0 left-10 w-20 h-20 bg-purple-500/20 rounded-full blur-xl"></div>
-       </div>
-
-       {/* Primary Stats */}
-       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard 
-          title="Progresso Total" 
-          value={`${completionPercentage.toFixed(1)}%`} 
-          subtext={`${totalReadCount} de ${TOTAL_CHAPTERS_BIBLE} capítulos`}
-          icon={<BookOpen size={20} />} 
-          highlight={false}
-        />
-        <StatCard 
-          title="Ofensiva Atual" 
-          value={`${currentStreak} dias`}
-          subtext={currentStreak > 0 ? "Mantenha o ritmo!" : "Comece hoje!"}
-          icon={<Calendar size={20} />} 
-        />
-        <div 
-            onClick={() => setActiveTab('achievements')}
-            className="cursor-pointer transition-transform hover:scale-105"
-        >
-            <StatCard 
-                title="Conquistas" 
-                value={unlockedAchievements.size} 
-                subtext={`de ${ACHIEVEMENTS.length} medalhas`}
-                icon={<Trophy size={20} />} 
-                highlight={true}
-                colorClass="bg-gradient-to-br from-yellow-500 to-amber-600"
-            />
-        </div>
-         <StatCard 
-          title="Estimativa de Fim" 
-          value={advancedStats.projection.days > 0 ? `${advancedStats.projection.days} dias` : "N/A"} 
-          subtext={advancedStats.projection.days > 0 ? `Data: ${advancedStats.projection.date}` : "Continue lendo..."}
-          icon={<Clock size={20} />} 
-        />
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800">
-            <h3 className="text-lg font-bold text-gray-800 dark:text-gray-200 mb-4 serif">Ritmo Semanal</h3>
-            <div className="h-64 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme === 'dark' ? '#334155' : '#e5e7eb'} />
-                    <XAxis dataKey="name" tick={{fontSize: 12, fill: theme === 'dark' ? '#94a3b8' : '#6b7280'}} />
-                    <YAxis allowDecimals={false} tick={{fontSize: 12, fill: theme === 'dark' ? '#94a3b8' : '#6b7280'}} />
-                    <Tooltip 
-                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', backgroundColor: theme === 'dark' ? '#1e293b' : '#fff', color: theme === 'dark' ? '#fff' : '#000' }}
-                    cursor={{fill: theme === 'dark' ? '#334155' : '#f3f4f6'}}
-                    />
-                    <Bar dataKey="chapters" fill="#4f46e5" radius={[4, 4, 0, 0]} name="Capítulos" />
-                </BarChart>
-                </ResponsiveContainer>
-            </div>
-        </div>
-         <div className="space-y-4">
-            <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 h-full">
-                <h3 className="text-lg font-bold text-gray-800 dark:text-gray-200 mb-4 serif">Recorde Pessoal</h3>
-                {advancedStats.bestDay.count > 0 ? (
-                    <div className="text-center py-4">
-                        <div className="inline-flex p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-full text-yellow-600 dark:text-yellow-400 mb-3">
-                            <Trophy size={32} />
-                        </div>
-                        <h4 className="text-3xl font-bold text-gray-900 dark:text-white">{advancedStats.bestDay.count}</h4>
-                        <p className="text-gray-500 dark:text-gray-400 font-medium">Capítulos em um dia</p>
-                        <p className="text-sm text-gray-400 mt-2">
-                            {new Date(advancedStats.bestDay.date).toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' })}
-                        </p>
-                    </div>
-                ) : (
-                    <div className="text-center py-8 text-gray-400">
-                        <p>Sem dados suficientes.</p>
-                    </div>
-                )}
-            </div>
-        </div>
-      </div>
-       {/* Recent Chapters List */}
-       <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800">
-          <div className="flex items-center gap-2 mb-4">
-            <History size={20} className="text-indigo-600 dark:text-indigo-400" />
-            <h3 className="text-lg font-bold text-gray-800 dark:text-gray-200 serif">Últimos 10 Capítulos Lidos</h3>
-          </div>
-          
-          {lastReadChaptersList.length > 0 ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
-                {lastReadChaptersList.map(item => (
-                    <div key={item.id} className="bg-gray-50 dark:bg-slate-800 p-3 rounded-lg border border-gray-100 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-500 transition-all group">
-                        <p className="text-xs text-gray-400 mb-1 group-hover:text-indigo-500 dark:group-hover:text-indigo-400 transition-colors">
-                            {new Date(item.date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
-                        </p>
-                        <div className="flex items-baseline justify-between">
-                             <span className="font-bold text-gray-800 dark:text-gray-200 text-sm truncate mr-1" title={item.bookName}>{item.bookName}</span>
-                             <span className="text-indigo-600 dark:text-indigo-400 font-bold text-lg">{item.chapter}</span>
-                        </div>
-                    </div>
-                ))}
-            </div>
-          ) : (
-             <div className="text-center py-6 text-gray-400 border border-dashed border-gray-200 dark:border-slate-700 rounded-lg">
-                <p className="italic text-sm">Nenhuma leitura registrada ainda. Comece a ler para ver seu histórico recente aqui.</p>
+  const renderDashboard = () => (
+       <div className="space-y-6 animate-fade-in">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+             <div>
+                <h1 className="text-2xl font-bold text-gray-900 dark:text-white serif">Olá, {user?.user_metadata?.full_name?.split(' ')[0] || 'Leitor'}!</h1>
+                <p className="text-gray-500 dark:text-gray-400">Continue sua jornada de sabedoria hoje.</p>
              </div>
-          )}
-      </div>
-
-       <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800">
-          <div className="flex justify-between items-end mb-2">
-            <h3 className="font-bold text-gray-700 dark:text-gray-200">Progresso da Bíblia</h3>
-            <span className="text-sm font-medium text-indigo-600 dark:text-indigo-400">{totalReadCount} / {TOTAL_CHAPTERS_BIBLE}</span>
+             <div className="bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 px-4 py-2 rounded-lg font-bold flex items-center gap-2">
+                <Flame size={20} /> {currentStreak} dias de chama
+             </div>
           </div>
-          <ProgressBar current={totalReadCount} total={TOTAL_CHAPTERS_BIBLE} />
-      </div>
-
-       {readingLogs.length > 0 && readingLogs[0].aiReflection && (
-        <div className="bg-gradient-to-r from-indigo-50 to-white dark:from-slate-800 dark:to-slate-900 border border-indigo-100 dark:border-slate-700 p-6 rounded-xl relative overflow-hidden">
-          <div className="relative z-10">
-            <div className="flex items-center gap-2 mb-2 text-indigo-700 dark:text-indigo-400">
-              <Sparkles size={18} />
-              <h3 className="font-bold">Insight Devocional Recente (Estilo Luiz Sayão)</h3>
-            </div>
-            <p className="text-indigo-900 dark:text-indigo-100 italic serif leading-relaxed">
-              "{readingLogs[0].aiReflection}"
-            </p>
-            <p className="text-xs text-indigo-500 dark:text-indigo-400 mt-2 font-medium uppercase tracking-wide">
-              Gerado por IA • {new Date(readingLogs[0].date).toLocaleDateString('pt-BR')}
-            </p>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+             <StatCard title="Capítulos Lidos" value={totalReadCount} subtext={`${completionPercentage.toFixed(1)}% da Bíblia`} icon={<BookOpen size={20}/>} />
+             <StatCard title="Conquistas" value={unlockedAchievements.size} subtext="Medalhas desbloqueadas" icon={<Trophy size={20}/>} />
+             <StatCard title="Previsão de Fim" value={advancedStats.projection.days > 0 ? `${advancedStats.projection.days} dias` : 'Concluído'} subtext={advancedStats.projection.date} icon={<Calendar size={20}/>} />
           </div>
-        </div>
-      )}
-    </div>
-  );
-  };
 
-  const renderTracker = () => {
-    const currentBook = BIBLE_BOOKS.find(b => b.id === selectedBookId)!;
-
-    return (
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 animate-fade-in">
-        {/* Sidebar Book Selector */}
-        <div className="lg:col-span-1 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden flex flex-col max-h-[600px]">
-          <div className="p-4 border-b border-gray-100 dark:border-slate-800 bg-gray-50 dark:bg-slate-950">
-            <h3 className="font-bold text-gray-700 dark:text-gray-300">Livros</h3>
-          </div>
-          <div className="overflow-y-auto flex-1 p-2 space-y-1">
-            {BIBLE_BOOKS.map(book => (
-              <button
-                key={book.id}
-                onClick={() => {
-                  setSelectedBookId(book.id);
-                  setSessionSelectedChapters([]); // Reset session selection on book change
-                }}
-                className={`w-full text-left px-3 py-2 rounded-lg text-sm flex justify-between items-center transition-colors ${
-                  selectedBookId === book.id 
-                    ? 'bg-indigo-50 dark:bg-slate-800 text-indigo-700 dark:text-indigo-300 font-medium' 
-                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-800'
-                }`}
-              >
-                <span>{book.name}</span>
-                {readChapters[book.id]?.length === book.chapters && (
-                  <CheckCircle2 size={14} className="text-green-500" />
+          {/* Plan Card */}
+          <div className="bg-indigo-600 rounded-2xl p-6 text-white shadow-lg relative overflow-hidden">
+             <div className="relative z-10">
+                <div className="flex justify-between items-start mb-4">
+                   <div>
+                      <h3 className="font-bold text-xl mb-1">{userPlan ? userPlan.title : 'Sem plano ativo'}</h3>
+                      <p className="text-indigo-200 text-sm">{userPlan ? 'Siga seu GPS de leitura.' : 'Escolha um plano para guiar seus estudos.'}</p>
+                   </div>
+                   {!userPlan ? (
+                      <button onClick={() => setIsPlanModalOpen(true)} className="bg-white text-indigo-600 px-4 py-2 rounded-lg font-bold text-sm shadow hover:bg-indigo-50 transition-colors">
+                         Escolher Plano
+                      </button>
+                   ) : (
+                      <button onClick={() => setIsPlanModalOpen(true)} className="bg-indigo-500 hover:bg-indigo-400 p-2 rounded-lg transition-colors">
+                         <PenLine size={18} />
+                      </button>
+                   )}
+                </div>
+                
+                {userPlan && getPlanProgress && (
+                   <div className="bg-indigo-900/30 p-4 rounded-xl backdrop-blur-sm border border-indigo-400/30">
+                      <div className="flex justify-between text-sm font-medium mb-2">
+                         <span>Progresso do Plano</span>
+                         <span>{getPlanProgress.percent.toFixed(1)}%</span>
+                      </div>
+                      <ProgressBar current={getPlanProgress.readInScope} total={getPlanProgress.totalInScope} color="bg-white" />
+                      
+                      <div className="mt-4">
+                         <p className="text-xs text-indigo-200 uppercase tracking-wide font-bold mb-2">Leitura de Hoje (Sugerida)</p>
+                         <div className="flex flex-wrap gap-2">
+                            {getPlanProgress.nextBatch.length > 0 ? (
+                               <>
+                                {getPlanProgress.nextBatch.slice(0, 5).map((item, idx) => (
+                                   <span key={idx} className="bg-white text-indigo-700 px-3 py-1 rounded-md text-xs font-bold shadow-sm">
+                                      {item.bookId} {item.chapter}
+                                   </span>
+                                ))}
+                                {getPlanProgress.nextBatch.length > 5 && <span className="text-xs self-center">+ {getPlanProgress.nextBatch.length - 5}</span>}
+                                <button 
+                                   onClick={() => handleQuickRead(getPlanProgress.nextBatch)}
+                                   className="ml-auto bg-green-400 hover:bg-green-300 text-green-900 px-3 py-1 rounded-md text-xs font-bold flex items-center gap-1 transition-colors"
+                                >
+                                   Ler Agora <ChevronRight size={14}/>
+                                </button>
+                               </>
+                            ) : (
+                               <div className="flex items-center gap-2 text-green-300 font-bold">
+                                  <CheckCircle2 size={18} /> Meta diária alcançada!
+                               </div>
+                            )}
+                         </div>
+                      </div>
+                   </div>
                 )}
-              </button>
-            ))}
+             </div>
+             <BookOpen className="absolute -bottom-4 -right-4 text-indigo-500 opacity-50" size={150} />
           </div>
-        </div>
 
-        {/* Main Content */}
-        <div className="lg:col-span-3 space-y-6">
-            <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 p-6">
-                <div className="flex justify-between items-center mb-6 flex-wrap gap-4">
-                    <div>
-                        <h2 className="text-2xl font-bold text-gray-800 dark:text-white serif">{currentBook.name}</h2>
-                        <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">{currentBook.category} • {currentBook.testament === 'Old' ? 'Antigo Testamento' : 'Novo Testamento'}</p>
-                    </div>
-                    
-                    {/* Toggle Mode */}
-                    <div className="flex bg-gray-100 dark:bg-slate-800 p-1 rounded-lg">
+          {/* Chart */}
+          <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800">
+             <h3 className="font-bold text-gray-800 dark:text-white mb-6 flex items-center gap-2">
+                <BarChart3 size={20} className="text-indigo-500"/> Ritmo Semanal
+             </h3>
+             <div className="h-64 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                   <BarChart data={chartData}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme === 'dark' ? '#334155' : '#e5e7eb'} />
+                      <XAxis dataKey="name" tick={{fontSize: 12, fill: theme === 'dark' ? '#94a3b8' : '#6b7280'}} axisLine={false} tickLine={false} />
+                      <Tooltip cursor={{fill: theme === 'dark' ? '#1e293b' : '#f3f4f6'}} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', backgroundColor: theme === 'dark' ? '#1e293b' : '#fff', color: theme === 'dark' ? '#fff' : '#000' }} />
+                      <Bar dataKey="chapters" fill="#6366f1" radius={[4, 4, 0, 0]} barSize={40} />
+                   </BarChart>
+                </ResponsiveContainer>
+             </div>
+          </div>
+       </div>
+  );
+
+  const renderTracker = () => (
+       <div className="flex flex-col lg:flex-row h-[calc(100vh-100px)] gap-6 animate-fade-in">
+          {/* Book List */}
+          <div className="w-full lg:w-1/3 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden flex flex-col">
+             <div className="p-4 bg-gray-50 dark:bg-slate-950 border-b border-gray-100 dark:border-slate-800">
+                <h3 className="font-bold text-gray-700 dark:text-gray-300">Livros</h3>
+             </div>
+             <div className="overflow-y-auto flex-1 p-2 space-y-1">
+                {BIBLE_BOOKS.map(book => {
+                   const progress = readChapters[book.id]?.length || 0;
+                   const isCompleted = progress === book.chapters;
+                   const isSelected = selectedBookId === book.id;
+                   
+                   return (
+                      <button
+                         key={book.id}
+                         onClick={() => { setSelectedBookId(book.id); setSessionSelectedChapters([]); }}
+                         className={`w-full flex items-center justify-between p-3 rounded-lg text-sm transition-all ${isSelected ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-800'}`}
+                      >
+                         <div className="flex items-center gap-3">
+                            <span className={`font-bold ${isSelected ? 'text-indigo-200' : 'text-gray-400'} w-6`}>{book.id}</span>
+                            <span>{book.name}</span>
+                         </div>
+                         <div className="flex items-center gap-2">
+                             {isCompleted && <CheckCircle2 size={14} className={isSelected ? 'text-white' : 'text-green-500'} />}
+                             <span className="text-xs opacity-70">{progress}/{book.chapters}</span>
+                         </div>
+                      </button>
+                   );
+                })}
+             </div>
+          </div>
+
+          {/* Chapter Grid */}
+          <div className="flex-1 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden flex flex-col">
+              <div className="p-6 border-b border-gray-100 dark:border-slate-800 flex justify-between items-center bg-gray-50 dark:bg-slate-950">
+                 <div>
+                    <h2 className="text-2xl font-bold text-gray-900 dark:text-white serif">{BIBLE_BOOKS.find(b => b.id === selectedBookId)?.name}</h2>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">{BIBLE_BOOKS.find(b => b.id === selectedBookId)?.category} • {BIBLE_BOOKS.find(b => b.id === selectedBookId)?.testament === 'Old' ? 'Antigo Testamento' : 'Novo Testamento'}</p>
+                 </div>
+                 <div className="flex gap-2">
+                    {sessionSelectedChapters.length > 0 && (
                         <button 
-                            onClick={() => setTrackerMode('select')}
-                            className={`px-4 py-2 rounded-md text-sm font-medium transition-all flex items-center gap-2 ${trackerMode === 'select' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}`}
+                           onClick={handleSaveSession}
+                           disabled={isGeneratingAI}
+                           className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 transition-colors disabled:opacity-50"
                         >
-                            <CheckCircle2 size={16} /> Marcar
+                           {isGeneratingAI ? <Loader2 className="animate-spin" size={16}/> : <Save size={16} />}
+                           Salvar ({sessionSelectedChapters.length})
                         </button>
-                        <button 
-                            onClick={() => setTrackerMode('read')}
-                            className={`px-4 py-2 rounded-md text-sm font-medium transition-all flex items-center gap-2 ${trackerMode === 'read' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}`}
-                        >
-                            <Eye size={16} /> Ler Texto
-                        </button>
-                    </div>
-
-                    <div className="text-right w-full sm:w-auto">
-                        <span className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">
-                             {readChapters[currentBook.id]?.length || 0}
-                             <span className="text-gray-400 text-lg font-normal">/{currentBook.chapters}</span>
-                        </span>
-                    </div>
-                </div>
-
-                <div className="mb-6">
-                    <ProgressBar 
-                        current={readChapters[currentBook.id]?.length || 0} 
-                        total={currentBook.chapters} 
-                        color="bg-green-500"
-                    />
-                </div>
-                
-                <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 uppercase tracking-wider flex items-center gap-2">
-                    {trackerMode === 'read' ? <Eye size={16} className="text-indigo-500" /> : <CheckCircle2 size={16} className="text-gray-400" />}
-                    {trackerMode === 'read' ? 'Clique para ler o capítulo' : 'Selecione para marcar como lido'}
-                </h4>
-                
-                <div className="grid grid-cols-5 sm:grid-cols-8 md:grid-cols-10 gap-2 mb-8">
-                    {Array.from({ length: currentBook.chapters }, (_, i) => i + 1).map(chapter => {
-                        const isReadGlobal = isChapterReadGlobal(currentBook.id, chapter);
-                        const isSelectedSession = sessionSelectedChapters.includes(chapter);
+                    )}
+                 </div>
+              </div>
+              
+              <div className="flex-1 overflow-y-auto p-6">
+                 <div className="grid grid-cols-5 sm:grid-cols-8 md:grid-cols-10 lg:grid-cols-12 gap-3">
+                    {Array.from({ length: BIBLE_BOOKS.find(b => b.id === selectedBookId)?.chapters || 0 }, (_, i) => i + 1).map(chapter => {
+                        const isRead = isChapterReadGlobal(selectedBookId, chapter);
+                        const isSelected = sessionSelectedChapters.includes(chapter);
                         
                         return (
-                            <button
-                                key={chapter}
-                                disabled={trackerMode === 'select' && isReadGlobal}
-                                onClick={() => handleToggleChapter(chapter)}
-                                className={`
-                                    h-10 w-full rounded-md font-medium text-sm flex items-center justify-center transition-all relative
-                                    ${trackerMode === 'select' 
-                                        ? (isReadGlobal 
-                                            ? 'bg-gray-100 dark:bg-slate-800 text-gray-400 cursor-not-allowed border border-gray-200 dark:border-slate-700' 
-                                            : isSelectedSession
-                                                ? 'bg-indigo-600 text-white shadow-md ring-2 ring-indigo-200 dark:ring-indigo-900 ring-offset-1 dark:ring-offset-slate-900'
-                                                : 'bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-700 dark:text-gray-300 hover:border-indigo-300 dark:hover:border-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-400')
-                                        : (
-                                            'bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-700 dark:text-gray-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 hover:border-indigo-300 dark:hover:border-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-400 group'
-                                        )
-                                    }
-                                `}
-                            >
-                                {chapter}
-                                {trackerMode === 'read' && (
-                                    <span className="absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <div className="bg-indigo-500 text-white rounded-full p-0.5">
-                                            <Eye size={8} />
-                                        </div>
-                                    </span>
-                                )}
-                            </button>
+                           <button
+                              key={chapter}
+                              onClick={() => handleToggleChapter(chapter)}
+                              onDoubleClick={() => setReadingChapter({ book: BIBLE_BOOKS.find(b => b.id === selectedBookId)!, chapter })}
+                              className={`
+                                 aspect-square rounded-lg flex items-center justify-center font-bold text-sm transition-all border
+                                 ${isRead 
+                                    ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800' 
+                                    : isSelected
+                                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-md transform scale-105'
+                                        : 'bg-gray-50 dark:bg-slate-800 text-gray-600 dark:text-gray-400 border-gray-100 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-500'
+                                 }
+                              `}
+                           >
+                              {chapter}
+                           </button>
                         );
                     })}
-                </div>
-
-                <div className="flex justify-end pt-4 border-t border-gray-100 dark:border-slate-800">
-                    <button
-                        onClick={handleSaveSession}
-                        disabled={sessionSelectedChapters.length === 0 || isGeneratingAI}
-                        className={`
-                            px-6 py-3 rounded-xl font-medium flex items-center gap-2 shadow-sm transition-all
-                            ${sessionSelectedChapters.length === 0 || isGeneratingAI
-                                ? 'bg-gray-100 dark:bg-slate-800 text-gray-400 cursor-not-allowed'
-                                : 'bg-indigo-600 text-white hover:bg-indigo-700 hover:shadow-md'
-                            }
-                        `}
-                    >
-                        {isGeneratingAI ? (
-                            <>
-                                <Sparkles size={18} className="animate-spin" />
-                                <span>Salvando e Gerando Insight...</span>
-                            </>
-                        ) : (
-                            <>
-                                <CheckCircle2 size={18} />
-                                <span>Confirmar Leitura ({sessionSelectedChapters.length})</span>
-                            </>
-                        )}
-                    </button>
-                </div>
-            </div>
-        </div>
-      </div>
-    );
-  };
-
-  const renderHistory = () => (
-    <div className="max-w-3xl mx-auto space-y-6 animate-fade-in">
-        <h2 className="text-2xl font-bold text-gray-800 dark:text-white serif mb-4">Histórico de Leitura</h2>
-        {readingLogs.length === 0 ? (
-            <div className="text-center py-12 bg-white dark:bg-slate-900 rounded-xl border border-dashed border-gray-300 dark:border-slate-700">
-                <Book className="mx-auto h-12 w-12 text-gray-300 dark:text-gray-600 mb-3" />
-                <p className="text-gray-500 dark:text-gray-400">Nenhuma leitura registrada ainda.</p>
-                <button 
-                    onClick={() => setActiveTab('tracker')}
-                    className="mt-4 text-indigo-600 dark:text-indigo-400 font-medium hover:underline"
-                >
-                    Começar a ler agora
-                </button>
-            </div>
-        ) : (
-            <div className="space-y-6">
-                {readingLogs.map(log => {
-                    const book = BIBLE_BOOKS.find(b => b.id === log.bookId);
-                    const isEditing = editingNoteId === log.id;
-
-                    return (
-                        <div key={log.id} className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden">
-                            <div className="p-5 border-b border-gray-50 dark:border-slate-800">
-                                <div className="flex justify-between items-start mb-2">
-                                    <div>
-                                        <h4 className="font-bold text-lg text-gray-800 dark:text-gray-200 flex items-center gap-2">
-                                            {book?.name} <ChevronRight size={16} className="text-gray-300" /> Caps. {log.chapters.join(', ')}
-                                        </h4>
-                                        <p className="text-sm text-gray-400 flex items-center gap-1 mt-1">
-                                            <Calendar size={12} />
-                                            {new Date(log.date).toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-                                        </p>
-                                    </div>
-                                    <div className="px-3 py-1 bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400 text-xs font-medium rounded-full">
-                                        Concluído
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* AI Reflection Section */}
-                            {log.aiReflection && (
-                                <div className="px-5 py-4 bg-gray-50/50 dark:bg-slate-800/50">
-                                    <div className="flex gap-3">
-                                        <div className="mt-1">
-                                            <div className="bg-indigo-100 dark:bg-indigo-900/50 p-1.5 rounded-full text-indigo-600 dark:text-indigo-400">
-                                                <Sparkles size={14} />
-                                            </div>
-                                        </div>
-                                        <div>
-                                            <p className="text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wide mb-1">Insight Sayão (IA)</p>
-                                            <p className="text-sm text-gray-600 dark:text-gray-300 italic leading-relaxed">"{log.aiReflection}"</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* User Notes Section */}
-                            <div className="px-5 py-4 bg-yellow-50/30 dark:bg-yellow-900/10 border-t border-yellow-100/50 dark:border-yellow-900/20">
-                                <div className="flex gap-3">
-                                    <div className="mt-1">
-                                        <div className="bg-yellow-100 dark:bg-yellow-900/40 p-1.5 rounded-full text-yellow-600 dark:text-yellow-500">
-                                            <PenLine size={14} />
-                                        </div>
-                                    </div>
-                                    <div className="flex-1">
-                                        <div className="flex justify-between items-center mb-1">
-                                            <p className="text-xs font-bold text-yellow-700 dark:text-yellow-500 uppercase tracking-wide">Minhas Anotações</p>
-                                            {!isEditing && (
-                                                <button 
-                                                    onClick={() => startEditingNote(log)}
-                                                    className="text-xs text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 flex items-center gap-1 underline"
-                                                >
-                                                    Editar
-                                                </button>
-                                            )}
-                                        </div>
-
-                                        {isEditing ? (
-                                            <div className="mt-2">
-                                                <textarea
-                                                    value={tempNoteContent}
-                                                    onChange={(e) => setTempNoteContent(e.target.value)}
-                                                    className="w-full border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-white rounded-lg p-3 text-sm focus:ring-2 focus:ring-yellow-400 focus:border-transparent outline-none"
-                                                    rows={3}
-                                                    placeholder="Escreva o que Deus falou com você..."
-                                                    autoFocus
-                                                />
-                                                <div className="flex justify-end gap-2 mt-2">
-                                                    <button 
-                                                        onClick={() => setEditingNoteId(null)}
-                                                        className="px-3 py-1 text-xs text-gray-500 hover:bg-gray-100 dark:hover:bg-slate-700 rounded"
-                                                    >
-                                                        Cancelar
-                                                    </button>
-                                                    <button 
-                                                        onClick={() => handleSaveNote(log.id)}
-                                                        className="px-3 py-1 bg-yellow-500 text-white text-xs font-bold rounded flex items-center gap-1 hover:bg-yellow-600"
-                                                    >
-                                                        <Save size={12} /> Salvar
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        ) : (
-                                            <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
-                                                {log.userNotes ? log.userNotes : <span className="text-gray-400 italic">Sem anotações pessoais. Clique em editar para adicionar.</span>}
-                                            </p>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    );
-                })}
-            </div>
-        )}
-    </div>
+                 </div>
+                 <p className="mt-8 text-center text-xs text-gray-400">
+                    Dica: Clique para selecionar. Clique duas vezes para ler o texto.
+                 </p>
+              </div>
+          </div>
+       </div>
   );
 
-  // --- Main Render ---
+  const renderHistory = () => (
+        <div className="max-w-3xl mx-auto space-y-6 animate-fade-in">
+           <div className="flex items-center justify-between">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white serif">Seu Diário Espiritual</h2>
+              <div className="text-sm text-gray-500">{readingLogs.length} registros</div>
+           </div>
+           
+           <div className="space-y-4">
+              {readingLogs.map(log => {
+                 const bookName = BIBLE_BOOKS.find(b => b.id === log.bookId)?.name || log.bookId;
+                 return (
+                    <div key={log.id} className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 group">
+                       <div className="flex justify-between items-start mb-4">
+                          <div>
+                             <h3 className="text-lg font-bold text-gray-800 dark:text-white">{bookName} <span className="text-indigo-600 dark:text-indigo-400">{log.chapters.join(', ')}</span></h3>
+                             <p className="text-xs text-gray-400 flex items-center gap-1 mt-1">
+                                <Calendar size={12} /> {new Date(log.date).toLocaleDateString()} • <Clock size={12} /> {new Date(log.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                             </p>
+                          </div>
+                          {log.aiReflection && <Sparkles size={18} className="text-yellow-500" />}
+                       </div>
+                       
+                       {log.aiReflection && (
+                          <div className="bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-slate-800 dark:to-slate-800/50 p-4 rounded-lg border border-indigo-100 dark:border-slate-700 mb-4 text-sm text-gray-700 dark:text-gray-300 italic relative">
+                             <Sparkles className="absolute -top-2 -left-2 text-indigo-500 bg-white dark:bg-slate-900 rounded-full p-0.5" size={16} />
+                             "{log.aiReflection}"
+                          </div>
+                       )}
+                       
+                       <div className="mt-4 pt-4 border-t border-gray-100 dark:border-slate-800">
+                          {editingNoteId === log.id ? (
+                             <div className="space-y-2">
+                                <textarea 
+                                   value={tempNoteContent}
+                                   onChange={(e) => setTempNoteContent(e.target.value)}
+                                   className="w-full p-3 text-sm rounded-lg border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none"
+                                   placeholder="Suas anotações pessoais..."
+                                   rows={3}
+                                   autoFocus
+                                />
+                                <div className="flex justify-end gap-2">
+                                   <button onClick={() => setEditingNoteId(null)} className="px-3 py-1 text-xs font-bold text-gray-500 hover:text-gray-700 dark:text-gray-400">Cancelar</button>
+                                   <button onClick={() => handleSaveNote(log.id)} className="px-3 py-1 bg-indigo-600 text-white rounded-md text-xs font-bold hover:bg-indigo-700">Salvar Nota</button>
+                                </div>
+                             </div>
+                          ) : (
+                             <div 
+                                onClick={() => startEditingNote(log)}
+                                className="text-sm text-gray-600 dark:text-gray-400 cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-800 p-2 -mx-2 rounded-lg transition-colors flex items-start gap-2 group-hover:bg-gray-50 dark:group-hover:bg-slate-800/50"
+                             >
+                                <PenLine size={14} className="mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity text-indigo-500" />
+                                {log.userNotes ? log.userNotes : <span className="italic opacity-50">Adicionar anotação pessoal...</span>}
+                             </div>
+                          )}
+                       </div>
+                    </div>
+                 );
+              })}
+              {readingLogs.length === 0 && (
+                 <div className="text-center py-12 text-gray-400">
+                    <BookOpen size={48} className="mx-auto mb-4 opacity-30" />
+                    <p>Nenhuma leitura registrada ainda.</p>
+                    <button onClick={() => setActiveTab('tracker')} className="text-indigo-600 font-bold mt-2 hover:underline">Começar a ler</button>
+                 </div>
+              )}
+           </div>
+        </div>
+  );
+
+  // --- Main App Return ---
 
   if (loadingAuth) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
-        <Loader2 className="animate-spin text-indigo-600" size={40} />
-      </div>
-    );
+     return <div className="h-screen w-full flex items-center justify-center bg-gray-50 dark:bg-slate-950 transition-colors"><Loader2 className="animate-spin text-indigo-600" size={40} /></div>;
   }
 
   if (!user) {
-    return <LoginScreen onLogin={setUser} />;
+     return <LoginScreen onLogin={setUser} />;
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-gray-900 dark:text-gray-100 pb-20 md:pb-0 transition-colors duration-200">
-      {/* Top Navigation */}
-      <nav className="sticky top-0 z-50 bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-800 shadow-sm transition-colors">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16">
-            <div className="flex items-center gap-2">
-              <div className="bg-indigo-600 p-2 rounded-lg text-white">
-                <Book size={24} />
-              </div>
-              <span className="font-bold text-xl tracking-tight text-gray-900 dark:text-white hidden sm:block">Bíblia Tracker</span>
-            </div>
-            
-            {/* Desktop Nav */}
-            <div className="hidden md:flex space-x-8">
-              <button 
-                onClick={() => setActiveTab('dashboard')}
-                className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${activeTab === 'dashboard' ? 'border-indigo-500 text-gray-900 dark:text-white' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300 dark:hover:border-slate-700'}`}
-              >
-                Dashboard
-              </button>
-              <button 
-                onClick={() => setActiveTab('tracker')}
-                className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${activeTab === 'tracker' ? 'border-indigo-500 text-gray-900 dark:text-white' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300 dark:hover:border-slate-700'}`}
-              >
-                Leitura
-              </button>
-              <button 
-                onClick={() => setActiveTab('history')}
-                className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${activeTab === 'history' ? 'border-indigo-500 text-gray-900 dark:text-white' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300 dark:hover:border-slate-700'}`}
-              >
-                Histórico
-              </button>
-               <button 
-                onClick={() => setActiveTab('achievements')}
-                className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${activeTab === 'achievements' ? 'border-yellow-500 text-yellow-600 dark:text-yellow-400' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-yellow-600 dark:hover:text-yellow-400 hover:border-yellow-300 dark:hover:border-yellow-600'}`}
-              >
-                Conquistas
-              </button>
-              <button 
-                onClick={() => setActiveTab('support')}
-                className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${activeTab === 'support' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-300 dark:hover:border-blue-600'}`}
-              >
-                Suporte
-              </button>
-              {isAdmin && (
-                  <button 
-                    onClick={() => setActiveTab('admin')}
-                    className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-bold ${activeTab === 'admin' ? 'border-red-500 text-red-600 dark:text-red-400' : 'border-transparent text-red-400 dark:text-red-500/70 hover:text-red-600 dark:hover:text-red-400 hover:border-red-300 dark:hover:border-red-500/50'}`}
-                  >
-                    Admin Master
-                  </button>
-              )}
-            </div>
+     <div className={`min-h-screen bg-slate-50 dark:bg-slate-950 text-gray-900 dark:text-gray-100 transition-colors font-sans ${theme}`}>
+        
+        {/* Modals */}
+        {isChangePasswordOpen && <ChangePasswordModal onClose={() => setIsChangePasswordOpen(false)} />}
+        {isPlanModalOpen && <PlanSelectionModal onClose={() => setIsPlanModalOpen(false)} onSelectPlan={handleSelectPlan} />}
+        {readingChapter && (
+            <BibleReaderModal 
+                book={readingChapter.book} 
+                chapter={readingChapter.chapter} 
+                onClose={() => setReadingChapter(null)} 
+                onNext={readingChapter.chapter < readingChapter.book.chapters ? () => setReadingChapter({ ...readingChapter, chapter: readingChapter.chapter + 1 }) : undefined}
+                onPrev={readingChapter.chapter > 1 ? () => setReadingChapter({ ...readingChapter, chapter: readingChapter.chapter - 1 }) : undefined}
+            />
+        )}
 
-            {/* Desktop User Menu */}
-            <div className="hidden md:flex items-center gap-4 ml-4 border-l border-gray-200 dark:border-slate-800 pl-4">
-              <button onClick={toggleTheme} className="p-2 text-gray-400 hover:text-yellow-500 transition-colors" title="Alternar Tema">
-                 {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
-              </button>
-              <div className="flex flex-col items-end">
-                <span className="text-xs text-gray-400">Logado como</span>
-                <span className="text-sm font-bold text-gray-700 dark:text-gray-300">{user.email.split('@')[0]}</span>
-              </div>
-              <button onClick={() => setIsChangePasswordOpen(true)} className="p-2 text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400" title="Alterar Senha">
-                <Lock size={20} />
-              </button>
-              <button onClick={handleLogout} className="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400" title="Sair">
-                <LogOut size={20} />
-              </button>
-            </div>
-
-            {/* Mobile Menu Button */}
-            <div className="flex items-center md:hidden gap-3">
-              <button onClick={toggleTheme} className="p-2 text-gray-400 hover:text-yellow-500 transition-colors">
-                 {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
-              </button>
-              <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="p-2 rounded-md text-gray-400 hover:text-gray-500 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-800">
-                {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Mobile Nav Menu */}
-        {mobileMenuOpen && (
-            <div className="md:hidden bg-white dark:bg-slate-900 border-b border-gray-100 dark:border-slate-800 shadow-xl">
-                <div className="px-4 py-3 bg-indigo-50 dark:bg-indigo-900/20 border-b border-indigo-100 dark:border-indigo-900/30 flex items-center justify-between">
-                   <div className="flex items-center gap-2">
-                      <UserCircle size={20} className="text-indigo-600 dark:text-indigo-400" />
-                      <span className="font-bold text-indigo-900 dark:text-indigo-200 text-sm">{user.email.split('@')[0]}</span>
-                   </div>
+        {/* Sidebar (Desktop) */}
+        <aside className="fixed left-0 top-0 h-full w-64 bg-white dark:bg-slate-900 border-r border-gray-200 dark:border-slate-800 hidden md:flex flex-col z-30 transition-colors">
+            <div className="p-6">
+                <div className="flex items-center gap-3 text-indigo-600 dark:text-indigo-400 mb-8">
+                    <Book size={32} />
+                    <span className="text-xl font-bold tracking-tight text-gray-900 dark:text-white serif">Bíblia Tracker</span>
                 </div>
-                <div className="pt-2 pb-3 space-y-1">
-                    <button
-                        onClick={() => { setActiveTab('dashboard'); setMobileMenuOpen(false); }}
-                        className={`block pl-3 pr-4 py-3 border-l-4 text-base font-medium w-full text-left ${activeTab === 'dashboard' ? 'bg-indigo-50 dark:bg-indigo-900/10 border-indigo-500 text-indigo-700 dark:text-indigo-300' : 'border-transparent text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-800 hover:border-gray-300 dark:hover:border-slate-600 hover:text-gray-700 dark:hover:text-gray-200'}`}
-                    >
-                        <div className="flex items-center gap-3">
-                           <LayoutDashboard size={18} /> Dashboard
-                        </div>
-                    </button>
-                    <button
-                        onClick={() => { setActiveTab('tracker'); setMobileMenuOpen(false); }}
-                        className={`block pl-3 pr-4 py-3 border-l-4 text-base font-medium w-full text-left ${activeTab === 'tracker' ? 'bg-indigo-50 dark:bg-indigo-900/10 border-indigo-500 text-indigo-700 dark:text-indigo-300' : 'border-transparent text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-800 hover:border-gray-300 dark:hover:border-slate-600 hover:text-gray-700 dark:hover:text-gray-200'}`}
-                    >
-                         <div className="flex items-center gap-3">
-                           <BookOpen size={18} /> Leitura
-                        </div>
-                    </button>
-                    <button
-                        onClick={() => { setActiveTab('history'); setMobileMenuOpen(false); }}
-                        className={`block pl-3 pr-4 py-3 border-l-4 text-base font-medium w-full text-left ${activeTab === 'history' ? 'bg-indigo-50 dark:bg-indigo-900/10 border-indigo-500 text-indigo-700 dark:text-indigo-300' : 'border-transparent text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-800 hover:border-gray-300 dark:hover:border-slate-600 hover:text-gray-700 dark:hover:text-gray-200'}`}
-                    >
-                         <div className="flex items-center gap-3">
-                           <History size={18} /> Histórico
-                        </div>
-                    </button>
-                    <button
-                        onClick={() => { setActiveTab('achievements'); setMobileMenuOpen(false); }}
-                        className={`block pl-3 pr-4 py-3 border-l-4 text-base font-medium w-full text-left ${activeTab === 'achievements' ? 'bg-yellow-50 dark:bg-yellow-900/10 border-yellow-500 text-yellow-700 dark:text-yellow-300' : 'border-transparent text-gray-500 dark:text-gray-400 hover:bg-yellow-50 dark:hover:bg-yellow-900/20 hover:border-yellow-300 dark:hover:border-yellow-700 hover:text-yellow-700 dark:hover:text-yellow-300'}`}
-                    >
-                         <div className="flex items-center gap-3">
-                           <Trophy size={18} /> Conquistas
-                        </div>
-                    </button>
-                    <button
-                        onClick={() => { setActiveTab('support'); setMobileMenuOpen(false); }}
-                        className={`block pl-3 pr-4 py-3 border-l-4 text-base font-medium w-full text-left ${activeTab === 'support' ? 'bg-blue-50 dark:bg-blue-900/10 border-blue-500 text-blue-700 dark:text-blue-300' : 'border-transparent text-gray-500 dark:text-gray-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-300 dark:hover:border-blue-700 hover:text-blue-700 dark:hover:text-blue-300'}`}
-                    >
-                         <div className="flex items-center gap-3">
-                           <LifeBuoy size={18} /> Suporte
-                        </div>
-                    </button>
-                    {isAdmin && (
+                
+                <nav className="space-y-1">
+                    {[
+                        { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+                        { id: 'tracker', label: 'Leitura', icon: BookOpen },
+                        { id: 'history', label: 'Histórico', icon: History },
+                        { id: 'achievements', label: 'Conquistas', icon: Trophy },
+                        { id: 'support', label: 'Suporte', icon: LifeBuoy },
+                    ].map(item => (
                         <button
-                            onClick={() => { setActiveTab('admin'); setMobileMenuOpen(false); }}
-                            className={`block pl-3 pr-4 py-3 border-l-4 text-base font-medium w-full text-left ${activeTab === 'admin' ? 'bg-red-50 dark:bg-red-900/10 border-red-500 text-red-700 dark:text-red-300' : 'border-transparent text-red-400 dark:text-red-400/70 hover:bg-red-50 dark:hover:bg-red-900/20 hover:border-red-300 dark:hover:border-red-700 hover:text-red-700 dark:hover:text-red-300'}`}
+                            key={item.id}
+                            onClick={() => setActiveTab(item.id as any)}
+                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${activeTab === item.id ? 'bg-indigo-50 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-800 hover:text-gray-900 dark:hover:text-gray-200'}`}
                         >
-                             <div className="flex items-center gap-3">
-                               <ShieldAlert size={18} /> Admin Master
-                            </div>
+                            <item.icon size={20} />
+                            {item.label}
                         </button>
+                    ))}
+
+                    {isAdmin && (
+                        <div className="pt-4 mt-4 border-t border-gray-100 dark:border-slate-800">
+                            <p className="px-4 text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Admin</p>
+                            <button
+                                onClick={() => setActiveTab('admin')}
+                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${activeTab === 'admin' ? 'bg-indigo-50 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-800 hover:text-gray-900 dark:hover:text-gray-200'}`}
+                            >
+                                <ShieldAlert size={20} />
+                                Painel Master
+                            </button>
+                        </div>
                     )}
-                    
-                    <div className="border-t border-gray-100 dark:border-slate-800 my-2 pt-2">
-                      <button
-                          onClick={() => { setIsChangePasswordOpen(true); setMobileMenuOpen(false); }}
-                          className="block pl-3 pr-4 py-3 text-base font-medium w-full text-left text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-800 hover:text-indigo-600 dark:hover:text-indigo-400"
-                      >
-                           <div className="flex items-center gap-3">
-                             <Lock size={18} /> Alterar Senha
-                          </div>
-                      </button>
-                      <button
-                          onClick={handleLogout}
-                          className="block pl-3 pr-4 py-3 text-base font-medium w-full text-left text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
-                      >
-                           <div className="flex items-center gap-3">
-                             <LogOut size={18} /> Sair
-                          </div>
-                      </button>
+                </nav>
+            </div>
+
+            <div className="mt-auto p-6 border-t border-gray-200 dark:border-slate-800">
+                <div className="flex items-center gap-3 mb-4">
+                    <div className="w-10 h-10 rounded-full bg-indigo-100 dark:bg-slate-800 flex items-center justify-center text-indigo-600 dark:text-indigo-400 font-bold">
+                        {user.user_metadata?.full_name?.charAt(0) || user.email.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="overflow-hidden">
+                        <p className="text-sm font-bold text-gray-900 dark:text-white truncate">{user.user_metadata?.full_name?.split(' ')[0]}</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{user.email}</p>
                     </div>
                 </div>
+                <div className="flex gap-2">
+                    <button onClick={toggleTheme} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800 text-gray-500 dark:text-gray-400 transition-colors" title="Alternar Tema">
+                        {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
+                    </button>
+                    <button onClick={() => setIsChangePasswordOpen(true)} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800 text-gray-500 dark:text-gray-400 transition-colors" title="Alterar Senha">
+                        <Lock size={18} />
+                    </button>
+                    <button onClick={handleLogout} className="p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 transition-colors ml-auto" title="Sair">
+                        <LogOut size={18} />
+                    </button>
+                </div>
+            </div>
+        </aside>
+
+        {/* Mobile Header */}
+        <div className="md:hidden fixed top-0 left-0 w-full bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-800 z-30 px-4 py-3 flex justify-between items-center transition-colors">
+            <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400">
+                <Book size={24} />
+                <span className="font-bold text-gray-900 dark:text-white serif">Bíblia Tracker</span>
+            </div>
+            <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="text-gray-600 dark:text-gray-300">
+                {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+            </button>
+        </div>
+
+        {/* Mobile Menu Overlay */}
+        {mobileMenuOpen && (
+            <div className="fixed inset-0 bg-white dark:bg-slate-950 z-20 pt-16 px-6 animate-fade-in md:hidden flex flex-col">
+                 <nav className="space-y-2 mt-4">
+                    {[
+                        { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+                        { id: 'tracker', label: 'Leitura', icon: BookOpen },
+                        { id: 'history', label: 'Histórico', icon: History },
+                        { id: 'achievements', label: 'Conquistas', icon: Trophy },
+                        { id: 'support', label: 'Suporte', icon: LifeBuoy },
+                    ].map(item => (
+                        <button
+                            key={item.id}
+                            onClick={() => { setActiveTab(item.id as any); setMobileMenuOpen(false); }}
+                            className={`w-full flex items-center gap-4 px-4 py-4 rounded-xl text-lg font-medium ${activeTab === item.id ? 'bg-indigo-50 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400' : 'text-gray-600 dark:text-gray-400'}`}
+                        >
+                            <item.icon size={24} />
+                            {item.label}
+                        </button>
+                    ))}
+                    {isAdmin && (
+                         <button
+                            onClick={() => { setActiveTab('admin'); setMobileMenuOpen(false); }}
+                            className={`w-full flex items-center gap-4 px-4 py-4 rounded-xl text-lg font-medium text-red-500`}
+                        >
+                            <ShieldAlert size={24} />
+                            Admin
+                        </button>
+                    )}
+                 </nav>
+                 
+                 <div className="mt-auto mb-8 border-t border-gray-100 dark:border-slate-800 pt-6">
+                    <div className="flex items-center gap-4 mb-6">
+                        <div className="w-12 h-12 rounded-full bg-indigo-100 dark:bg-slate-800 flex items-center justify-center text-indigo-600 dark:text-indigo-400 font-bold text-xl">
+                            {user.user_metadata?.full_name?.charAt(0)}
+                        </div>
+                        <div>
+                            <p className="font-bold text-gray-900 dark:text-white text-lg">{user.user_metadata?.full_name?.split(' ')[0]}</p>
+                            <p className="text-sm text-gray-500 dark:text-gray-400">{user.email}</p>
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-4">
+                        <button onClick={toggleTheme} className="flex flex-col items-center justify-center p-3 bg-gray-50 dark:bg-slate-800 rounded-xl text-gray-600 dark:text-gray-300">
+                             {theme === 'light' ? <Moon size={24} /> : <Sun size={24} />}
+                             <span className="text-xs mt-1">Tema</span>
+                        </button>
+                        <button onClick={() => setIsChangePasswordOpen(true)} className="flex flex-col items-center justify-center p-3 bg-gray-50 dark:bg-slate-800 rounded-xl text-gray-600 dark:text-gray-300">
+                             <Lock size={24} />
+                             <span className="text-xs mt-1">Senha</span>
+                        </button>
+                        <button onClick={handleLogout} className="flex flex-col items-center justify-center p-3 bg-red-50 dark:bg-red-900/20 rounded-xl text-red-500">
+                             <LogOut size={24} />
+                             <span className="text-xs mt-1">Sair</span>
+                        </button>
+                    </div>
+                 </div>
             </div>
         )}
-      </nav>
 
-      {/* Content Area */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {activeTab === 'dashboard' && renderDashboard()}
-        {activeTab === 'tracker' && renderTracker()}
-        {activeTab === 'history' && renderHistory()}
-        {activeTab === 'achievements' && renderAchievements()}
-        {activeTab === 'support' && renderSupport()}
-        {activeTab === 'admin' && isAdmin && renderAdminDashboard()}
-      </main>
+        {/* Main Content Area */}
+        <main className={`flex-1 md:ml-64 p-4 md:p-8 pt-20 md:pt-8 min-h-screen transition-all ${mobileMenuOpen ? 'hidden' : 'block'}`}>
+            <div className="max-w-6xl mx-auto">
+               {activeTab === 'dashboard' && renderDashboard()}
+               {activeTab === 'tracker' && renderTracker()}
+               {activeTab === 'history' && renderHistory()}
+               {activeTab === 'achievements' && renderAchievements()}
+               {activeTab === 'support' && renderSupport()}
+               {activeTab === 'admin' && isAdmin && renderAdminDashboard()}
+            </div>
+        </main>
 
-      {/* Mobile Sticky Action Button (Only on Tracker) */}
-      {activeTab === 'tracker' && sessionSelectedChapters.length > 0 && trackerMode === 'select' && (
-          <div className="fixed bottom-4 left-4 right-4 md:hidden z-40">
-               <button
-                    onClick={handleSaveSession}
-                    disabled={isGeneratingAI}
-                    className="w-full bg-indigo-600 text-white p-4 rounded-xl shadow-lg flex items-center justify-center gap-2 font-bold"
-                >
-                    {isGeneratingAI ? <Sparkles size={20} className="animate-spin" /> : <CheckCircle2 size={20} />}
-                    {isGeneratingAI ? 'Salvando...' : `Confirmar (${sessionSelectedChapters.length})`}
-               </button>
-          </div>
-      )}
-
-      {/* Change Password Modal */}
-      {isChangePasswordOpen && user && (
-        <ChangePasswordModal onClose={() => setIsChangePasswordOpen(false)} />
-      )}
-
-      {/* Plan Selection Modal */}
-      {isPlanModalOpen && (
-        <PlanSelectionModal 
-          onClose={() => setIsPlanModalOpen(false)} 
-          onSelectPlan={handleSelectPlan} 
-        />
-      )}
-
-      {/* Bible Reader Modal */}
-      {readingChapter && (
-        <BibleReaderModal 
-            book={readingChapter.book} 
-            chapter={readingChapter.chapter} 
-            onClose={() => setReadingChapter(null)}
-            onPrev={readingChapter.chapter > 1 ? () => setReadingChapter({ ...readingChapter, chapter: readingChapter.chapter - 1 }) : undefined}
-            onNext={readingChapter.chapter < readingChapter.book.chapters ? () => setReadingChapter({ ...readingChapter, chapter: readingChapter.chapter + 1 }) : undefined}
-        />
-      )}
-    </div>
+     </div>
   );
 };
 

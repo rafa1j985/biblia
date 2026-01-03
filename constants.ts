@@ -9,12 +9,24 @@ export const ADMIN_EMAILS = [
   'dev@teste.com' 
 ];
 
-export const PLANS_CONFIG: Record<PlanType, { title: string, days: number, scope: 'ALL' | 'OLD' | 'NEW', description: string }> = {
+export const PLANS_CONFIG: Record<PlanType, { title: string, days: number, scope: 'ALL' | 'OLD' | 'NEW' | 'PAUL', description: string }> = {
   'BIBLE_1Y': { 
     title: 'Bíblia Completa em 1 Ano', 
     days: 365, 
     scope: 'ALL',
     description: 'A jornada clássica. Leia toda a Bíblia em ordem canônica ao longo de 12 meses.'
+  },
+  'BIBLE_6M': { 
+    title: 'Bíblia Completa em 6 Meses', 
+    days: 180, 
+    scope: 'ALL',
+    description: 'Um desafio moderado. Leia a bíblia toda em um semestre (~7 caps/dia).'
+  },
+  'BIBLE_3M': { 
+    title: 'Bíblia Completa em 3 Meses', 
+    days: 90, 
+    scope: 'ALL',
+    description: 'Alta intensidade. Para quem deseja uma imersão total (~13 caps/dia).'
   },
   'NT_3M': { 
     title: 'Novo Testamento em 3 Meses', 
@@ -33,6 +45,12 @@ export const PLANS_CONFIG: Record<PlanType, { title: string, days: number, scope
     days: 365, 
     scope: 'ALL',
     description: 'Leia a Bíblia capa a capa no seu próprio ritmo.'
+  },
+  'PAUL_3C': {
+    title: 'Cartas de Paulo (3 caps/dia)',
+    days: 29, // 87 capítulos total / 3 por dia = 29 dias
+    scope: 'PAUL',
+    description: 'Estudo focado nas epístolas paulinas. Romanos a Filemom em 1 mês.'
   }
 };
 
