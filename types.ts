@@ -45,3 +45,13 @@ export interface Achievement {
   icon: string; // String identifier for the icon component
   color: string;
 }
+
+export interface SupportTicket {
+  id: string;
+  user_id: string;
+  user_email: string;
+  type: 'problem' | 'suggestion' | 'question' | 'other';
+  message: string;
+  created_at: string;
+  status: 'open' | 'resolved';
+}

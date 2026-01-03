@@ -59,7 +59,11 @@ import {
   Eye,
   ChevronLeft,
   TrendingUp,
-  Activity
+  Activity,
+  LifeBuoy,
+  MessageSquare,
+  AlertTriangle,
+  Inbox
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -76,7 +80,7 @@ import {
   Cell
 } from 'recharts';
 import { BIBLE_BOOKS, TOTAL_CHAPTERS_BIBLE, ADMIN_EMAILS, PLANS_CONFIG, ACHIEVEMENTS } from './constants';
-import { BibleBook, ReadChaptersMap, ReadingLog, UserPlan, PlanType, Achievement } from './types';
+import { BibleBook, ReadChaptersMap, ReadingLog, UserPlan, PlanType, Achievement, SupportTicket } from './types';
 import { generateDevotional } from './services/geminiService';
 import { supabase } from './services/supabase';
 
@@ -575,7 +579,7 @@ const App: React.FC = () => {
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
 
   // --- App State ---
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'tracker' | 'history' | 'admin' | 'achievements'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'tracker' | 'history' | 'admin' | 'achievements' | 'support'>('dashboard');
   const [selectedBookId, setSelectedBookId] = useState<string>('GEN');
   
   // Theme State
@@ -603,6 +607,12 @@ const App: React.FC = () => {
   const [adminLogs, setAdminLogs] = useState<any[]>([]);
   const [isAdminLoading, setIsAdminLoading] = useState(false);
   const [selectedUserForAdmin, setSelectedUserForAdmin] = useState<string | null>(null);
+  const [adminView, setAdminView] = useState<'overview' | 'messages'>('overview');
+  const [supportTickets, setSupportTickets] = useState<SupportTicket[]>([]);
+
+  // Support State (User)
+  const [supportForm, setSupportForm] = useState({ type: 'question', message: '' });
+  const [isSubmittingSupport, setIsSubmittingSupport] = useState(false);
 
   // Ephemeral State
   const [sessionSelectedChapters, setSessionSelectedChapters] = useState<number[]>([]);
@@ -679,18 +689,31 @@ const App: React.FC = () => {
     if (!user || !isAdmin) return;
     setIsAdminLoading(true);
 
-    // Fetch ALL logs without filtering by user_id
-    const { data, error } = await supabase
+    // Fetch Reading Logs
+    const { data: logsData, error: logsError } = await supabase
       .from('reading_logs')
       .select('*')
       .order('timestamp', { ascending: false });
 
-    if (error) {
-      console.error('Erro ao buscar dados administrativos:', error);
-      alert("Erro ao carregar dados administrativos. Verifique as políticas RLS do Supabase.");
-    } else if (data) {
-      setAdminLogs(data);
+    if (logsError) {
+      console.error('Erro ao buscar logs administrativos:', logsError);
+    } else if (logsData) {
+      setAdminLogs(logsData);
     }
+
+    // Fetch Support Tickets
+    const { data: ticketsData, error: ticketsError } = await supabase
+      .from('support_tickets')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (ticketsError) {
+       // Silent fail or create table alert handled elsewhere ideally
+       console.log('Tabela support_tickets pode não existir ou erro de permissão.');
+    } else if (ticketsData) {
+       setSupportTickets(ticketsData as SupportTicket[]);
+    }
+
     setIsAdminLoading(false);
   }, [user, isAdmin]);
 
@@ -1169,6 +1192,35 @@ const App: React.FC = () => {
       }
   };
 
+  const handleSupportSubmit = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!supportForm.message.trim() || !user) return;
+
+      setIsSubmittingSupport(true);
+      
+      const { error } = await supabase.from('support_tickets').insert({
+          user_id: user.id,
+          user_email: user.email,
+          type: supportForm.type,
+          message: supportForm.message,
+          created_at: new Date().toISOString(),
+          status: 'open'
+      });
+
+      setIsSubmittingSupport(false);
+
+      if (error) {
+          if (error.message.includes('relation "support_tickets" does not exist')) {
+              alert('Erro: O Administrador precisa criar a tabela "support_tickets" no banco de dados.');
+          } else {
+              alert('Erro ao enviar mensagem: ' + error.message);
+          }
+      } else {
+          alert('Mensagem enviada com sucesso! A equipe analisará em breve.');
+          setSupportForm({ ...supportForm, message: '' });
+      }
+  };
+
   const startEditingNote = (log: ReadingLog) => {
       setEditingNoteId(log.id);
       setTempNoteContent(log.userNotes || '');
@@ -1192,6 +1244,61 @@ const App: React.FC = () => {
   };
 
   // --- Render Functions ---
+
+  const renderSupport = () => (
+      <div className="max-w-2xl mx-auto space-y-6 animate-fade-in">
+          <div className="text-center mb-8">
+              <div className="inline-flex p-4 bg-indigo-100 dark:bg-slate-800 rounded-full text-indigo-600 dark:text-indigo-400 mb-4">
+                  <LifeBuoy size={32} />
+              </div>
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white serif">Como podemos ajudar?</h2>
+              <p className="text-gray-500 dark:text-gray-400 mt-2">Encontrou um bug, tem uma ideia ou precisa de ajuda? Escreva para nós.</p>
+          </div>
+
+          <form onSubmit={handleSupportSubmit} className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 space-y-4">
+              <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tipo de Mensagem</label>
+                  <div className="grid grid-cols-3 gap-2">
+                      {[
+                          { id: 'problem', label: 'Problema', icon: AlertTriangle },
+                          { id: 'suggestion', label: 'Sugestão', icon: Lightbulb },
+                          { id: 'question', label: 'Dúvida', icon: MessageSquare }
+                      ].map((type) => (
+                          <button
+                              key={type.id}
+                              type="button"
+                              onClick={() => setSupportForm({ ...supportForm, type: type.id })}
+                              className={`flex flex-col items-center justify-center p-3 rounded-lg border transition-all ${supportForm.type === type.id ? 'bg-indigo-50 dark:bg-indigo-900/30 border-indigo-500 text-indigo-700 dark:text-indigo-300' : 'bg-gray-50 dark:bg-slate-800 border-transparent text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700'}`}
+                          >
+                              <type.icon size={20} className="mb-1" />
+                              <span className="text-xs font-bold">{type.label}</span>
+                          </button>
+                      ))}
+                  </div>
+              </div>
+
+              <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Sua Mensagem</label>
+                  <textarea
+                      required
+                      value={supportForm.message}
+                      onChange={(e) => setSupportForm({ ...supportForm, message: e.target.value })}
+                      className="w-full p-3 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none h-32 resize-none"
+                      placeholder="Descreva detalhadamente..."
+                  />
+              </div>
+
+              <button
+                  type="submit"
+                  disabled={isSubmittingSupport}
+                  className="w-full bg-indigo-600 text-white py-3 rounded-lg font-bold flex items-center justify-center gap-2 hover:bg-indigo-700 transition-colors disabled:opacity-70"
+              >
+                  {isSubmittingSupport ? <Loader2 className="animate-spin" /> : <Send size={18} />}
+                  Enviar Mensagem
+              </button>
+          </form>
+      </div>
+  );
 
   const renderAchievements = () => {
     const categories: Record<string, string> = {
@@ -1364,12 +1471,60 @@ const App: React.FC = () => {
                     </h2>
                     <p className="text-gray-500 dark:text-gray-400 text-sm">Visão geral do ecossistema do Bíblia Tracker.</p>
                 </div>
-                <div className="text-xs bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 px-3 py-1 rounded-full font-bold">
-                    Admin Mode
+                
+                <div className="flex bg-gray-100 dark:bg-slate-800 p-1 rounded-lg">
+                    <button 
+                        onClick={() => setAdminView('overview')}
+                        className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${adminView === 'overview' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'}`}
+                    >
+                        Visão Geral
+                    </button>
+                    <button 
+                        onClick={() => setAdminView('messages')}
+                        className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-1 ${adminView === 'messages' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'}`}
+                    >
+                        Mensagens <span className="bg-red-500 text-white px-1.5 rounded-full text-[10px]">{supportTickets.filter(t => t.status === 'open').length}</span>
+                    </button>
                 </div>
             </div>
 
-            {selectedUserForAdmin ? (
+            {adminView === 'messages' ? (
+                <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden">
+                    <div className="p-6 border-b border-gray-100 dark:border-slate-800 flex justify-between items-center">
+                        <h3 className="font-bold text-lg text-gray-800 dark:text-gray-200 flex items-center gap-2">
+                            <Inbox size={20} /> Central de Suporte
+                        </h3>
+                    </div>
+                    {supportTickets.length === 0 ? (
+                        <div className="p-12 text-center text-gray-400">
+                            <p>Nenhuma mensagem recebida ainda.</p>
+                        </div>
+                    ) : (
+                        <div className="divide-y divide-gray-100 dark:divide-slate-800">
+                            {supportTickets.map((ticket) => (
+                                <div key={ticket.id} className="p-6 hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors">
+                                    <div className="flex justify-between items-start mb-2">
+                                        <div className="flex items-center gap-2">
+                                            <span className={`px-2 py-1 rounded text-xs font-bold uppercase ${
+                                                ticket.type === 'problem' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
+                                                ticket.type === 'suggestion' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' :
+                                                'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
+                                            }`}>
+                                                {ticket.type === 'problem' ? 'Problema' : ticket.type === 'suggestion' ? 'Sugestão' : 'Dúvida'}
+                                            </span>
+                                            <span className="text-xs text-gray-400">{new Date(ticket.created_at).toLocaleDateString()} {new Date(ticket.created_at).toLocaleTimeString()}</span>
+                                        </div>
+                                        <div className="text-xs font-bold text-gray-500">
+                                            {ticket.user_email}
+                                        </div>
+                                    </div>
+                                    <p className="text-gray-800 dark:text-gray-200 text-sm whitespace-pre-wrap">{ticket.message}</p>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            ) : selectedUserForAdmin ? (
                 // User Detail View (Existing logic preserved but wrapped nicely)
                 <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden">
                     <div className="p-4 bg-gray-50 dark:bg-slate-950 border-b border-gray-100 dark:border-slate-800 flex justify-between items-center">
@@ -2101,6 +2256,12 @@ const App: React.FC = () => {
               >
                 Conquistas
               </button>
+              <button 
+                onClick={() => setActiveTab('support')}
+                className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${activeTab === 'support' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-300 dark:hover:border-blue-600'}`}
+              >
+                Suporte
+              </button>
               {isAdmin && (
                   <button 
                     onClick={() => setActiveTab('admin')}
@@ -2182,6 +2343,14 @@ const App: React.FC = () => {
                            <Trophy size={18} /> Conquistas
                         </div>
                     </button>
+                    <button
+                        onClick={() => { setActiveTab('support'); setMobileMenuOpen(false); }}
+                        className={`block pl-3 pr-4 py-3 border-l-4 text-base font-medium w-full text-left ${activeTab === 'support' ? 'bg-blue-50 dark:bg-blue-900/10 border-blue-500 text-blue-700 dark:text-blue-300' : 'border-transparent text-gray-500 dark:text-gray-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-300 dark:hover:border-blue-700 hover:text-blue-700 dark:hover:text-blue-300'}`}
+                    >
+                         <div className="flex items-center gap-3">
+                           <LifeBuoy size={18} /> Suporte
+                        </div>
+                    </button>
                     {isAdmin && (
                         <button
                             onClick={() => { setActiveTab('admin'); setMobileMenuOpen(false); }}
@@ -2222,6 +2391,7 @@ const App: React.FC = () => {
         {activeTab === 'tracker' && renderTracker()}
         {activeTab === 'history' && renderHistory()}
         {activeTab === 'achievements' && renderAchievements()}
+        {activeTab === 'support' && renderSupport()}
         {activeTab === 'admin' && isAdmin && renderAdminDashboard()}
       </main>
 
