@@ -1,16 +1,10 @@
 import { GoogleGenAI } from "@google/genai";
 
-const apiKey = process.env.API_KEY || '';
-
-// Safely initialize the client only if the key exists to prevent immediate crashes in environments without keys
-const ai = apiKey ? new GoogleGenAI({ apiKey }) : null;
+// Always use named parameter for initialization and rely on process.env.API_KEY directly.
+// We assume the API key is valid and configured in the environment.
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 export const generateDevotional = async (bookName: string, chapters: number[]) => {
-  if (!ai) {
-    console.warn("API Key missing for Gemini");
-    return "Configure sua API Key para receber devocionais gerados por IA.";
-  }
-
   const chaptersStr = chapters.join(', ');
   
   // Prompt engineered to mimic Luiz Sayão's style
@@ -31,6 +25,7 @@ export const generateDevotional = async (bookName: string, chapters: number[]) =
       model: 'gemini-3-flash-preview',
       contents: prompt,
     });
+    // Directly access text property
     return response.text?.trim() || "Não foi possível gerar a reflexão no momento.";
   } catch (error) {
     console.error("Error generating devotional:", error);

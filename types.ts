@@ -62,4 +62,21 @@ export interface UserProfile {
   email: string;
   full_name: string;
   avatar_url?: string;
+  family_id?: string; // Link to family table
+}
+
+export interface Family {
+  id: string;
+  name: string;
+  invite_code: string;
+}
+
+export interface FamilyMemberStats {
+  userId: string;
+  name: string;
+  email: string;
+  streak: number;
+  chaptersReadToday: number;
+  totalChaptersRead: number;
+  lastActive: string; // Date string
 }

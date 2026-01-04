@@ -67,7 +67,11 @@ import {
   XCircle,
   Filter,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Info,
+  UserPlus,
+  LogIn,
+  Copy
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -84,7 +88,7 @@ import {
   Cell
 } from 'recharts';
 import { BIBLE_BOOKS, TOTAL_CHAPTERS_BIBLE, ADMIN_EMAILS, PLANS_CONFIG, ACHIEVEMENTS } from './constants';
-import { BibleBook, ReadChaptersMap, ReadingLog, UserPlan, PlanType, Achievement, SupportTicket, UserProfile } from './types';
+import { BibleBook, ReadChaptersMap, ReadingLog, UserPlan, PlanType, Achievement, SupportTicket, UserProfile, Family, FamilyMemberStats } from './types';
 import { generateDevotional } from './services/geminiService';
 import { supabase } from './services/supabase';
 
@@ -156,29 +160,37 @@ const BibleReaderModal = ({ book, chapter, onClose, onNext, onPrev }: { book: Bi
       setError('');
       try {
         const queryBook = BIBLE_API_MAPPING[book.id];
-        if (!queryBook) throw new Error('Livro não mapeado.');
+        if (!queryBook) {
+            console.error(`Livro ID ${book.id} não encontrado no mapeamento.`);
+            throw new Error(`Livro não mapeado na API: ${book.name}`);
+        }
 
-        // Usando bible-api.com que é extremamente confiável e gratuita
-        const response = await fetch(`https://bible-api.com/${encodeURIComponent(queryBook)}+${chapter}?translation=almeida`);
+        const url = `https://bible-api.com/${encodeURIComponent(queryBook)}+${chapter}?translation=almeida`;
         
-        if (!response.ok) throw new Error('Falha ao obter texto da API.');
+        const response = await fetch(url);
+        
+        if (!response.ok) {
+            if (response.status === 404) throw new Error('Capítulo não encontrado na versão Almeida.');
+            throw new Error('Falha de conexão com a Bíblia Online.');
+        }
         
         const data = await response.json();
         
-        // A API bible-api.com retorna versículos.
         if (data.verses && Array.isArray(data.verses)) {
             setVerses(data.verses.map((v: any) => ({
                 number: v.verse,
                 text: v.text
             })));
             setText(data.text || '');
+        } else if (data.text) {
+            setText(data.text);
         } else {
-            setText(data.text || 'Texto não encontrado.');
+            throw new Error('Formato de texto inválido recebido.');
         }
 
-      } catch (err) {
+      } catch (err: any) {
         console.error(err);
-        setError('Não foi possível carregar o texto. Verifique sua conexão.');
+        setError(err.message || 'Não foi possível carregar o texto.');
       } finally {
         setLoading(false);
       }
@@ -220,6 +232,7 @@ const BibleReaderModal = ({ book, chapter, onClose, onNext, onPrev }: { book: Bi
             <div className="h-full flex flex-col items-center justify-center gap-3 text-red-500 text-center px-4">
                 <ShieldAlert size={32} />
                 <p>{error}</p>
+                <p className="text-xs text-gray-400">Verifique sua conexão ou tente mais tarde.</p>
                 <button onClick={onClose} className="text-sm underline mt-2 text-gray-500">Fechar</button>
             </div>
           ) : (
@@ -586,7 +599,7 @@ const App: React.FC = () => {
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
 
   // --- App State ---
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'tracker' | 'history' | 'admin' | 'achievements' | 'support'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'tracker' | 'history' | 'admin' | 'achievements' | 'support' | 'family'>('dashboard');
   const [selectedBookId, setSelectedBookId] = useState<string | null>(null); // Changed default to null for accordion
   
   // Theme State
@@ -605,10 +618,18 @@ const App: React.FC = () => {
   const [readChapters, setReadChapters] = useState<ReadChaptersMap>({});
   const [readingLogs, setReadingLogs] = useState<ReadingLog[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(false);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   
   // Plan State
   const [userPlan, setUserPlan] = useState<UserPlan | null>(null);
   const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
+
+  // Family State
+  const [familyData, setFamilyData] = useState<Family | null>(null);
+  const [familyMembers, setFamilyMembers] = useState<FamilyMemberStats[]>([]);
+  const [isCreatingFamily, setIsCreatingFamily] = useState(false);
+  const [joinCode, setJoinCode] = useState('');
+  const [newFamilyName, setNewFamilyName] = useState('');
 
   // Data State (Admin)
   const [adminLogs, setAdminLogs] = useState<any[]>([]);
@@ -704,19 +725,29 @@ const App: React.FC = () => {
     return () => subscription.unsubscribe();
   }, []);
 
-  // --- Auto-create Profile on Auth ---
+  // --- Auto-create Profile on Auth and Fetch Profile ---
   useEffect(() => {
     if (user) {
-        const createProfile = async () => {
-            const { error } = await supabase.from('profiles').upsert({
-                id: user.id,
-                email: user.email,
-                full_name: user.user_metadata?.full_name || user.email.split('@')[0],
-                avatar_url: ''
-            });
-            if (error) console.error("Error syncing profile:", error);
+        const fetchAndCreateProfile = async () => {
+            const { data: profile, error } = await supabase
+                .from('profiles')
+                .select('*')
+                .eq('id', user.id)
+                .single();
+
+            if (!profile && !error) { // Only create if not exists
+                 const { error: upsertError } = await supabase.from('profiles').upsert({
+                    id: user.id,
+                    email: user.email,
+                    full_name: user.user_metadata?.full_name || user.email.split('@')[0],
+                    avatar_url: ''
+                });
+                if(upsertError) console.error("Error creating profile", upsertError);
+            } else if (profile) {
+                setUserProfile(profile);
+            }
         };
-        createProfile();
+        fetchAndCreateProfile();
     }
   }, [user]);
 
@@ -755,6 +786,141 @@ const App: React.FC = () => {
       if (isAdmin) fetchAdminData();
     }
   }, [user, fetchData, isAdmin]);
+
+  // --- Family Logic ---
+  useEffect(() => {
+      if (userProfile?.family_id) {
+          fetchFamilyData();
+      }
+  }, [userProfile]);
+
+  const fetchFamilyData = async () => {
+      if (!userProfile?.family_id) return;
+
+      const { data: family } = await supabase
+          .from('families')
+          .select('*')
+          .eq('id', userProfile.family_id)
+          .single();
+      
+      if (family) {
+          setFamilyData(family);
+          
+          // Fetch members profiles
+          const { data: profiles } = await supabase
+              .from('profiles')
+              .select('*')
+              .eq('family_id', family.id);
+          
+          if (profiles) {
+              const membersStats: FamilyMemberStats[] = [];
+              const today = new Date().toISOString().split('T')[0];
+
+              for (const p of profiles) {
+                  // Fetch basic stats for each member
+                  const { data: logs } = await supabase
+                      .from('reading_logs')
+                      .select('*')
+                      .eq('user_id', p.id);
+                  
+                  const userLogs = (logs || []) as ReadingLog[];
+                  const totalRead = userLogs.reduce((acc, l) => acc + (l.chapters?.length || 0), 0);
+                  const readToday = userLogs
+                      .filter(l => l.date === today)
+                      .reduce((acc, l) => acc + (l.chapters?.length || 0), 0);
+                  
+                  // Simple streak calc (same as main app logic)
+                  const sortedLogs = [...userLogs].sort((a, b) => b.timestamp - a.timestamp);
+                  let streak = 0;
+                  if (sortedLogs.length > 0) {
+                      const uniqueDates = Array.from(new Set(sortedLogs.map(log => log.date)));
+                      let currentDate = new Date(today);
+                      // Check if read today or yesterday to maintain streak
+                      if (uniqueDates[0] === today || uniqueDates[0] === new Date(Date.now() - 86400000).toISOString().split('T')[0]) {
+                          for (let i = 0; i < uniqueDates.length; i++) {
+                              const logDate = new Date(uniqueDates[i]);
+                              const diffTime = Math.abs(currentDate.getTime() - logDate.getTime());
+                              const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                              if (i === 0) streak = 1;
+                              else if (diffDays === 1) { streak++; currentDate = logDate; }
+                              else break;
+                          }
+                      }
+                  }
+
+                  membersStats.push({
+                      userId: p.id,
+                      name: p.full_name,
+                      email: p.email,
+                      streak,
+                      chaptersReadToday: readToday,
+                      totalChaptersRead: totalRead,
+                      lastActive: userLogs.length > 0 ? userLogs[0].date : 'N/A'
+                  });
+              }
+              setFamilyMembers(membersStats.sort((a, b) => b.chaptersReadToday - a.chaptersReadToday));
+          }
+      }
+  };
+
+  const handleCreateFamily = async () => {
+      if (!newFamilyName.trim() || !user) return;
+      
+      const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+      
+      const { data, error } = await supabase
+          .from('families')
+          .insert({ name: newFamilyName, invite_code: code })
+          .select()
+          .single();
+      
+      if (error) {
+          alert('Erro ao criar família. Verifique se a tabela "families" existe no banco de dados.');
+          console.error(error);
+          return;
+      }
+
+      if (data) {
+          // Update user profile
+          const { error: updateError } = await supabase
+              .from('profiles')
+              .update({ family_id: data.id })
+              .eq('id', user.id);
+          
+          if (!updateError) {
+              setUserProfile({ ...userProfile!, family_id: data.id });
+              alert('Família criada com sucesso!');
+              setIsCreatingFamily(false);
+          }
+      }
+  };
+
+  const handleJoinFamily = async () => {
+      if (!joinCode.trim() || !user) return;
+
+      const { data: family, error } = await supabase
+          .from('families')
+          .select('*')
+          .eq('invite_code', joinCode.toUpperCase())
+          .single();
+      
+      if (error || !family) {
+          alert('Código inválido ou família não encontrada.');
+          return;
+      }
+
+      const { error: updateError } = await supabase
+          .from('profiles')
+          .update({ family_id: family.id })
+          .eq('id', user.id);
+      
+      if (!updateError) {
+          setUserProfile({ ...userProfile!, family_id: family.id });
+          alert(`Bem-vindo à família ${family.name}!`);
+      } else {
+          alert('Erro ao entrar na família.');
+      }
+  };
 
   // --- Helpers ---
   const processLogs = (data: any[], setLogs: Function, setMap: Function) => {
@@ -1255,6 +1421,140 @@ const App: React.FC = () => {
 
   // --- Render Functions ---
 
+  const renderFamily = () => {
+      if (!userProfile?.family_id) {
+          return (
+              <div className="max-w-2xl mx-auto space-y-8 animate-fade-in">
+                  <div className="text-center">
+                      <h2 className="text-2xl font-bold text-gray-900 dark:text-white serif mb-2">Conecte sua Família</h2>
+                      <p className="text-gray-500 dark:text-gray-400">Leiam juntos, motivem-se e cresçam em comunhão.</p>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {/* Create Family Card */}
+                      <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 hover:shadow-md transition-shadow">
+                          <div className="w-12 h-12 bg-indigo-100 dark:bg-indigo-900/30 rounded-xl flex items-center justify-center text-indigo-600 dark:text-indigo-400 mb-4">
+                              <UserPlus size={24} />
+                          </div>
+                          <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Criar Nova Família</h3>
+                          <p className="text-sm text-gray-500 dark:text-gray-400 mb-6 min-h-[40px]">
+                              Comece um novo grupo e convide membros para participar.
+                          </p>
+                          {isCreatingFamily ? (
+                              <div className="space-y-3">
+                                  <input 
+                                      type="text" 
+                                      placeholder="Nome da Família (ex: Silva)" 
+                                      value={newFamilyName}
+                                      onChange={e => setNewFamilyName(e.target.value)}
+                                      className="w-full p-2 text-sm border rounded-lg dark:bg-slate-800 dark:border-slate-700 dark:text-white outline-none focus:border-indigo-500"
+                                  />
+                                  <div className="flex gap-2">
+                                      <button onClick={() => setIsCreatingFamily(false)} className="px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-lg">Cancelar</button>
+                                      <button onClick={handleCreateFamily} className="flex-1 bg-indigo-600 text-white px-3 py-2 text-sm rounded-lg hover:bg-indigo-700">Criar</button>
+                                  </div>
+                              </div>
+                          ) : (
+                              <button onClick={() => setIsCreatingFamily(true)} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold text-sm hover:bg-indigo-700 transition-colors">
+                                  Criar Família
+                              </button>
+                          )}
+                      </div>
+
+                      {/* Join Family Card */}
+                      <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 hover:shadow-md transition-shadow">
+                          <div className="w-12 h-12 bg-green-100 dark:bg-green-900/30 rounded-xl flex items-center justify-center text-green-600 dark:text-green-400 mb-4">
+                              <LogIn size={24} />
+                          </div>
+                          <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Entrar em Família</h3>
+                          <p className="text-sm text-gray-500 dark:text-gray-400 mb-6 min-h-[40px]">
+                              Já tem um código? Entre para ver o progresso do grupo.
+                          </p>
+                          <div className="space-y-3">
+                              <input 
+                                  type="text" 
+                                  placeholder="Código de Convite (ex: A1B2C3)" 
+                                  value={joinCode}
+                                  onChange={e => setJoinCode(e.target.value)}
+                                  className="w-full p-3 text-sm border border-gray-200 dark:border-slate-700 rounded-xl dark:bg-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-green-500 uppercase tracking-widest text-center font-mono"
+                              />
+                              <button onClick={handleJoinFamily} className="w-full bg-green-600 text-white py-3 rounded-xl font-bold text-sm hover:bg-green-700 transition-colors">
+                                  Entrar Agora
+                              </button>
+                          </div>
+                      </div>
+                  </div>
+              </div>
+          );
+      }
+
+      return (
+          <div className="space-y-6 animate-fade-in">
+              <div className="bg-indigo-600 rounded-2xl p-6 text-white shadow-lg relative overflow-hidden">
+                  <div className="relative z-10">
+                      <h2 className="text-2xl font-bold mb-1">Família {familyData?.name}</h2>
+                      <div className="flex items-center gap-2 text-indigo-100 text-sm mb-6">
+                          <Users size={16} /> {familyMembers.length} membros
+                      </div>
+                      
+                      <div className="bg-white/10 backdrop-blur-sm p-3 rounded-lg inline-flex items-center gap-3 border border-white/20">
+                          <span className="text-xs font-bold uppercase tracking-wide text-indigo-200">Código de Convite:</span>
+                          <span className="font-mono text-lg font-bold tracking-wider">{familyData?.invite_code}</span>
+                          <button 
+                              onClick={() => { navigator.clipboard.writeText(familyData?.invite_code || ''); alert('Código copiado!'); }}
+                              className="p-1 hover:bg-white/20 rounded transition-colors"
+                              title="Copiar código"
+                          >
+                              <Copy size={16} />
+                          </button>
+                      </div>
+                  </div>
+                  <Users className="absolute -bottom-6 -right-6 text-indigo-500 opacity-50" size={150} />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {familyMembers.map(member => (
+                      <div key={member.userId} className="bg-white dark:bg-slate-900 p-5 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 flex items-center justify-between">
+                          <div className="flex items-center gap-4">
+                              <div className="w-12 h-12 rounded-full bg-gray-100 dark:bg-slate-800 flex items-center justify-center font-bold text-gray-600 dark:text-gray-300 text-lg">
+                                  {member.name.charAt(0).toUpperCase()}
+                              </div>
+                              <div>
+                                  <h4 className="font-bold text-gray-900 dark:text-white leading-tight">{member.name.split(' ')[0]}</h4>
+                                  <p className="text-xs text-gray-500 dark:text-gray-400">Última leitura: {member.lastActive !== 'N/A' ? new Date(member.lastActive).toLocaleDateString() : '-'}</p>
+                              </div>
+                          </div>
+                          <div className="text-right">
+                              <div className="flex items-center justify-end gap-1 text-orange-500 font-bold mb-1">
+                                  <Flame size={16} /> {member.streak}
+                              </div>
+                              <div className="text-xs font-medium text-gray-400 bg-gray-100 dark:bg-slate-800 px-2 py-1 rounded">
+                                  {member.chaptersReadToday} caps hoje
+                              </div>
+                          </div>
+                      </div>
+                  ))}
+              </div>
+
+              <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800">
+                  <h3 className="font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                      <BarChart3 size={20} className="text-green-500"/> Comparativo Diário
+                  </h3>
+                  <div className="h-64 w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={familyMembers.map(m => ({ name: m.name.split(' ')[0], hoje: m.chaptersReadToday, total: m.totalChaptersRead }))}>
+                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme === 'dark' ? '#334155' : '#e5e7eb'} />
+                              <XAxis dataKey="name" tick={{fontSize: 12, fill: theme === 'dark' ? '#94a3b8' : '#6b7280'}} axisLine={false} tickLine={false} />
+                              <Tooltip cursor={{fill: theme === 'dark' ? '#1e293b' : '#f3f4f6'}} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', backgroundColor: theme === 'dark' ? '#1e293b' : '#fff', color: theme === 'dark' ? '#fff' : '#000' }} />
+                              <Bar dataKey="hoje" name="Lidos Hoje" fill="#10b981" radius={[4, 4, 0, 0]} barSize={40} />
+                          </BarChart>
+                      </ResponsiveContainer>
+                  </div>
+              </div>
+          </div>
+      );
+  };
+
   const renderSupport = () => (
       <div className="max-w-2xl mx-auto space-y-6 animate-fade-in">
           <div className="text-center mb-8">
@@ -1421,461 +1721,6 @@ const App: React.FC = () => {
     );
   };
 
-  const renderAdminDashboard = () => {
-    // Process Data
-    const usersData: Record<string, { email: string, name: string, logs: any[], lastActive: number }> = {};
-    const bookPopularity: Record<string, number> = {};
-    let totalChaptersReadGlobal = 0;
-    const activityMap: Record<string, number> = {};
-
-    // Helper to format date for chart
-    const getDaysArray = (days: number) => {
-        const arr = [];
-        for(let i=days-1; i>=0; i--) {
-            const d = new Date();
-            d.setDate(d.getDate() - i);
-            arr.push(d.toISOString().split('T')[0]);
-        }
-        return arr;
-    };
-    const last14Days = getDaysArray(14);
-    last14Days.forEach(d => activityMap[d] = 0);
-
-    // Aggregate Logs
-    adminLogs.forEach(log => {
-        const email = log.user_email || 'Unknown';
-        if (!usersData[email]) {
-            usersData[email] = {
-                email: email,
-                name: log.user_name || 'User',
-                logs: [],
-                lastActive: 0
-            };
-        }
-        usersData[email].logs.push(log);
-        if (log.timestamp > usersData[email].lastActive) {
-            usersData[email].lastActive = log.timestamp;
-        }
-
-        // Global Stats
-        totalChaptersReadGlobal += log.chapters.length;
-        
-        // Book Pop
-        bookPopularity[log.book_id] = (bookPopularity[log.book_id] || 0) + log.chapters.length;
-
-        // Activity Trend
-        if (activityMap[log.date] !== undefined) {
-            activityMap[log.date] += log.chapters.length;
-        }
-    });
-
-    const usersList = Object.values(usersData).sort((a, b) => b.lastActive - a.lastActive);
-    const chartData = last14Days.map(date => ({
-        name: new Date(date).toLocaleDateString('pt-BR', {day: '2-digit', month: '2-digit'}),
-        chapters: activityMap[date] || 0
-    }));
-
-    // KPI Calculations
-    const totalUsers = Object.keys(usersData).length;
-    const activeToday = adminLogs.filter(l => l.date === new Date().toISOString().split('T')[0]).map(l => l.user_email).filter((v, i, a) => a.indexOf(v) === i).length;
-    const mostPopularBookId = Object.keys(bookPopularity).reduce((a, b) => bookPopularity[a] > bookPopularity[b] ? a : b, 'GEN');
-    const mostPopularBookName = BIBLE_BOOKS.find(b => b.id === mostPopularBookId)?.name || mostPopularBookId;
-
-    // Recent Feed
-    const recentLogs = [...adminLogs].sort((a, b) => b.timestamp - a.timestamp).slice(0, 10);
-
-    // Filter Logic for Messages
-    const filteredTickets = supportTickets.filter(t => {
-       if (messageFilter === 'all') return true;
-       // Trata nulos/undefined como 'open'
-       const status = t.status || 'open';
-       return status === messageFilter;
-    });
-
-    return (
-        <div className="space-y-8 animate-fade-in">
-            {/* Header */}
-            <div className="flex justify-between items-center border-b border-gray-200 dark:border-slate-800 pb-4">
-                <div>
-                    <h2 className="text-2xl font-bold text-gray-800 dark:text-white serif flex items-center gap-2">
-                        <ShieldAlert className="text-red-500" /> Painel de Controle Master
-                    </h2>
-                    <p className="text-gray-500 dark:text-gray-400 text-sm">Visão geral do ecossistema do Bíblia Tracker.</p>
-                </div>
-                
-                <div className="flex bg-gray-100 dark:bg-slate-800 p-1 rounded-lg">
-                    <button 
-                        onClick={() => setAdminView('overview')}
-                        className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${adminView === 'overview' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'}`}
-                    >
-                        Visão Geral
-                    </button>
-                    <button 
-                        onClick={() => setAdminView('messages')}
-                        className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-1 ${adminView === 'messages' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'}`}
-                    >
-                        Mensagens <span className="bg-red-500 text-white px-1.5 rounded-full text-[10px]">{supportTickets.filter(t => (t.status || 'open') === 'open').length}</span>
-                    </button>
-                </div>
-            </div>
-
-            {adminView === 'messages' ? (
-                <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden">
-                    <div className="p-6 border-b border-gray-100 dark:border-slate-800 flex justify-between items-center">
-                        <h3 className="font-bold text-lg text-gray-800 dark:text-gray-200 flex items-center gap-2">
-                            <Inbox size={20} /> Central de Suporte
-                        </h3>
-                    </div>
-                    
-                    {/* Filtros */}
-                    <div className="px-6 py-4 border-b border-gray-100 dark:border-slate-800 flex gap-2 overflow-x-auto">
-                        <button 
-                            onClick={() => setMessageFilter('all')}
-                            className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors border ${messageFilter === 'all' ? 'bg-gray-800 text-white border-gray-800 dark:bg-white dark:text-slate-900' : 'bg-transparent text-gray-500 border-gray-200 dark:border-slate-700 dark:text-gray-400'}`}
-                        >
-                            Todas
-                        </button>
-                        <button 
-                            onClick={() => setMessageFilter('open')}
-                            className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors border ${messageFilter === 'open' ? 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800' : 'bg-transparent text-gray-500 border-gray-200 dark:border-slate-700 dark:text-gray-400'}`}
-                        >
-                            Pendentes
-                        </button>
-                        <button 
-                            onClick={() => setMessageFilter('resolved')}
-                            className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors border ${messageFilter === 'resolved' ? 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-800' : 'bg-transparent text-gray-500 border-gray-200 dark:border-slate-700 dark:text-gray-400'}`}
-                        >
-                            Resolvidas
-                        </button>
-                    </div>
-
-                    {filteredTickets.length === 0 ? (
-                        <div className="p-12 text-center text-gray-400">
-                            <p>Nenhuma mensagem encontrada com este filtro.</p>
-                        </div>
-                    ) : (
-                        <div className="divide-y divide-gray-100 dark:divide-slate-800">
-                            {filteredTickets.map((ticket) => (
-                                <div key={ticket.id} className={`p-6 transition-colors ${ticket.status === 'resolved' ? 'bg-gray-50/80 dark:bg-slate-800/30' : 'hover:bg-gray-50 dark:hover:bg-slate-800/50'}`}>
-                                    <div className="flex justify-between items-start mb-2">
-                                        <div className="flex items-center gap-2">
-                                            <span className={`px-2 py-1 rounded text-xs font-bold uppercase ${
-                                                ticket.type === 'problem' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
-                                                ticket.type === 'suggestion' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' :
-                                                'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
-                                            }`}>
-                                                {ticket.type === 'problem' ? 'Problema' : ticket.type === 'suggestion' ? 'Sugestão' : 'Dúvida'}
-                                            </span>
-                                            {ticket.status === 'resolved' && (
-                                                <span className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 px-2 py-1 rounded text-xs font-bold uppercase flex items-center gap-1">
-                                                    <CheckCircle2 size={12} /> Resolvido
-                                                </span>
-                                            )}
-                                            <span className="text-xs text-gray-400">{new Date(ticket.created_at).toLocaleDateString()} {new Date(ticket.created_at).toLocaleTimeString()}</span>
-                                        </div>
-                                        <div className="flex items-center gap-4">
-                                            <div className="text-xs font-bold text-gray-500">
-                                                {ticket.user_email}
-                                            </div>
-                                            <button 
-                                                onClick={() => handleToggleTicketStatus(ticket.id, ticket.status)}
-                                                disabled={updatingTicketId === ticket.id}
-                                                className={`p-2 rounded-lg transition-colors flex items-center gap-2 text-xs font-bold ${
-                                                    (ticket.status || 'open') === 'open' 
-                                                    ? 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:text-indigo-400 dark:hover:bg-indigo-900/40' 
-                                                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200 dark:bg-slate-800 dark:text-gray-400'
-                                                }`}
-                                                title={(ticket.status || 'open') === 'open' ? "Marcar como Resolvido" : "Reabrir"}
-                                            >
-                                                {updatingTicketId === ticket.id ? (
-                                                    <Loader2 size={14} className="animate-spin" />
-                                                ) : (ticket.status || 'open') === 'open' ? (
-                                                    <><Check size={14} /> Marcar como Lida</>
-                                                ) : (
-                                                    <><RefreshCcw size={14} /> Reabrir</>
-                                                )}
-                                            </button>
-                                        </div>
-                                    </div>
-                                    <p className={`text-sm whitespace-pre-wrap ${(ticket.status || 'open') === 'resolved' ? 'text-gray-400 dark:text-gray-500' : 'text-gray-800 dark:text-gray-200'}`}>{ticket.message}</p>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </div>
-            ) : selectedUserForAdmin ? (
-                // User Detail View (Existing logic preserved but wrapped nicely)
-                <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden">
-                    <div className="p-4 bg-gray-50 dark:bg-slate-950 border-b border-gray-100 dark:border-slate-800 flex justify-between items-center">
-                         <button 
-                            onClick={() => setSelectedUserForAdmin(null)}
-                            className="text-indigo-600 dark:text-indigo-400 font-medium flex items-center gap-1 hover:underline"
-                        >
-                            <ArrowLeft size={16} /> Voltar para Dashboard
-                        </button>
-                        <h3 className="font-bold text-gray-700 dark:text-gray-300">{selectedUserForAdmin}</h3>
-                    </div>
-                    <div className="p-6">
-                        <div className="flex justify-between items-center mb-6">
-                            <div>
-                                <h4 className="font-bold text-xl text-gray-800 dark:text-white">Histórico de Leitura</h4>
-                                <p className="text-sm text-gray-500">Log completo de atividades.</p>
-                            </div>
-                             <button
-                                onClick={() => handleSendPasswordReset(selectedUserForAdmin!)}
-                                className="px-4 py-2 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm font-bold rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 flex items-center gap-2 transition-colors border border-red-100 dark:border-red-900/30"
-                            >
-                                <KeyRound size={16} /> Enviar Redefinição de Senha
-                            </button>
-                        </div>
-                        <div className="space-y-2 max-h-[600px] overflow-y-auto pr-2">
-                            {usersData[selectedUserForAdmin]?.logs.sort((a, b) => b.timestamp - a.timestamp).map((log: any) => (
-                                <div key={log.id} className="p-4 bg-gray-50 dark:bg-slate-800/50 rounded-xl border border-gray-100 dark:border-slate-700 flex justify-between items-center hover:bg-white dark:hover:bg-slate-800 transition-colors shadow-sm">
-                                    <div className="flex items-center gap-3">
-                                        <div className="bg-indigo-100 dark:bg-indigo-900/30 p-2 rounded-lg text-indigo-600 dark:text-indigo-400">
-                                            <BookOpen size={18} />
-                                        </div>
-                                        <div>
-                                            <span className="font-bold text-gray-700 dark:text-gray-200 block">{BIBLE_BOOKS.find(b => b.id === log.book_id)?.name || log.book_id}</span>
-                                            <span className="text-xs text-gray-500 dark:text-gray-400">Capítulos: {log.chapters.join(', ')}</span>
-                                        </div>
-                                    </div>
-                                    <span className="text-gray-400 text-xs font-medium bg-white dark:bg-slate-900 px-2 py-1 rounded border border-gray-100 dark:border-slate-700">
-                                        {new Date(log.date).toLocaleDateString()}
-                                    </span>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-            ) : (
-                <>
-                    {/* KPI Cards Grid */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                        <StatCard 
-                            title="Total de Usuários" 
-                            value={totalUsers} 
-                            icon={<Users size={20} />} 
-                            colorClass="bg-blue-600"
-                            highlight={true}
-                        />
-                        <StatCard 
-                            title="Leituras Globais" 
-                            value={totalChaptersReadGlobal} 
-                            subtext="capítulos lidos na plataforma"
-                            icon={<BookOpen size={20} />} 
-                        />
-                        <StatCard 
-                            title="Ativos Hoje" 
-                            value={activeToday} 
-                            subtext="usuários lendo agora"
-                            icon={<Activity size={20} />} 
-                            colorClass="bg-green-600"
-                            highlight={activeToday > 0}
-                        />
-                        <StatCard 
-                            title="Livro + Popular" 
-                            value={mostPopularBookName} 
-                            subtext={`${bookPopularity[mostPopularBookId] || 0} capítulos lidos`}
-                            icon={<TrendingUp size={20} />} 
-                        />
-                    </div>
-
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                        {/* Chart Section */}
-                        <div className="lg:col-span-2 bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800">
-                            <h3 className="text-lg font-bold text-gray-800 dark:text-gray-200 mb-6 flex items-center gap-2">
-                                <TrendingUp size={18} className="text-indigo-500" /> Volume de Leitura (14 Dias)
-                            </h3>
-                            <div className="h-72 w-full">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <AreaChart data={chartData}>
-                                        <defs>
-                                            <linearGradient id="colorChapters" x1="0" y1="0" x2="0" y2="1">
-                                                <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/>
-                                                <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
-                                            </linearGradient>
-                                        </defs>
-                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme === 'dark' ? '#334155' : '#e5e7eb'} />
-                                        <XAxis dataKey="name" tick={{fontSize: 12, fill: theme === 'dark' ? '#94a3b8' : '#6b7280'}} />
-                                        <YAxis allowDecimals={false} tick={{fontSize: 12, fill: theme === 'dark' ? '#94a3b8' : '#6b7280'}} />
-                                        <Tooltip 
-                                            contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', backgroundColor: theme === 'dark' ? '#1e293b' : '#fff', color: theme === 'dark' ? '#fff' : '#000' }}
-                                        />
-                                        <Area type="monotone" dataKey="chapters" stroke="#6366f1" fillOpacity={1} fill="url(#colorChapters)" />
-                                    </AreaChart>
-                                </ResponsiveContainer>
-                            </div>
-                        </div>
-
-                        {/* Recent Activity Feed */}
-                        <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden flex flex-col">
-                            <div className="p-4 border-b border-gray-100 dark:border-slate-800 bg-gray-50 dark:bg-slate-950">
-                                <h3 className="font-bold text-gray-700 dark:text-gray-300 flex items-center gap-2">
-                                    <Activity size={18} className="text-orange-500" /> Feed Recente
-                                </h3>
-                            </div>
-                            <div className="flex-1 overflow-y-auto p-4 space-y-3 max-h-[350px]">
-                                {recentLogs.map((log, idx) => (
-                                    <div key={idx} className="flex gap-3 items-start pb-3 border-b border-gray-50 dark:border-slate-800 last:border-0 last:pb-0">
-                                        <div className="mt-1 min-w-[32px] h-8 bg-indigo-50 dark:bg-slate-800 rounded-full flex items-center justify-center text-xs font-bold text-indigo-600 dark:text-indigo-400">
-                                            {log.user_name ? log.user_name.charAt(0).toUpperCase() : 'U'}
-                                        </div>
-                                        <div>
-                                            <p className="text-sm text-gray-800 dark:text-gray-200 leading-tight">
-                                                <span className="font-bold">{log.user_name || log.user_email?.split('@')[0]}</span> leu <span className="font-bold text-indigo-600 dark:text-indigo-400">{BIBLE_BOOKS.find(b => b.id === log.book_id)?.name}</span>
-                                            </p>
-                                            <p className="text-xs text-gray-400 mt-1">
-                                                Caps. {log.chapters.join(', ')} • {new Date(log.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                                            </p>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Users Table */}
-                    <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden">
-                         <div className="p-6 border-b border-gray-100 dark:border-slate-800 flex justify-between items-center">
-                            <h3 className="font-bold text-lg text-gray-800 dark:text-gray-200">Gerenciamento de Usuários</h3>
-                         </div>
-                         <div className="overflow-x-auto">
-                            <table className="w-full text-left text-sm">
-                              <thead className="bg-gray-50 dark:bg-slate-950 text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-slate-800">
-                                <tr>
-                                  <th className="p-4 font-bold">Usuário</th>
-                                  <th className="p-4 font-bold hidden md:table-cell">Email</th>
-                                  <th className="p-4 font-bold hidden sm:table-cell">Última Atividade</th>
-                                  <th className="p-4 font-bold text-right">Ações</th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
-                                {usersList.map((u) => (
-                                  <tr key={u.email} className="hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors">
-                                    <td className="p-4">
-                                      <div className="font-bold text-gray-900 dark:text-white">{u.name}</div>
-                                      <div className="text-xs text-gray-500 md:hidden">{u.email}</div>
-                                    </td>
-                                    <td className="p-4 text-gray-600 dark:text-gray-300 hidden md:table-cell">{u.email}</td>
-                                    <td className="p-4 text-gray-600 dark:text-gray-300 hidden sm:table-cell">
-                                       {u.lastActive ? new Date(u.lastActive).toLocaleDateString() : 'N/A'}
-                                    </td>
-                                    <td className="p-4 text-right">
-                                      <button 
-                                        onClick={() => setSelectedUserForAdmin(u.email)}
-                                        className="text-indigo-600 dark:text-indigo-400 font-bold text-xs hover:underline"
-                                      >
-                                        Detalhes
-                                      </button>
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                         </div>
-                    </div>
-                </>
-            )}
-        </div>
-    );
-  };
-
-  const renderDashboard = () => (
-       <div className="space-y-6 animate-fade-in">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-             <div>
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white serif">Olá, {user?.user_metadata?.full_name?.split(' ')[0] || 'Leitor'}!</h1>
-                <p className="text-gray-500 dark:text-gray-400">Continue sua jornada de sabedoria hoje.</p>
-             </div>
-             <div className="bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 px-4 py-2 rounded-lg font-bold flex items-center gap-2">
-                <Flame size={20} /> {currentStreak} dias de chama
-             </div>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-             <StatCard title="Capítulos Lidos" value={totalReadCount} subtext={`${completionPercentage.toFixed(1)}% da Bíblia`} icon={<BookOpen size={20}/>} />
-             <StatCard title="Conquistas" value={unlockedAchievements.size} subtext="Medalhas desbloqueadas" icon={<Trophy size={20}/>} />
-             <StatCard title="Previsão de Fim" value={advancedStats.projection.days > 0 ? `${advancedStats.projection.days} dias` : 'Concluído'} subtext={advancedStats.projection.date} icon={<Calendar size={20}/>} />
-          </div>
-
-          {/* Plan Card */}
-          <div className="bg-indigo-600 rounded-2xl p-6 text-white shadow-lg relative overflow-hidden">
-             <div className="relative z-10">
-                <div className="flex justify-between items-start mb-4">
-                   <div>
-                      <h3 className="font-bold text-xl mb-1">{userPlan ? userPlan.title : 'Sem plano ativo'}</h3>
-                      <p className="text-indigo-200 text-sm">{userPlan ? 'Siga seu GPS de leitura.' : 'Escolha um plano para guiar seus estudos.'}</p>
-                   </div>
-                   {!userPlan ? (
-                      <button onClick={() => setIsPlanModalOpen(true)} className="bg-white text-indigo-600 px-4 py-2 rounded-lg font-bold text-sm shadow hover:bg-indigo-50 transition-colors">
-                         Escolher Plano
-                      </button>
-                   ) : (
-                      <button onClick={() => setIsPlanModalOpen(true)} className="bg-indigo-500 hover:bg-indigo-400 p-2 rounded-lg transition-colors">
-                         <PenLine size={18} />
-                      </button>
-                   )}
-                </div>
-                
-                {userPlan && getPlanProgress && (
-                   <div className="bg-indigo-900/30 p-4 rounded-xl backdrop-blur-sm border border-indigo-400/30">
-                      <div className="flex justify-between text-sm font-medium mb-2">
-                         <span>Progresso do Plano</span>
-                         <span>{getPlanProgress.percent.toFixed(1)}%</span>
-                      </div>
-                      <ProgressBar current={getPlanProgress.readInScope} total={getPlanProgress.totalInScope} color="bg-white" />
-                      
-                      <div className="mt-4">
-                         <p className="text-xs text-indigo-200 uppercase tracking-wide font-bold mb-2">Leitura de Hoje (Sugerida)</p>
-                         <div className="flex flex-wrap gap-2">
-                            {getPlanProgress.nextBatch.length > 0 ? (
-                               <>
-                                {getPlanProgress.nextBatch.slice(0, 5).map((item, idx) => (
-                                   <span key={idx} className="bg-white text-indigo-700 px-3 py-1 rounded-md text-xs font-bold shadow-sm">
-                                      {item.bookId} {item.chapter}
-                                   </span>
-                                ))}
-                                {getPlanProgress.nextBatch.length > 5 && <span className="text-xs self-center">+ {getPlanProgress.nextBatch.length - 5}</span>}
-                                <button 
-                                   onClick={() => handleQuickRead(getPlanProgress.nextBatch)}
-                                   className="ml-auto bg-green-400 hover:bg-green-300 text-green-900 px-3 py-1 rounded-md text-xs font-bold flex items-center gap-1 transition-colors"
-                                >
-                                   Ler Agora <ChevronRight size={14}/>
-                                </button>
-                               </>
-                            ) : (
-                               <div className="flex items-center gap-2 text-green-300 font-bold">
-                                  <CheckCircle2 size={18} /> Meta diária alcançada!
-                               </div>
-                            )}
-                         </div>
-                      </div>
-                   </div>
-                )}
-             </div>
-             <BookOpen className="absolute -bottom-4 -right-4 text-indigo-500 opacity-50" size={150} />
-          </div>
-
-          {/* Chart */}
-          <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800">
-             <h3 className="font-bold text-gray-800 dark:text-white mb-6 flex items-center gap-2">
-                <BarChart3 size={20} className="text-indigo-500"/> Ritmo Semanal
-             </h3>
-             <div className="h-64 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                   <BarChart data={chartData}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme === 'dark' ? '#334155' : '#e5e7eb'} />
-                      <XAxis dataKey="name" tick={{fontSize: 12, fill: theme === 'dark' ? '#94a3b8' : '#6b7280'}} axisLine={false} tickLine={false} />
-                      <Tooltip cursor={{fill: theme === 'dark' ? '#1e293b' : '#f3f4f6'}} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', backgroundColor: theme === 'dark' ? '#1e293b' : '#fff', color: theme === 'dark' ? '#fff' : '#000' }} />
-                      <Bar dataKey="chapters" fill="#6366f1" radius={[4, 4, 0, 0]} barSize={40} />
-                   </BarChart>
-                </ResponsiveContainer>
-             </div>
-          </div>
-       </div>
-  );
-
   const renderTracker = () => (
        <div className="max-w-4xl mx-auto space-y-4 animate-fade-in">
           {/* Header */}
@@ -1903,6 +1748,11 @@ const App: React.FC = () => {
                 const progress = readChapters[book.id]?.length || 0;
                 const isCompleted = progress === book.chapters;
                 const isExpanded = selectedBookId === book.id;
+                
+                // Get the last selected chapter specifically for this book to show the read button
+                const lastSelectedForThisBook = sessionSelectedChapters.length > 0 
+                    ? sessionSelectedChapters[sessionSelectedChapters.length - 1] 
+                    : null;
                 
                 return (
                    <div key={book.id} className="transition-colors hover:bg-gray-50 dark:hover:bg-slate-800/50">
@@ -1938,6 +1788,15 @@ const App: React.FC = () => {
                       {/* Expanded Area */}
                       {isExpanded && (
                           <div className="p-4 bg-gray-50/50 dark:bg-slate-900/50 border-t border-gray-100 dark:border-slate-800 animate-fade-in">
+                             
+                             {/* Mobile UX Improvement: Banner Informativo */}
+                             <div className="mb-4 bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg border border-blue-100 dark:border-blue-900/30 flex gap-3">
+                                 <Info className="text-blue-600 dark:text-blue-400 flex-shrink-0" size={18} />
+                                 <p className="text-xs text-blue-800 dark:text-blue-300 leading-relaxed">
+                                     Toque em um número para selecionar. Quando um capítulo estiver selecionado, use o botão <strong>"Ler Capítulo"</strong> abaixo para abrir o texto.
+                                 </p>
+                             </div>
+
                              <div className="grid grid-cols-5 sm:grid-cols-8 md:grid-cols-10 gap-3 mb-4">
                                 {Array.from({ length: book.chapters }, (_, i) => i + 1).map(chapter => {
                                     const isRead = isChapterReadGlobal(book.id, chapter);
@@ -1970,17 +1829,29 @@ const App: React.FC = () => {
                                 })}
                              </div>
                              
-                             <div className="flex justify-between items-center pt-2 border-t border-gray-200 dark:border-slate-700/50">
-                                 <p className="text-xs text-gray-400">
-                                    Dica: Duplo clique no número para ler o texto.
-                                 </p>
+                             {/* Mobile UX Improvement: Action Bar */}
+                             <div className="flex flex-col sm:flex-row justify-end items-center gap-3 pt-2 border-t border-gray-200 dark:border-slate-700/50">
+                                 {sessionSelectedChapters.length === 1 && (
+                                     <button 
+                                        onClick={() => setReadingChapter({ book, chapter: lastSelectedForThisBook! })}
+                                        className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-colors shadow-sm"
+                                     >
+                                        <BookOpen size={16} /> Ler Capítulo {lastSelectedForThisBook}
+                                     </button>
+                                 )}
+                                 
                                  {sessionSelectedChapters.length > 0 && (
                                      <button 
                                         onClick={handleSaveSession}
                                         disabled={isGeneratingAI}
-                                        className="text-xs font-bold text-green-600 hover:text-green-700 bg-green-50 hover:bg-green-100 px-3 py-2 rounded-lg transition-colors flex items-center gap-1 dark:bg-green-900/20 dark:text-green-400 dark:hover:bg-green-900/30"
+                                        className={`w-full sm:w-auto font-bold text-sm px-4 py-2.5 rounded-xl flex items-center justify-center gap-2 transition-colors ${
+                                            sessionSelectedChapters.length === 1 
+                                            ? 'bg-green-50 hover:bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400'
+                                            : 'bg-green-600 hover:bg-green-700 text-white shadow-sm'
+                                        }`}
                                      >
-                                        <Save size={14} /> Salvar Seleção
+                                        {isGeneratingAI ? <Loader2 className="animate-spin" size={16}/> : <Save size={16} />}
+                                        {sessionSelectedChapters.length === 1 ? 'Marcar como Lido' : `Salvar (${sessionSelectedChapters.length})`}
                                      </button>
                                  )}
                              </div>
@@ -1993,249 +1864,470 @@ const App: React.FC = () => {
        </div>
   );
 
-  const renderHistory = () => (
-        <div className="max-w-3xl mx-auto space-y-6 animate-fade-in">
-           <div className="flex items-center justify-between">
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-white serif">Seu Diário Espiritual</h2>
-              <div className="text-sm text-gray-500">{readingLogs.length} registros</div>
-           </div>
-           
-           <div className="space-y-4">
-              {readingLogs.map(log => {
-                 const bookName = BIBLE_BOOKS.find(b => b.id === log.bookId)?.name || log.bookId;
-                 return (
-                    <div key={log.id} className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 group">
-                       <div className="flex justify-between items-start mb-4">
-                          <div>
-                             <h3 className="text-lg font-bold text-gray-800 dark:text-white">{bookName} <span className="text-indigo-600 dark:text-indigo-400">{log.chapters.join(', ')}</span></h3>
-                             <p className="text-xs text-gray-400 flex items-center gap-1 mt-1">
-                                <Calendar size={12} /> {new Date(log.date).toLocaleDateString()} • <Clock size={12} /> {new Date(log.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                             </p>
-                          </div>
-                          {log.aiReflection && <Sparkles size={18} className="text-yellow-500" />}
-                       </div>
-                       
-                       {log.aiReflection && (
-                          <div className="bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-slate-800 dark:to-slate-800/50 p-4 rounded-lg border border-indigo-100 dark:border-slate-700 mb-4 text-sm text-gray-700 dark:text-gray-300 italic relative">
-                             <Sparkles className="absolute -top-2 -left-2 text-indigo-500 bg-white dark:bg-slate-900 rounded-full p-0.5" size={16} />
-                             "{log.aiReflection}"
-                          </div>
-                       )}
-                       
-                       <div className="mt-4 pt-4 border-t border-gray-100 dark:border-slate-800">
-                          {editingNoteId === log.id ? (
-                             <div className="space-y-2">
-                                <textarea 
-                                   value={tempNoteContent}
-                                   onChange={(e) => setTempNoteContent(e.target.value)}
-                                   className="w-full p-3 text-sm rounded-lg border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 text-gray-800 dark:text-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none"
-                                   placeholder="Suas anotações pessoais..."
-                                   rows={3}
-                                   autoFocus
-                                />
-                                <div className="flex justify-end gap-2">
-                                   <button onClick={() => setEditingNoteId(null)} className="px-3 py-1 text-xs font-bold text-gray-500 hover:text-gray-700 dark:text-gray-400">Cancelar</button>
-                                   <button onClick={() => handleSaveNote(log.id)} className="px-3 py-1 bg-indigo-600 text-white rounded-md text-xs font-bold hover:bg-indigo-700">Salvar Nota</button>
-                                </div>
-                             </div>
-                          ) : (
-                             <div 
-                                onClick={() => startEditingNote(log)}
-                                className="text-sm text-gray-600 dark:text-gray-400 cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-800 p-2 -mx-2 rounded-lg transition-colors flex items-start gap-2 group-hover:bg-gray-50 dark:group-hover:bg-slate-800/50"
-                             >
-                                <PenLine size={14} className="mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity text-indigo-500" />
-                                {log.userNotes ? log.userNotes : <span className="italic opacity-50">Adicionar anotação pessoal...</span>}
-                             </div>
-                          )}
-                       </div>
-                    </div>
-                 );
-              })}
-              {readingLogs.length === 0 && (
-                 <div className="text-center py-12 text-gray-400">
-                    <BookOpen size={48} className="mx-auto mb-4 opacity-30" />
-                    <p>Nenhuma leitura registrada ainda.</p>
-                    <button onClick={() => setActiveTab('tracker')} className="text-indigo-600 font-bold mt-2 hover:underline">Começar a ler</button>
-                 </div>
-              )}
-           </div>
-        </div>
-  );
-
-  // --- Main App Return ---
-
   if (loadingAuth) {
-     return <div className="h-screen w-full flex items-center justify-center bg-gray-50 dark:bg-slate-950 transition-colors"><Loader2 className="animate-spin text-indigo-600" size={40} /></div>;
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
+        <Loader2 className="animate-spin text-indigo-600" size={40} />
+      </div>
+    );
   }
 
   if (!user) {
-     return <LoginScreen onLogin={setUser} />;
+    return <LoginScreen onLogin={setUser} />;
   }
 
   return (
-     <div className={`min-h-screen bg-slate-50 dark:bg-slate-950 text-gray-900 dark:text-gray-100 transition-colors font-sans ${theme}`}>
-        
-        {/* Modals */}
-        {isChangePasswordOpen && <ChangePasswordModal onClose={() => setIsChangePasswordOpen(false)} />}
-        {isPlanModalOpen && <PlanSelectionModal onClose={() => setIsPlanModalOpen(false)} onSelectPlan={handleSelectPlan} />}
-        {readingChapter && (
-            <BibleReaderModal 
-                book={readingChapter.book} 
-                chapter={readingChapter.chapter} 
-                onClose={() => setReadingChapter(null)} 
-                onNext={readingChapter.chapter < readingChapter.book.chapters ? () => setReadingChapter({ ...readingChapter, chapter: readingChapter.chapter + 1 }) : undefined}
-                onPrev={readingChapter.chapter > 1 ? () => setReadingChapter({ ...readingChapter, chapter: readingChapter.chapter - 1 }) : undefined}
-            />
-        )}
-
-        {/* Sidebar (Desktop) */}
-        <aside className="fixed left-0 top-0 h-full w-64 bg-white dark:bg-slate-900 border-r border-gray-200 dark:border-slate-800 hidden md:flex flex-col z-30 transition-colors">
-            <div className="p-6">
-                <div className="flex items-center gap-3 text-indigo-600 dark:text-indigo-400 mb-8">
-                    <Book size={32} />
-                    <span className="text-xl font-bold tracking-tight text-gray-900 dark:text-white serif">Bíblia Tracker</span>
-                </div>
-                
-                <nav className="space-y-1">
-                    {[
-                        { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-                        { id: 'tracker', label: 'Leitura', icon: BookOpen },
-                        { id: 'history', label: 'Histórico', icon: History },
-                        { id: 'achievements', label: 'Conquistas', icon: Trophy },
-                        { id: 'support', label: 'Suporte', icon: LifeBuoy },
-                    ].map(item => (
-                        <button
-                            key={item.id}
-                            onClick={() => setActiveTab(item.id as any)}
-                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${activeTab === item.id ? 'bg-indigo-50 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-800 hover:text-gray-900 dark:hover:text-gray-200'}`}
-                        >
-                            <item.icon size={20} />
-                            {item.label}
-                        </button>
-                    ))}
-
-                    {isAdmin && (
-                        <div className="pt-4 mt-4 border-t border-gray-100 dark:border-slate-800">
-                            <p className="px-4 text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Admin</p>
-                            <button
-                                onClick={() => setActiveTab('admin')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${activeTab === 'admin' ? 'bg-indigo-50 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-800 hover:text-gray-900 dark:hover:text-gray-200'}`}
-                            >
-                                <ShieldAlert size={20} />
-                                Painel Master
-                            </button>
-                        </div>
-                    )}
-                </nav>
+    <div className={`min-h-screen transition-colors ${theme === 'dark' ? 'dark bg-slate-950' : 'bg-slate-50'}`}>
+      {/* Mobile Header / Nav */}
+      <div className="md:hidden p-4 bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-800 flex justify-between items-center sticky top-0 z-40">
+         <div className="flex items-center gap-2">
+            <div className="bg-indigo-600 p-1.5 rounded-lg text-white">
+               <Book size={20} />
             </div>
+            <span className="font-bold text-gray-900 dark:text-white serif">Bible Tracker</span>
+         </div>
+         <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="p-2 text-gray-600 dark:text-gray-300">
+            {mobileMenuOpen ? <X size={24}/> : <Menu size={24}/>}
+         </button>
+      </div>
 
-            <div className="mt-auto p-6 border-t border-gray-200 dark:border-slate-800">
-                <div className="flex items-center gap-3 mb-4">
-                    <div className="w-10 h-10 rounded-full bg-indigo-100 dark:bg-slate-800 flex items-center justify-center text-indigo-600 dark:text-indigo-400 font-bold">
-                        {user.user_metadata?.full_name?.charAt(0) || user.email.charAt(0).toUpperCase()}
-                    </div>
-                    <div className="overflow-hidden">
-                        <p className="text-sm font-bold text-gray-900 dark:text-white truncate">{user.user_metadata?.full_name?.split(' ')[0]}</p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{user.email}</p>
-                    </div>
-                </div>
-                <div className="flex gap-2">
-                    <button onClick={toggleTheme} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800 text-gray-500 dark:text-gray-400 transition-colors" title="Alternar Tema">
-                        {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
-                    </button>
-                    <button onClick={() => setIsChangePasswordOpen(true)} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800 text-gray-500 dark:text-gray-400 transition-colors" title="Alterar Senha">
-                        <Lock size={18} />
-                    </button>
-                    <button onClick={handleLogout} className="p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 transition-colors ml-auto" title="Sair">
-                        <LogOut size={18} />
-                    </button>
-                </div>
+      <div className="flex max-w-7xl mx-auto min-h-screen">
+         {/* Sidebar */}
+         <aside className={`
+            fixed inset-y-0 left-0 z-50 w-64 bg-white dark:bg-slate-900 border-r border-gray-200 dark:border-slate-800 transform transition-transform duration-300 ease-in-out md:translate-x-0 md:static md:h-auto
+            ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
+         `}>
+            <div className="p-6 h-full flex flex-col">
+               <div className="flex items-center gap-3 mb-8 px-2">
+                  <div className="bg-indigo-600 p-2 rounded-xl text-white shadow-lg shadow-indigo-200 dark:shadow-none">
+                     <Book size={24} />
+                  </div>
+                  <div>
+                     <h1 className="font-bold text-lg text-gray-900 dark:text-white serif">Bible Tracker</h1>
+                     <p className="text-xs text-gray-500 dark:text-gray-400">Jornada Diária</p>
+                  </div>
+               </div>
+
+               <nav className="space-y-1 flex-1">
+                  {[
+                     { id: 'dashboard', label: 'Visão Geral', icon: LayoutDashboard },
+                     { id: 'tracker', label: 'Leitura', icon: BookOpen },
+                     { id: 'history', label: 'Histórico', icon: History },
+                     { id: 'achievements', label: 'Conquistas', icon: Trophy },
+                     { id: 'family', label: 'Família', icon: Users },
+                     { id: 'support', label: 'Suporte', icon: LifeBuoy },
+                     ...(isAdmin ? [{ id: 'admin', label: 'Administração', icon: ShieldAlert }] : [])
+                  ].map(item => (
+                     <button
+                        key={item.id}
+                        onClick={() => { setActiveTab(item.id as any); setMobileMenuOpen(false); }}
+                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium transition-all ${
+                           activeTab === item.id 
+                           ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-300' 
+                           : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-800'
+                        }`}
+                     >
+                        <item.icon size={20} />
+                        {item.label}
+                     </button>
+                  ))}
+               </nav>
+
+               <div className="mt-auto pt-6 border-t border-gray-100 dark:border-slate-800 space-y-2">
+                  <div className="px-3 py-2 flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-indigo-100 dark:bg-slate-800 flex items-center justify-center text-indigo-600 dark:text-indigo-400 font-bold text-xs">
+                          {user.email?.substring(0, 2).toUpperCase()}
+                      </div>
+                      <div className="flex-1 overflow-hidden">
+                          <p className="text-sm font-bold text-gray-900 dark:text-white truncate">{user.user_metadata?.full_name || 'Usuário'}</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{user.email}</p>
+                      </div>
+                  </div>
+                  
+                  <button onClick={toggleTheme} className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors">
+                     {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
+                     {theme === 'light' ? 'Modo Escuro' : 'Modo Claro'}
+                  </button>
+                  
+                  <button onClick={() => setIsChangePasswordOpen(true)} className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors">
+                     <KeyRound size={18} /> Alterar Senha
+                  </button>
+
+                  <button onClick={handleLogout} className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                     <LogOut size={18} /> Sair
+                  </button>
+               </div>
             </div>
-        </aside>
+         </aside>
 
-        {/* Mobile Header */}
-        <div className="md:hidden fixed top-0 left-0 w-full bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-800 z-30 px-4 py-3 flex justify-between items-center transition-colors">
-            <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400">
-                <Book size={24} />
-                <span className="font-bold text-gray-900 dark:text-white serif">Bíblia Tracker</span>
-            </div>
-            <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="text-gray-600 dark:text-gray-300">
-                {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
-            </button>
-        </div>
+         {/* Main Content */}
+         <main className="flex-1 p-4 md:p-8 overflow-x-hidden bg-gray-50/50 dark:bg-slate-950">
+             {activeTab === 'dashboard' && (
+                 <div className="space-y-6 max-w-5xl mx-auto animate-fade-in">
+                     {/* Greeting & Stats */}
+                     <div className="flex flex-col md:flex-row gap-6 items-start justify-between">
+                         <div>
+                             <h2 className="text-2xl font-bold text-gray-900 dark:text-white serif">
+                                 Olá, {user.user_metadata?.full_name?.split(' ')[0] || 'Peregrino'}!
+                             </h2>
+                             <p className="text-gray-500 dark:text-gray-400">
+                                 {userPlan ? `Seguindo o plano: ${userPlan.title}` : 'Que tal começar um plano de leitura hoje?'}
+                             </p>
+                         </div>
+                         {!userPlan && (
+                             <button onClick={() => setIsPlanModalOpen(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-lg shadow-indigo-200 dark:shadow-none">
+                                 <Target size={16} /> Escolher Plano
+                             </button>
+                         )}
+                     </div>
 
-        {/* Mobile Menu Overlay */}
-        {mobileMenuOpen && (
-            <div className="fixed inset-0 bg-white dark:bg-slate-950 z-20 pt-16 px-6 animate-fade-in md:hidden flex flex-col">
-                 <nav className="space-y-2 mt-4">
-                    {[
-                        { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-                        { id: 'tracker', label: 'Leitura', icon: BookOpen },
-                        { id: 'history', label: 'Histórico', icon: History },
-                        { id: 'achievements', label: 'Conquistas', icon: Trophy },
-                        { id: 'support', label: 'Suporte', icon: LifeBuoy },
-                    ].map(item => (
-                        <button
-                            key={item.id}
-                            onClick={() => { setActiveTab(item.id as any); setMobileMenuOpen(false); }}
-                            className={`w-full flex items-center gap-4 px-4 py-4 rounded-xl text-lg font-medium ${activeTab === item.id ? 'bg-indigo-50 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400' : 'text-gray-600 dark:text-gray-400'}`}
-                        >
-                            <item.icon size={24} />
-                            {item.label}
-                        </button>
-                    ))}
-                    {isAdmin && (
-                         <button
-                            onClick={() => { setActiveTab('admin'); setMobileMenuOpen(false); }}
-                            className={`w-full flex items-center gap-4 px-4 py-4 rounded-xl text-lg font-medium text-red-500`}
-                        >
-                            <ShieldAlert size={24} />
-                            Admin
-                        </button>
-                    )}
-                 </nav>
-                 
-                 <div className="mt-auto mb-8 border-t border-gray-100 dark:border-slate-800 pt-6">
-                    <div className="flex items-center gap-4 mb-6">
-                        <div className="w-12 h-12 rounded-full bg-indigo-100 dark:bg-slate-800 flex items-center justify-center text-indigo-600 dark:text-indigo-400 font-bold text-xl">
-                            {user.user_metadata?.full_name?.charAt(0)}
-                        </div>
-                        <div>
-                            <p className="font-bold text-gray-900 dark:text-white text-lg">{user.user_metadata?.full_name?.split(' ')[0]}</p>
-                            <p className="text-sm text-gray-500 dark:text-gray-400">{user.email}</p>
-                        </div>
-                    </div>
-                    <div className="grid grid-cols-3 gap-4">
-                        <button onClick={toggleTheme} className="flex flex-col items-center justify-center p-3 bg-gray-50 dark:bg-slate-800 rounded-xl text-gray-600 dark:text-gray-300">
-                             {theme === 'light' ? <Moon size={24} /> : <Sun size={24} />}
-                             <span className="text-xs mt-1">Tema</span>
-                        </button>
-                        <button onClick={() => setIsChangePasswordOpen(true)} className="flex flex-col items-center justify-center p-3 bg-gray-50 dark:bg-slate-800 rounded-xl text-gray-600 dark:text-gray-300">
-                             <Lock size={24} />
-                             <span className="text-xs mt-1">Senha</span>
-                        </button>
-                        <button onClick={handleLogout} className="flex flex-col items-center justify-center p-3 bg-red-50 dark:bg-red-900/20 rounded-xl text-red-500">
-                             <LogOut size={24} />
-                             <span className="text-xs mt-1">Sair</span>
-                        </button>
-                    </div>
+                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                         <StatCard title="Capítulos Lidos" value={totalReadCount} subtext={`${completionPercentage.toFixed(1)}% da Bíblia`} icon={<BookOpen size={24}/>} />
+                         <StatCard title="Sequência Atual" value={`${currentStreak} dias`} subtext="Mantenha o ritmo!" icon={<Flame size={24}/>} highlight colorClass="bg-orange-500" />
+                         <StatCard title="Conquistas" value={unlockedAchievements.size} subtext={`${ACHIEVEMENTS.length} disponíveis`} icon={<Trophy size={24}/>} />
+                         <StatCard title="Previsão de Fim" value={advancedStats.projection.date} subtext={advancedStats.projection.days > 0 ? `${advancedStats.projection.days} dias restantes` : 'Concluído'} icon={<Calendar size={24}/>} />
+                     </div>
+
+                     {/* Plan Progress */}
+                     {userPlan && getPlanProgress && (
+                         <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800">
+                             <div className="flex justify-between items-end mb-4">
+                                 <div>
+                                     <h3 className="font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                                         <Map size={20} className="text-indigo-500" /> Progresso do Plano
+                                     </h3>
+                                     <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                                         {getPlanProgress.readInScope} de {getPlanProgress.totalInScope} capítulos
+                                     </p>
+                                 </div>
+                                 <div className="text-right">
+                                     <span className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">{getPlanProgress.percent.toFixed(1)}%</span>
+                                 </div>
+                             </div>
+                             <ProgressBar current={getPlanProgress.readInScope} total={getPlanProgress.totalInScope} />
+                             
+                             {getPlanProgress.nextBatch.length > 0 ? (
+                                 <div className="mt-6 p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg border border-indigo-100 dark:border-indigo-900/30">
+                                     <h4 className="text-sm font-bold text-indigo-900 dark:text-indigo-200 mb-2">Leitura de Hoje (Meta: {userPlan.targetDailyChapters} caps)</h4>
+                                     <div className="flex flex-wrap gap-2">
+                                         {getPlanProgress.nextBatch.slice(0, userPlan.targetDailyChapters).map((item, idx) => (
+                                             <span key={idx} className="bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-300 px-3 py-1 rounded-md text-xs font-bold border border-indigo-100 dark:border-indigo-800 shadow-sm">
+                                                 {item.bookId} {item.chapter}
+                                             </span>
+                                         ))}
+                                     </div>
+                                     <button 
+                                         onClick={() => handleQuickRead(getPlanProgress.nextBatch.slice(0, userPlan.targetDailyChapters))}
+                                         className="mt-4 w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-lg text-sm font-bold transition-colors"
+                                     >
+                                         Ir para Leitura
+                                     </button>
+                                 </div>
+                             ) : (
+                                 <div className="mt-6 text-center py-4 text-green-600 dark:text-green-400 font-medium bg-green-50 dark:bg-green-900/20 rounded-lg">
+                                     <CheckCircle2 className="inline-block mr-2" size={20} />
+                                     Você está em dia com seu plano!
+                                 </div>
+                             )}
+                         </div>
+                     )}
+
+                     {/* Charts */}
+                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                         <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800">
+                             <h3 className="font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                                 <Activity size={20} className="text-indigo-500"/> Atividade Recente
+                             </h3>
+                             <div className="h-64">
+                                 <ResponsiveContainer width="100%" height="100%">
+                                     <BarChart data={chartData}>
+                                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
+                                         <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#64748B'}} dy={10} />
+                                         <Tooltip 
+                                             cursor={{fill: 'transparent'}}
+                                             contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}
+                                         />
+                                         <Bar dataKey="chapters" fill="#4F46E5" radius={[4, 4, 0, 0]} barSize={32} />
+                                     </BarChart>
+                                 </ResponsiveContainer>
+                             </div>
+                         </div>
+                         
+                         <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800">
+                             <h3 className="font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                                 <BarChart3 size={20} className="text-purple-500"/> Distribuição
+                             </h3>
+                             <div className="h-64 flex items-center justify-center">
+                                 <ResponsiveContainer width="100%" height="100%">
+                                     <PieChart>
+                                         <Pie
+                                             data={[
+                                                 { name: 'Antigo Testamento', value: BIBLE_BOOKS.filter(b => b.testament === 'Old').reduce((acc, b) => acc + (readChapters[b.id]?.length || 0), 0) },
+                                                 { name: 'Novo Testamento', value: BIBLE_BOOKS.filter(b => b.testament === 'New').reduce((acc, b) => acc + (readChapters[b.id]?.length || 0), 0) }
+                                             ]}
+                                             cx="50%"
+                                             cy="50%"
+                                             innerRadius={60}
+                                             outerRadius={80}
+                                             paddingAngle={5}
+                                             dataKey="value"
+                                         >
+                                             <Cell key="cell-0" fill="#4F46E5" />
+                                             <Cell key="cell-1" fill="#A855F7" />
+                                         </Pie>
+                                         <Tooltip />
+                                     </PieChart>
+                                 </ResponsiveContainer>
+                             </div>
+                             <div className="flex justify-center gap-4 mt-2 text-sm">
+                                 <div className="flex items-center gap-1">
+                                     <div className="w-3 h-3 rounded-full bg-indigo-600"></div>
+                                     <span className="text-gray-600 dark:text-gray-400">Antigo Testamento</span>
+                                 </div>
+                                 <div className="flex items-center gap-1">
+                                     <div className="w-3 h-3 rounded-full bg-purple-500"></div>
+                                     <span className="text-gray-600 dark:text-gray-400">Novo Testamento</span>
+                                 </div>
+                             </div>
+                         </div>
+                     </div>
                  </div>
-            </div>
-        )}
+             )}
 
-        {/* Main Content Area */}
-        <main className={`flex-1 md:ml-64 p-4 md:p-8 pt-20 md:pt-8 min-h-screen transition-all ${mobileMenuOpen ? 'hidden' : 'block'}`}>
-            <div className="max-w-6xl mx-auto">
-               {activeTab === 'dashboard' && renderDashboard()}
-               {activeTab === 'tracker' && renderTracker()}
-               {activeTab === 'history' && renderHistory()}
-               {activeTab === 'achievements' && renderAchievements()}
-               {activeTab === 'support' && renderSupport()}
-               {activeTab === 'admin' && isAdmin && renderAdminDashboard()}
-            </div>
-        </main>
+             {activeTab === 'tracker' && renderTracker()}
+             
+             {activeTab === 'family' && renderFamily()}
 
-     </div>
+             {activeTab === 'achievements' && renderAchievements()}
+             
+             {activeTab === 'support' && renderSupport()}
+
+             {activeTab === 'history' && (
+                 <div className="max-w-4xl mx-auto animate-fade-in">
+                     <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6 serif">Diário de Leitura</h2>
+                     <div className="space-y-4">
+                         {readingLogs.map(log => {
+                             const book = BIBLE_BOOKS.find(b => b.id === log.bookId);
+                             return (
+                                 <div key={log.id} className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800">
+                                     <div className="flex flex-col md:flex-row justify-between md:items-start gap-4 mb-4">
+                                         <div>
+                                             <div className="flex items-center gap-2 mb-1">
+                                                 <span className="bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 text-xs font-bold px-2 py-1 rounded uppercase">
+                                                     {book?.name}
+                                                 </span>
+                                                 <span className="text-gray-400 text-xs">
+                                                     {new Date(log.timestamp).toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', hour: '2-digit', minute: '2-digit' })}
+                                                 </span>
+                                             </div>
+                                             <h3 className="text-lg font-bold text-gray-800 dark:text-white">
+                                                 Capítulos: {log.chapters.join(', ')}
+                                             </h3>
+                                         </div>
+                                         <button 
+                                             onClick={() => startEditingNote(log)}
+                                             className="text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                                             title="Editar nota pessoal"
+                                         >
+                                             <PenLine size={18} />
+                                         </button>
+                                     </div>
+
+                                     {log.aiReflection && (
+                                         <div className="mb-4 bg-indigo-50 dark:bg-indigo-900/10 p-4 rounded-lg border-l-4 border-indigo-500">
+                                             <div className="flex items-center gap-2 mb-2 text-indigo-700 dark:text-indigo-400 text-xs font-bold uppercase tracking-wide">
+                                                 <Sparkles size={14} /> Insight Pastoral (IA)
+                                             </div>
+                                             <p className="text-gray-700 dark:text-gray-300 text-sm leading-relaxed italic">
+                                                 "{log.aiReflection}"
+                                             </p>
+                                         </div>
+                                     )}
+
+                                     <div className="mt-4 pt-4 border-t border-gray-100 dark:border-slate-800">
+                                         {editingNoteId === log.id ? (
+                                             <div className="space-y-3">
+                                                 <label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">Suas Anotações</label>
+                                                 <textarea
+                                                     className="w-full p-3 rounded-lg border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                                     rows={3}
+                                                     placeholder="O que Deus falou com você hoje?"
+                                                     value={tempNoteContent}
+                                                     onChange={(e) => setTempNoteContent(e.target.value)}
+                                                 />
+                                                 <div className="flex justify-end gap-2">
+                                                     <button onClick={() => setEditingNoteId(null)} className="px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400">Cancelar</button>
+                                                     <button onClick={() => handleSaveNote(log.id)} className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">Salvar Nota</button>
+                                                 </div>
+                                             </div>
+                                         ) : (
+                                             <div>
+                                                 <h4 className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-2 flex items-center gap-2">
+                                                     <UserCircle size={14} /> Suas Anotações
+                                                 </h4>
+                                                 {log.userNotes ? (
+                                                     <p className="text-gray-700 dark:text-gray-300 text-sm whitespace-pre-wrap">{log.userNotes}</p>
+                                                 ) : (
+                                                     <p className="text-gray-400 text-sm italic">Nenhuma anotação pessoal.</p>
+                                                 )}
+                                             </div>
+                                         )}
+                                     </div>
+                                 </div>
+                             );
+                         })}
+                         {readingLogs.length === 0 && (
+                             <div className="text-center py-12 text-gray-400">
+                                 <BookOpen size={48} className="mx-auto mb-4 opacity-20" />
+                                 <p>Seu diário está vazio. Comece a ler hoje!</p>
+                             </div>
+                         )}
+                     </div>
+                 </div>
+             )}
+
+             {activeTab === 'admin' && isAdmin && (
+                 <div className="space-y-6 animate-fade-in">
+                     <div className="flex justify-between items-center mb-6">
+                         <h2 className="text-2xl font-bold text-gray-900 dark:text-white serif">Painel Administrativo</h2>
+                         <div className="flex bg-white dark:bg-slate-800 rounded-lg p-1 border border-gray-200 dark:border-slate-700">
+                             <button 
+                                 onClick={() => setAdminView('overview')}
+                                 className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${adminView === 'overview' ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300' : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'}`}
+                             >
+                                 Leituras ({adminLogs.length})
+                             </button>
+                             <button 
+                                 onClick={() => setAdminView('messages')}
+                                 className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${adminView === 'messages' ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300' : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'}`}
+                             >
+                                 Suporte ({supportTickets.filter(t => t.status === 'open').length})
+                             </button>
+                         </div>
+                     </div>
+
+                     {adminView === 'overview' && (
+                         <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden">
+                             <div className="overflow-x-auto">
+                                 <table className="w-full text-sm text-left">
+                                     <thead className="bg-gray-50 dark:bg-slate-950 text-gray-500 dark:text-gray-400 font-medium border-b border-gray-100 dark:border-slate-800">
+                                         <tr>
+                                             <th className="p-4">Usuário</th>
+                                             <th className="p-4">Leitura</th>
+                                             <th className="p-4">Data</th>
+                                             <th className="p-4">Ações</th>
+                                         </tr>
+                                     </thead>
+                                     <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
+                                         {adminLogs.map((log: any) => (
+                                             <tr key={log.id} className="hover:bg-gray-50 dark:hover:bg-slate-800/50">
+                                                 <td className="p-4">
+                                                     <div className="font-bold text-gray-900 dark:text-white">{log.user_name || 'N/A'}</div>
+                                                     <div className="text-xs text-gray-500">{log.user_email}</div>
+                                                 </td>
+                                                 <td className="p-4">
+                                                     <span className="font-medium text-indigo-600 dark:text-indigo-400">{log.book_id}</span>
+                                                     <span className="text-gray-500 dark:text-gray-400 ml-2">Caps: {log.chapters?.join(', ')}</span>
+                                                 </td>
+                                                 <td className="p-4 text-gray-500 dark:text-gray-400">
+                                                     {new Date(log.timestamp).toLocaleDateString()}
+                                                 </td>
+                                                 <td className="p-4">
+                                                      <button 
+                                                          onClick={() => handleSendPasswordReset(log.user_email)}
+                                                          className="text-indigo-600 hover:underline text-xs"
+                                                      >
+                                                          Resetar Senha
+                                                      </button>
+                                                 </td>
+                                             </tr>
+                                         ))}
+                                     </tbody>
+                                 </table>
+                             </div>
+                         </div>
+                     )}
+
+                     {adminView === 'messages' && (
+                         <div className="space-y-4">
+                             <div className="flex gap-2 mb-4">
+                                 {['all', 'open', 'resolved'].map(f => (
+                                     <button
+                                         key={f}
+                                         onClick={() => setMessageFilter(f as any)}
+                                         className={`px-3 py-1 rounded-full text-xs font-bold border capitalize ${messageFilter === f ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white dark:bg-slate-900 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-slate-700'}`}
+                                     >
+                                         {f === 'all' ? 'Todos' : f === 'open' ? 'Abertos' : 'Resolvidos'}
+                                     </button>
+                                 ))}
+                             </div>
+                             
+                             <div className="grid gap-4">
+                                 {supportTickets
+                                     .filter(t => messageFilter === 'all' ? true : t.status === messageFilter)
+                                     .map(ticket => (
+                                         <div key={ticket.id} className={`bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-l-4 ${ticket.status === 'open' ? 'border-l-orange-500 border-gray-100 dark:border-slate-800' : 'border-l-green-500 border-gray-100 dark:border-slate-800 opacity-75'}`}>
+                                             <div className="flex justify-between items-start mb-2">
+                                                 <div className="flex items-center gap-2">
+                                                     <span className={`text-xs font-bold px-2 py-0.5 rounded uppercase ${ticket.type === 'problem' ? 'bg-red-100 text-red-700' : ticket.type === 'suggestion' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'}`}>
+                                                         {ticket.type}
+                                                     </span>
+                                                     <span className="text-gray-400 text-xs">
+                                                         {new Date(ticket.created_at).toLocaleDateString()}
+                                                     </span>
+                                                 </div>
+                                                 <button 
+                                                     onClick={() => handleToggleTicketStatus(ticket.id, ticket.status)}
+                                                     disabled={updatingTicketId === ticket.id}
+                                                     className={`text-xs font-bold px-3 py-1 rounded-full transition-colors ${ticket.status === 'open' ? 'bg-orange-100 text-orange-700 hover:bg-orange-200' : 'bg-green-100 text-green-700 hover:bg-green-200'}`}
+                                                 >
+                                                     {updatingTicketId === ticket.id ? '...' : ticket.status === 'open' ? 'Marcar Resolvido' : 'Reabrir'}
+                                                 </button>
+                                             </div>
+                                             <h4 className="font-bold text-gray-900 dark:text-white mb-1">{ticket.user_email}</h4>
+                                             <p className="text-gray-600 dark:text-gray-300 text-sm bg-gray-50 dark:bg-slate-950 p-3 rounded-lg border border-gray-100 dark:border-slate-800">
+                                                 {ticket.message}
+                                             </p>
+                                         </div>
+                                     ))
+                                 }
+                                 {supportTickets.length === 0 && <p className="text-gray-500 text-center py-8">Nenhum ticket encontrado.</p>}
+                             </div>
+                         </div>
+                     )}
+                 </div>
+             )}
+         </main>
+      </div>
+
+      {/* Modals */}
+      {readingChapter && (
+         <BibleReaderModal 
+            book={readingChapter.book} 
+            chapter={readingChapter.chapter} 
+            onClose={() => setReadingChapter(null)}
+            onNext={() => {
+                const nextChap = readingChapter.chapter + 1;
+                if(nextChap <= readingChapter.book.chapters) {
+                    setReadingChapter({ ...readingChapter, chapter: nextChap });
+                } else {
+                    // Try next book? For now just stay.
+                    alert('Fim do livro!');
+                }
+            }}
+            onPrev={() => {
+                const prevChap = readingChapter.chapter - 1;
+                if(prevChap >= 1) {
+                    setReadingChapter({ ...readingChapter, chapter: prevChap });
+                }
+            }}
+         />
+      )}
+
+      {isChangePasswordOpen && <ChangePasswordModal onClose={() => setIsChangePasswordOpen(false)} />}
+      
+      {isPlanModalOpen && <PlanSelectionModal onClose={() => setIsPlanModalOpen(false)} onSelectPlan={handleSelectPlan} />}
+    </div>
   );
 };
 
