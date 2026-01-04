@@ -1,4 +1,3 @@
-
 export interface BibleBook {
   id: string;
   name: string;
@@ -16,6 +15,9 @@ export interface ReadingLog {
   chapters: number[]; // Array of chapter numbers read
   aiReflection?: string; // Optional AI generated thought
   userNotes?: string; // User personal notes
+  likes?: string[]; // Array of user IDs who liked this log
+  user_name?: string; // Helper for feed display
+  user_email?: string; // Helper for feed display
 }
 
 export type ReadChaptersMap = Record<string, number[]>; // { "GEN": [1, 2, 3], "EXO": [1] }

@@ -71,7 +71,10 @@ import {
   Info,
   UserPlus,
   LogIn,
-  Copy
+  Copy,
+  Heart,
+  Trash2,
+  Megaphone
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -563,6 +566,10 @@ const PlanSelectionModal = ({ onClose, onSelectPlan }: { onClose: () => void, on
         </div>
 
         <div className="overflow-y-auto p-6 space-y-4 bg-white dark:bg-slate-900">
+          <p className="text-gray-600 dark:text-gray-300 text-sm mb-4 bg-gray-50 dark:bg-slate-800 p-3 rounded-lg border border-gray-100 dark:border-slate-700">
+             Aqui você pode escolher um Plano de Leitura para guiar sua jornada, mas se preferir fazer uma Leitura Livre, vá no Menu Inicial.
+          </p>
+
           {Object.entries(PLANS_CONFIG).map(([key, config]) => (
             <button 
               key={key}
@@ -627,6 +634,7 @@ const App: React.FC = () => {
   // Family State
   const [familyData, setFamilyData] = useState<Family | null>(null);
   const [familyMembers, setFamilyMembers] = useState<FamilyMemberStats[]>([]);
+  const [familyFeed, setFamilyFeed] = useState<ReadingLog[]>([]); // New Feed State
   const [isCreatingFamily, setIsCreatingFamily] = useState(false);
   const [joinCode, setJoinCode] = useState('');
   const [newFamilyName, setNewFamilyName] = useState('');
@@ -635,10 +643,14 @@ const App: React.FC = () => {
   const [adminLogs, setAdminLogs] = useState<any[]>([]);
   const [isAdminLoading, setIsAdminLoading] = useState(false);
   const [selectedUserForAdmin, setSelectedUserForAdmin] = useState<string | null>(null);
-  const [adminView, setAdminView] = useState<'overview' | 'messages'>('overview');
+  const [adminView, setAdminView] = useState<'overview' | 'messages' | 'news'>('overview');
   const [supportTickets, setSupportTickets] = useState<SupportTicket[]>([]);
   const [updatingTicketId, setUpdatingTicketId] = useState<string | null>(null);
   const [messageFilter, setMessageFilter] = useState<'all' | 'open' | 'resolved'>('all');
+  
+  // News Logic
+  const [siteNews, setSiteNews] = useState('');
+  const [editingNews, setEditingNews] = useState('');
 
   // Support State (User)
   const [supportForm, setSupportForm] = useState({ type: 'question', message: '' });
@@ -748,6 +760,7 @@ const App: React.FC = () => {
             }
         };
         fetchAndCreateProfile();
+        fetchNews();
     }
   }, [user]);
 
@@ -779,6 +792,14 @@ const App: React.FC = () => {
     }
     setIsLoadingData(false);
   }, [user]);
+
+  const fetchNews = async () => {
+      const { data } = await supabase.from('app_config').select('value').eq('key', 'site_news').single();
+      if (data) {
+          setSiteNews(data.value);
+          setEditingNews(data.value);
+      }
+  };
 
   useEffect(() => {
     if (user) {
@@ -815,7 +836,26 @@ const App: React.FC = () => {
           if (profiles) {
               const membersStats: FamilyMemberStats[] = [];
               const today = new Date().toISOString().split('T')[0];
+              const memberIds = profiles.map(p => p.id);
 
+              // 1. Fetch Feed Data (Last 20 logs from all family members)
+              const { data: feedLogs } = await supabase
+                  .from('reading_logs')
+                  .select('*')
+                  .in('user_id', memberIds)
+                  .order('timestamp', { ascending: false })
+                  .limit(20);
+              
+              if (feedLogs) {
+                  const processedFeed = feedLogs.map((log: any) => ({
+                      ...log,
+                      // Ensure likes is an array, Supabase sometimes returns null for empty
+                      likes: log.likes || []
+                  }));
+                  setFamilyFeed(processedFeed);
+              }
+
+              // 2. Fetch Stats
               for (const p of profiles) {
                   // Fetch basic stats for each member
                   const { data: logs } = await supabase
@@ -829,13 +869,12 @@ const App: React.FC = () => {
                       .filter(l => l.date === today)
                       .reduce((acc, l) => acc + (l.chapters?.length || 0), 0);
                   
-                  // Simple streak calc (same as main app logic)
+                  // Simple streak calc
                   const sortedLogs = [...userLogs].sort((a, b) => b.timestamp - a.timestamp);
                   let streak = 0;
                   if (sortedLogs.length > 0) {
                       const uniqueDates = Array.from(new Set(sortedLogs.map(log => log.date)));
                       let currentDate = new Date(today);
-                      // Check if read today or yesterday to maintain streak
                       if (uniqueDates[0] === today || uniqueDates[0] === new Date(Date.now() - 86400000).toISOString().split('T')[0]) {
                           for (let i = 0; i < uniqueDates.length; i++) {
                               const logDate = new Date(uniqueDates[i]);
@@ -860,6 +899,36 @@ const App: React.FC = () => {
               }
               setFamilyMembers(membersStats.sort((a, b) => b.chaptersReadToday - a.chaptersReadToday));
           }
+      }
+  };
+
+  const handleToggleLike = async (logId: string, currentLikes: string[] = []) => {
+      if (!user) return;
+      
+      const userId = user.id;
+      const isLiked = currentLikes.includes(userId);
+      let newLikes: string[];
+
+      if (isLiked) {
+          newLikes = currentLikes.filter(id => id !== userId);
+      } else {
+          newLikes = [...currentLikes, userId];
+      }
+
+      // Optimistic Update
+      setFamilyFeed(prev => prev.map(log => 
+          log.id === logId ? { ...log, likes: newLikes } : log
+      ));
+
+      const { error } = await supabase
+          .from('reading_logs')
+          .update({ likes: newLikes })
+          .eq('id', logId);
+
+      if (error) {
+          console.error("Error updating like:", error);
+          // Revert if error (fetching fresh data is easier here)
+          fetchFamilyData(); 
       }
   };
 
@@ -922,6 +991,21 @@ const App: React.FC = () => {
       }
   };
 
+  const handleSaveNews = async () => {
+      if (!editingNews.trim()) return;
+      const { error } = await supabase.from('app_config').upsert({ key: 'site_news', value: editingNews });
+      if (error) {
+          if (error.message.includes('relation "app_config" does not exist')) {
+              alert('Erro: Tabela "app_config" não existe. O Admin deve criar esta tabela no Supabase.');
+          } else {
+              alert('Erro ao salvar novidades: ' + error.message);
+          }
+      } else {
+          setSiteNews(editingNews);
+          alert('Novidades atualizadas!');
+      }
+  };
+
   // --- Helpers ---
   const processLogs = (data: any[], setLogs: Function, setMap: Function) => {
       const logs = data.map((item: any) => ({
@@ -931,7 +1015,8 @@ const App: React.FC = () => {
         bookId: item.book_id,
         chapters: item.chapters,
         aiReflection: item.ai_reflection,
-        userNotes: item.user_notes
+        userNotes: item.user_notes,
+        likes: item.likes || [] // Ensure likes exists
       })) as ReadingLog[];
       setLogs(logs);
 
@@ -1297,7 +1382,8 @@ const App: React.FC = () => {
         book_id: selectedBookId,
         chapters: sessionSelectedChapters.sort((a, b) => a - b),
         ai_reflection: reflection,
-        user_notes: ''
+        user_notes: '',
+        likes: [] // Initialize likes array
     });
 
     setIsGeneratingAI(false);
@@ -1334,6 +1420,35 @@ const App: React.FC = () => {
           setTempNoteContent('');
       } else {
           alert('Erro ao salvar nota.');
+      }
+  };
+
+  // --- Deletion Logic ---
+  const handleDeleteLog = async (logId: string) => {
+      if(!window.confirm("Tem certeza que deseja excluir este registro? Essa ação não pode ser desfeita.")) {
+          return;
+      }
+
+      const { error } = await supabase
+          .from('reading_logs')
+          .delete()
+          .eq('id', logId);
+
+      if (error) {
+          alert('Erro ao excluir: ' + error.message);
+      } else {
+          // Update local state immediately
+          setReadingLogs(prev => prev.filter(l => l.id !== logId));
+          // Recalculate chapters map
+          const remainingLogs = readingLogs.filter(l => l.id !== logId);
+          const map: ReadChaptersMap = {};
+          remainingLogs.forEach(log => {
+            if (!map[log.bookId]) map[log.bookId] = [];
+            map[log.bookId] = Array.from(new Set([...map[log.bookId], ...log.chapters]));
+          });
+          setReadChapters(map);
+          
+          if(userProfile?.family_id) fetchFamilyData(); // Update family stats if needed
       }
   };
 
@@ -1512,6 +1627,7 @@ const App: React.FC = () => {
                   <Users className="absolute -bottom-6 -right-6 text-indigo-500 opacity-50" size={150} />
               </div>
 
+              {/* Stats Cards */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {familyMembers.map(member => (
                       <div key={member.userId} className="bg-white dark:bg-slate-900 p-5 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 flex items-center justify-between">
@@ -1536,6 +1652,59 @@ const App: React.FC = () => {
                   ))}
               </div>
 
+              {/* Feed de Atividades */}
+              <div className="space-y-4">
+                  <h3 className="font-bold text-gray-900 dark:text-white text-lg flex items-center gap-2">
+                      <Activity size={20} className="text-pink-500"/> Feed de Atividades
+                  </h3>
+                  
+                  {familyFeed.length > 0 ? (
+                      <div className="space-y-3">
+                          {familyFeed.map(log => {
+                              const isLiked = log.likes?.includes(user?.id);
+                              return (
+                                  <div key={log.id} className="bg-white dark:bg-slate-900 p-4 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 transition-all hover:border-indigo-100 dark:hover:border-indigo-900">
+                                      <div className="flex justify-between items-start">
+                                          <div className="flex items-center gap-3">
+                                              <div className="w-10 h-10 rounded-full bg-indigo-50 dark:bg-slate-800 flex items-center justify-center text-sm font-bold text-indigo-600 dark:text-indigo-400">
+                                                  {log.user_name ? log.user_name.charAt(0).toUpperCase() : 'U'}
+                                              </div>
+                                              <div>
+                                                  <p className="text-sm text-gray-900 dark:text-white">
+                                                      <span className="font-bold">{log.user_name || 'Alguém'}</span> leu 
+                                                      <span className="font-bold text-indigo-600 dark:text-indigo-400 ml-1">
+                                                          {log.bookId} {log.chapters.join(', ')}
+                                                      </span>
+                                                  </p>
+                                                  <p className="text-xs text-gray-400">
+                                                      {new Date(log.timestamp).toLocaleDateString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                                                  </p>
+                                              </div>
+                                          </div>
+                                          <button 
+                                              onClick={() => handleToggleLike(log.id, log.likes)}
+                                              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                                                  isLiked 
+                                                  ? 'text-pink-600 bg-pink-50 dark:bg-pink-900/20' 
+                                                  : 'text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-slate-800'
+                                              }`}
+                                          >
+                                              <Heart size={14} fill={isLiked ? "currentColor" : "none"} />
+                                              {log.likes?.length || 0}
+                                          </button>
+                                      </div>
+                                  </div>
+                              );
+                          })}
+                      </div>
+                  ) : (
+                      <div className="text-center py-8 text-gray-400 bg-gray-50 dark:bg-slate-900 rounded-xl border border-dashed border-gray-200 dark:border-slate-800">
+                          <p>Nenhuma atividade recente na família.</p>
+                      </div>
+                  )}
+              </div>
+
+              {/* Chart */}
               <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800">
                   <h3 className="font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
                       <BarChart3 size={20} className="text-green-500"/> Comparativo Diário
@@ -1911,7 +2080,7 @@ const App: React.FC = () => {
                <nav className="space-y-1 flex-1">
                   {[
                      { id: 'dashboard', label: 'Visão Geral', icon: LayoutDashboard },
-                     { id: 'tracker', label: 'Leitura', icon: BookOpen },
+                     { id: 'tracker', label: 'Leitura Livre', icon: BookOpen },
                      { id: 'history', label: 'Histórico', icon: History },
                      { id: 'achievements', label: 'Conquistas', icon: Trophy },
                      { id: 'family', label: 'Família', icon: Users },
@@ -1933,7 +2102,7 @@ const App: React.FC = () => {
                   ))}
                </nav>
 
-               <div className="mt-auto pt-6 border-t border-gray-100 dark:border-slate-800 space-y-2">
+               <div className="mt-auto pt-4 border-t border-gray-100 dark:border-slate-800 space-y-2">
                   <div className="px-3 py-2 flex items-center gap-3">
                       <div className="w-8 h-8 rounded-full bg-indigo-100 dark:bg-slate-800 flex items-center justify-center text-indigo-600 dark:text-indigo-400 font-bold text-xs">
                           {user.email?.substring(0, 2).toUpperCase()}
@@ -1964,6 +2133,19 @@ const App: React.FC = () => {
          <main className="flex-1 p-4 md:p-8 overflow-x-hidden bg-gray-50/50 dark:bg-slate-950">
              {activeTab === 'dashboard' && (
                  <div className="space-y-6 max-w-5xl mx-auto animate-fade-in">
+                     {/* News Banner */}
+                     {siteNews && (
+                        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl p-4 text-white shadow-lg mb-6 flex items-start gap-4 animate-fade-in">
+                           <div className="bg-white/20 p-2 rounded-lg flex-shrink-0">
+                               <Megaphone size={24} />
+                           </div>
+                           <div>
+                               <h3 className="font-bold text-lg mb-1">Novidades no App</h3>
+                               <p className="text-blue-50 text-sm leading-relaxed whitespace-pre-line">{siteNews}</p>
+                           </div>
+                        </div>
+                     )}
+
                      {/* Greeting & Stats */}
                      <div className="flex flex-col md:flex-row gap-6 items-start justify-between">
                          <div>
@@ -1975,8 +2157,8 @@ const App: React.FC = () => {
                              </p>
                          </div>
                          {!userPlan && (
-                             <button onClick={() => setIsPlanModalOpen(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-lg shadow-indigo-200 dark:shadow-none">
-                                 <Target size={16} /> Escolher Plano
+                             <button onClick={() => setIsPlanModalOpen(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-lg shadow-indigo-200 dark:shadow-none transition-colors">
+                                 <Target size={16} /> Escolher Plano de Leitura
                              </button>
                          )}
                      </div>
@@ -2124,13 +2306,23 @@ const App: React.FC = () => {
                                                  Capítulos: {log.chapters.join(', ')}
                                              </h3>
                                          </div>
-                                         <button 
-                                             onClick={() => startEditingNote(log)}
-                                             className="text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
-                                             title="Editar nota pessoal"
-                                         >
-                                             <PenLine size={18} />
-                                         </button>
+                                         
+                                         <div className="flex items-center gap-2">
+                                             <button 
+                                                 onClick={() => startEditingNote(log)}
+                                                 className="p-2 text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-lg transition-all"
+                                                 title="Editar nota pessoal"
+                                             >
+                                                 <PenLine size={18} />
+                                             </button>
+                                             <button 
+                                                 onClick={() => handleDeleteLog(log.id)}
+                                                 className="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all"
+                                                 title="Excluir registro"
+                                             >
+                                                 <Trash2 size={18} />
+                                             </button>
+                                         </div>
                                      </div>
 
                                      {log.aiReflection && (
@@ -2202,6 +2394,12 @@ const App: React.FC = () => {
                                  className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${adminView === 'messages' ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300' : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'}`}
                              >
                                  Suporte ({supportTickets.filter(t => t.status === 'open').length})
+                             </button>
+                             <button 
+                                 onClick={() => setAdminView('news')}
+                                 className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${adminView === 'news' ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300' : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'}`}
+                             >
+                                 Novidades
                              </button>
                          </div>
                      </div>
@@ -2292,6 +2490,38 @@ const App: React.FC = () => {
                                      ))
                                  }
                                  {supportTickets.length === 0 && <p className="text-gray-500 text-center py-8">Nenhum ticket encontrado.</p>}
+                             </div>
+                         </div>
+                     )}
+
+                     {adminView === 'news' && (
+                         <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800">
+                             <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                                 <Megaphone className="text-indigo-600" size={20} /> Gerenciar Novidades no App
+                             </h3>
+                             <div className="space-y-4">
+                                 <div>
+                                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                         Texto da Novidade (aparecerá no topo da Visão Geral)
+                                     </label>
+                                     <textarea
+                                         value={editingNews}
+                                         onChange={(e) => setEditingNews(e.target.value)}
+                                         className="w-full p-4 rounded-lg border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-white h-32 outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                                         placeholder="Escreva aqui as novidades do app..."
+                                     />
+                                     <p className="text-xs text-gray-500 mt-1">
+                                         Deixe em branco para remover o banner de novidades.
+                                     </p>
+                                 </div>
+                                 <div className="flex justify-end">
+                                     <button 
+                                         onClick={handleSaveNews}
+                                         className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-bold transition-colors shadow-lg shadow-indigo-200 dark:shadow-none"
+                                     >
+                                         Salvar e Publicar
+                                     </button>
+                                 </div>
                              </div>
                          </div>
                      )}
