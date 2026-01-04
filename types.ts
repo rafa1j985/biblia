@@ -2,6 +2,7 @@
 export interface BibleBook {
   id: string;
   name: string;
+  abbreviation: string; // Ex: Gn, Ex, Mt
   chapters: number;
   testament: 'Old' | 'New';
   category: string;

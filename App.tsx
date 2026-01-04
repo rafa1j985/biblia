@@ -65,7 +65,9 @@ import {
   Inbox,
   Check,
   XCircle,
-  Filter
+  Filter,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -585,7 +587,7 @@ const App: React.FC = () => {
 
   // --- App State ---
   const [activeTab, setActiveTab] = useState<'dashboard' | 'tracker' | 'history' | 'admin' | 'achievements' | 'support'>('dashboard');
-  const [selectedBookId, setSelectedBookId] = useState<string>('GEN');
+  const [selectedBookId, setSelectedBookId] = useState<string | null>(null); // Changed default to null for accordion
   
   // Theme State
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
@@ -656,9 +658,14 @@ const App: React.FC = () => {
         
         if (error) {
            // Explicitly check for refresh token errors and sign out if found
+           // Also checking "Invalid Refresh Token" case explicitly
            if (error.message.includes('Refresh Token') || error.message.includes('refresh_token')) {
              console.warn("Invalid refresh token, signing out to clear state.");
-             await supabase.auth.signOut();
+             // Aggressively clear supabase keys from localStorage
+             Object.keys(localStorage).forEach(key => {
+                 if (key.startsWith('sb-')) localStorage.removeItem(key);
+             });
+             await supabase.auth.signOut().catch(() => {});
              setUser(null);
            } else {
              console.error("Session check error:", error.message);
@@ -684,7 +691,10 @@ const App: React.FC = () => {
         setUser(null);
       } else if (e === 'TOKEN_REFRESH_REVOKED') {
         console.warn("Token revoked, signing out");
-        await supabase.auth.signOut();
+        Object.keys(localStorage).forEach(key => {
+             if (key.startsWith('sb-')) localStorage.removeItem(key);
+        });
+        await supabase.auth.signOut().catch(() => {});
         setUser(null);
       } else {
         setUser(session?.user ?? null);
@@ -1080,7 +1090,7 @@ const App: React.FC = () => {
   };
 
   const handleToggleChapter = (chapter: number) => {
-    if (trackerMode === 'read') {
+    if (trackerMode === 'read' && selectedBookId) {
       const book = BIBLE_BOOKS.find(b => b.id === selectedBookId)!;
       setReadingChapter({ book, chapter });
       return;
@@ -1098,7 +1108,7 @@ const App: React.FC = () => {
   };
 
   const handleSaveSession = async () => {
-    if (sessionSelectedChapters.length === 0 || !user) return;
+    if (sessionSelectedChapters.length === 0 || !user || !selectedBookId) return;
 
     const book = BIBLE_BOOKS.find(b => b.id === selectedBookId)!;
     const today = new Date().toISOString().split('T')[0];
@@ -1227,12 +1237,18 @@ const App: React.FC = () => {
           .from('support_tickets')
           .update({ status: newStatus })
           .eq('id', ticketId);
-          
+      
+      // Fetch latest data to ensure consistency and prevent UI reversion if optimism failed silently
+      if (!error) {
+          await fetchAdminData();
+      }
+      
       setUpdatingTicketId(null);
 
       if (error) {
           console.error("Error updating ticket:", error);
           alert('Erro ao atualizar status: ' + error.message);
+          // Revert optimistic update on error by fetching
           if(isAdmin) fetchAdminData();
       }
   };
@@ -1861,89 +1877,118 @@ const App: React.FC = () => {
   );
 
   const renderTracker = () => (
-       <div className="flex flex-col lg:flex-row h-[calc(100vh-100px)] gap-6 animate-fade-in">
-          {/* Book List */}
-          <div className="w-full lg:w-1/3 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden flex flex-col">
-             <div className="p-4 bg-gray-50 dark:bg-slate-950 border-b border-gray-100 dark:border-slate-800">
-                <h3 className="font-bold text-gray-700 dark:text-gray-300">Livros</h3>
+       <div className="max-w-4xl mx-auto space-y-4 animate-fade-in">
+          {/* Header */}
+          <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 flex justify-between items-center mb-6">
+             <div>
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white serif">Leitura Bíblica</h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Selecione um livro para marcar capítulos.</p>
              </div>
-             <div className="overflow-y-auto flex-1 p-2 space-y-1">
-                {BIBLE_BOOKS.map(book => {
-                   const progress = readChapters[book.id]?.length || 0;
-                   const isCompleted = progress === book.chapters;
-                   const isSelected = selectedBookId === book.id;
-                   
-                   return (
-                      <button
-                         key={book.id}
-                         onClick={() => { setSelectedBookId(book.id); setSessionSelectedChapters([]); }}
-                         className={`w-full flex items-center justify-between p-3 rounded-lg text-sm transition-all ${isSelected ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-800'}`}
-                      >
-                         <div className="flex items-center gap-3">
-                            <span className={`font-bold ${isSelected ? 'text-indigo-200' : 'text-gray-400'} w-6`}>{book.id}</span>
-                            <span>{book.name}</span>
-                         </div>
-                         <div className="flex items-center gap-2">
-                             {isCompleted && <CheckCircle2 size={14} className={isSelected ? 'text-white' : 'text-green-500'} />}
-                             <span className="text-xs opacity-70">{progress}/{book.chapters}</span>
-                         </div>
-                      </button>
-                   );
-                })}
-             </div>
+             {/* Total Global Save Button (optional, kept for clarity if user selects multiple across books) */}
+             {sessionSelectedChapters.length > 0 && (
+                <button 
+                   onClick={handleSaveSession}
+                   disabled={isGeneratingAI}
+                   className="bg-green-600 hover:bg-green-700 text-white px-4 py-3 rounded-xl font-bold text-sm flex items-center gap-2 transition-all shadow-lg shadow-green-200 dark:shadow-none animate-pulse"
+                >
+                   {isGeneratingAI ? <Loader2 className="animate-spin" size={18}/> : <Save size={18} />}
+                   Salvar ({sessionSelectedChapters.length})
+                </button>
+             )}
           </div>
 
-          {/* Chapter Grid */}
-          <div className="flex-1 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden flex flex-col">
-              <div className="p-6 border-b border-gray-100 dark:border-slate-800 flex justify-between items-center bg-gray-50 dark:bg-slate-950">
-                 <div>
-                    <h2 className="text-2xl font-bold text-gray-900 dark:text-white serif">{BIBLE_BOOKS.find(b => b.id === selectedBookId)?.name}</h2>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">{BIBLE_BOOKS.find(b => b.id === selectedBookId)?.category} • {BIBLE_BOOKS.find(b => b.id === selectedBookId)?.testament === 'Old' ? 'Antigo Testamento' : 'Novo Testamento'}</p>
-                 </div>
-                 <div className="flex gap-2">
-                    {sessionSelectedChapters.length > 0 && (
-                        <button 
-                           onClick={handleSaveSession}
-                           disabled={isGeneratingAI}
-                           className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 transition-colors disabled:opacity-50"
-                        >
-                           {isGeneratingAI ? <Loader2 className="animate-spin" size={16}/> : <Save size={16} />}
-                           Salvar ({sessionSelectedChapters.length})
-                        </button>
-                    )}
-                 </div>
-              </div>
-              
-              <div className="flex-1 overflow-y-auto p-6">
-                 <div className="grid grid-cols-5 sm:grid-cols-8 md:grid-cols-10 lg:grid-cols-12 gap-3">
-                    {Array.from({ length: BIBLE_BOOKS.find(b => b.id === selectedBookId)?.chapters || 0 }, (_, i) => i + 1).map(chapter => {
-                        const isRead = isChapterReadGlobal(selectedBookId, chapter);
-                        const isSelected = sessionSelectedChapters.includes(chapter);
-                        
-                        return (
-                           <button
-                              key={chapter}
-                              onClick={() => handleToggleChapter(chapter)}
-                              onDoubleClick={() => setReadingChapter({ book: BIBLE_BOOKS.find(b => b.id === selectedBookId)!, chapter })}
-                              className={`
-                                 aspect-square rounded-lg flex items-center justify-center font-bold text-sm transition-all border
-                                 ${isRead 
-                                    ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800' 
-                                    : isSelected
-                                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-md transform scale-105'
-                                        : 'bg-gray-50 dark:bg-slate-800 text-gray-600 dark:text-gray-400 border-gray-100 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-500'
-                                 }
-                              `}
-                           >
-                              {chapter}
-                           </button>
-                        );
-                    })}
-                 </div>
-                 <p className="mt-8 text-center text-xs text-gray-400">
-                    Dica: Clique para selecionar. Clique duas vezes para ler o texto.
-                 </p>
-              </div>
+          {/* Book List Accordion */}
+          <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden divide-y divide-gray-100 dark:divide-slate-800">
+             {BIBLE_BOOKS.map(book => {
+                const progress = readChapters[book.id]?.length || 0;
+                const isCompleted = progress === book.chapters;
+                const isExpanded = selectedBookId === book.id;
+                
+                return (
+                   <div key={book.id} className="transition-colors hover:bg-gray-50 dark:hover:bg-slate-800/50">
+                      <button
+                         onClick={() => { 
+                             if(isExpanded) {
+                                 setSelectedBookId(null);
+                             } else {
+                                 setSelectedBookId(book.id);
+                                 // Clear session if switching books to avoid confusion, or keep it if we want multi-book save.
+                                 // Let's clear to keep it simple per book focus.
+                                 setSessionSelectedChapters([]);
+                             }
+                         }}
+                         className={`w-full flex items-center justify-between p-4 text-left transition-all ${isExpanded ? 'bg-indigo-50 dark:bg-slate-800' : ''}`}
+                      >
+                         <div className="flex items-center gap-4">
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm border ${isCompleted ? 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-900' : isExpanded ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-gray-100 text-gray-500 border-gray-200 dark:bg-slate-800 dark:text-gray-400 dark:border-slate-700'}`}>
+                                {book.abbreviation}
+                            </div>
+                            <div>
+                                <h3 className={`font-bold ${isExpanded ? 'text-indigo-700 dark:text-indigo-400' : 'text-gray-700 dark:text-gray-200'}`}>{book.name}</h3>
+                                <p className="text-xs text-gray-400 flex items-center gap-1">
+                                    {progress}/{book.chapters} capítulos {isCompleted && <CheckCircle2 size={12} className="text-green-500"/>}
+                                </p>
+                            </div>
+                         </div>
+                         <div className="text-gray-400">
+                             {isExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                         </div>
+                      </button>
+
+                      {/* Expanded Area */}
+                      {isExpanded && (
+                          <div className="p-4 bg-gray-50/50 dark:bg-slate-900/50 border-t border-gray-100 dark:border-slate-800 animate-fade-in">
+                             <div className="grid grid-cols-5 sm:grid-cols-8 md:grid-cols-10 gap-3 mb-4">
+                                {Array.from({ length: book.chapters }, (_, i) => i + 1).map(chapter => {
+                                    const isRead = isChapterReadGlobal(book.id, chapter);
+                                    const isSelected = sessionSelectedChapters.includes(chapter);
+                                    
+                                    return (
+                                       <button
+                                          key={chapter}
+                                          onClick={(e) => {
+                                              e.stopPropagation(); // Prevent accordion toggle
+                                              handleToggleChapter(chapter);
+                                          }}
+                                          onDoubleClick={(e) => {
+                                              e.stopPropagation();
+                                              setReadingChapter({ book, chapter });
+                                          }}
+                                          className={`
+                                             aspect-square rounded-lg flex items-center justify-center font-bold text-sm transition-all border shadow-sm
+                                             ${isRead 
+                                                ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800' 
+                                                : isSelected
+                                                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-md transform scale-105 ring-2 ring-indigo-200 dark:ring-indigo-900'
+                                                    : 'bg-white dark:bg-slate-800 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-500 hover:shadow-md'
+                                             }
+                                          `}
+                                       >
+                                          {chapter}
+                                       </button>
+                                    );
+                                })}
+                             </div>
+                             
+                             <div className="flex justify-between items-center pt-2 border-t border-gray-200 dark:border-slate-700/50">
+                                 <p className="text-xs text-gray-400">
+                                    Dica: Duplo clique no número para ler o texto.
+                                 </p>
+                                 {sessionSelectedChapters.length > 0 && (
+                                     <button 
+                                        onClick={handleSaveSession}
+                                        disabled={isGeneratingAI}
+                                        className="text-xs font-bold text-green-600 hover:text-green-700 bg-green-50 hover:bg-green-100 px-3 py-2 rounded-lg transition-colors flex items-center gap-1 dark:bg-green-900/20 dark:text-green-400 dark:hover:bg-green-900/30"
+                                     >
+                                        <Save size={14} /> Salvar Seleção
+                                     </button>
+                                 )}
+                             </div>
+                          </div>
+                      )}
+                   </div>
+                );
+             })}
           </div>
        </div>
   );
