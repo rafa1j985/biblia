@@ -18,6 +18,7 @@ export interface ReadingLog {
   likes?: string[]; // Array of user IDs who liked this log
   user_name?: string; // Helper for feed display
   user_email?: string; // Helper for feed display
+  user_id: string; // Refers to the Profile ID
 }
 
 export type ReadChaptersMap = Record<string, number[]>; // { "GEN": [1, 2, 3], "EXO": [1] }
@@ -60,11 +61,16 @@ export interface SupportTicket {
 }
 
 export interface UserProfile {
-  id: string; // matches auth.users id
-  email: string;
+  id: string; // Unique UUID for the profile
+  email?: string; // Optional for dependents
+  username?: string; // Unique login for dependents
+  dob?: string; // Date of Birth YYYY-MM-DD
   full_name: string;
   avatar_url?: string;
   family_id?: string; // Link to family table
+  manager_id?: string; // If set, this is a dependent profile managed by this ID
+  pin?: string; // Optional 4-digit PIN for switching
+  created_at?: string;
 }
 
 export interface Family {
@@ -81,4 +87,14 @@ export interface FamilyMemberStats {
   chaptersReadToday: number;
   totalChaptersRead: number;
   lastActive: string; // Date string
+}
+
+export type InsightProfileType = 'CHILD' | 'TEEN' | 'BEGINNER' | 'DISCIPLE' | 'LEADER';
+
+export interface InsightProfileConfig {
+  id: InsightProfileType;
+  label: string;
+  description: string;
+  icon: string;
+  promptInstruction: string;
 }
