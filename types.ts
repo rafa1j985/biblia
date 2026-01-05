@@ -1,5 +1,7 @@
 export type PlanType = 'BIBLE_1Y' | 'BIBLE_6M' | 'BIBLE_3M' | 'NT_3M' | 'OT_9M' | 'CHRONO_1Y' | 'PAUL_3C';
 
+export type DevotionalStyle = 'theologian' | 'youth' | 'pastoral' | 'kids' | 'classic';
+
 export interface BibleBook {
   id: string;
   name: string;

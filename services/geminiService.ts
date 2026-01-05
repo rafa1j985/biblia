@@ -1,4 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
+import { DevotionalStyle } from '../types';
 
 // Use fallback empty string if process is undefined (browser safety)
 const apiKey = (typeof process !== 'undefined' && process.env && process.env.API_KEY) ? process.env.API_KEY : '';
@@ -6,25 +7,72 @@ const apiKey = (typeof process !== 'undefined' && process.env && process.env.API
 // Always use named parameter for initialization
 const ai = new GoogleGenAI({ apiKey });
 
-export const generateDevotional = async (bookName: string, chapters: number[]) => {
+export const generateDevotional = async (bookName: string, chapters: number[], style: DevotionalStyle = 'theologian') => {
   if (!apiKey) {
       console.warn("API Key not found. AI features disabled.");
       return "Configuração de IA pendente.";
   }
 
   const chaptersStr = chapters.join(', ');
-  
-  // Prompt engineered to mimic Luiz Sayão's style
-  const prompt = `
-    Atue como o hebraísta, teólogo e pastor Luiz Sayão. Crie um insight curto (um parágrafo de 3 a 5 frases) sobre a leitura de: ${bookName}, capítulos: ${chaptersStr}.
+  let roleInstruction = '';
+  let specificGuidelines = '';
 
-    Diretrizes de Estilo e Conteúdo:
-    1. **Texto e Contexto**: Comece pelo texto. Se pertinente, mencione brevemente o contexto histórico, cultural ou uma nuance do original (hebraico/grego) que enriqueça o sentido, evitando o óbvio.
-    2. **Sem "Gospelês"**: Evite clichês, frases de efeito vazias ou misticismo exagerado.
-    3. **Aplicação Ética**: A aplicação deve focar em maturidade, caráter e coerência de vida no mundo atual.
-    4. **Didática**: Seja claro, inteligente e levemente coloquial, como quem conversa, mas com profundidade acadêmica.
+  switch (style) {
+    case 'pastoral':
+        roleInstruction = "Atue como um mentor e pastor acolhedor, focado no cuidado da alma.";
+        specificGuidelines = `
+            1. **Simplicidade e Graça**: Use linguagem extremamente simples, sem "gospelês" difícil. Foque no amor de Deus, no perdão e na Graça.
+            2. **Acolhimento**: Fale como quem abraça alguém que está cansado. Traga consolo e esperança.
+            3. **Aplicação Prática**: Dê um conselho simples e fácil de aplicar no dia a dia para se sentir mais perto de Deus.
+            4. **Tom**: Gentil, calmo, encorajador. Evite tom de julgamento ou teologia complexa.
+        `;
+        break;
+    case 'youth':
+        roleInstruction = "Atue como um líder de jovens carismático e relevante.";
+        specificGuidelines = `
+            1. **Linguagem Atual**: Use uma linguagem moderna, direta e dinâmica (pode usar gírias leves se fizer sentido), que conecte com a Geração Z/Millennials.
+            2. **Foco em Propósito**: Relacione o texto com questões de identidade, propósito, ansiedade, relacionamentos ou pressão social.
+            3. **Desafio**: Termine com um "Call to Action" ou desafio prático para viver a fé na escola/faculdade/trabalho.
+            4. **Estilo**: Seja "punchy" (impactante), evite enrolação.
+        `;
+        break;
+    case 'kids':
+        roleInstruction = "Atue como um professor de escola dominical super divertido.";
+        specificGuidelines = `
+            1. **Narrativa e Aventura**: Conte o insight como se fosse uma pequena aventura ou descoberta. Use emojis 🌟✨📖.
+            2. **Super Simples**: Use palavras fáceis que uma criança de 7-10 anos entenda.
+            3. **Lição Moral**: Foque em uma lição clara: obediência, coragem, amor ou amizade.
+            4. **Interação**: Faça uma pergunta divertida no final para a criança pensar.
+        `;
+        break;
+    case 'classic':
+        roleInstruction = "Atue como um escritor devocional clássico, no estilo de Charles Spurgeon, C.S. Lewis ou A.W. Tozer.";
+        specificGuidelines = `
+            1. **Reverência e Profundidade**: Use uma linguagem mais culta, poética e solene.
+            2. **Foco na Santidade**: Enfatize a majestade de Deus, a beleza da santidade e a vida de oração.
+            3. **Cristocentrismo**: Aponte o texto para a pessoa de Cristo e sua obra redentora de forma gloriosa.
+            4. **Tom**: Inspirador, sério, profundo, que leve à adoração contemplativa.
+        `;
+        break;
+    case 'theologian':
+    default:
+        roleInstruction = "Atue como o hebraísta, teólogo e pastor Luiz Sayão.";
+        specificGuidelines = `
+            1. **Texto e Contexto**: Comece pelo texto. Mencione brevemente o contexto histórico, cultural ou uma nuance do original (hebraico/grego) que enriqueça o sentido.
+            2. **Sem "Gospelês" vazio**: Evite clichês.
+            3. **Aplicação Ética**: A aplicação deve focar em maturidade, caráter e coerência de vida.
+            4. **Didática**: Seja claro, inteligente e levemente coloquial, como quem conversa com profundidade acadêmica.
+        `;
+        break;
+  }
+  
+  const prompt = `
+    ${roleInstruction} Crie um insight curto (um parágrafo de 3 a 5 frases) sobre a leitura de: ${bookName}, capítulos: ${chaptersStr}.
+
+    Diretrizes de Estilo e Conteúdo para esta persona:
+    ${specificGuidelines}
     
-    O objetivo é fazer o leitor pensar sobre o texto e não apenas sentir uma emoção passageira.
+    O objetivo é gerar um devocional que se conecte perfeitamente com o público-alvo desta persona.
   `;
 
   try {

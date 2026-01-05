@@ -1,5 +1,5 @@
 
-import { BibleBook, PlanType, Achievement } from './types';
+import { BibleBook, PlanType, Achievement, DevotionalStyle } from './types';
 
 // Adicione aqui os e-mails que terão acesso Master
 export const ADMIN_EMAILS = [
@@ -8,6 +8,34 @@ export const ADMIN_EMAILS = [
   // Adicione o seu email real aqui para testar, ex: 'seuemail@gmail.com'
   'dev@teste.com' 
 ];
+
+export const DEVOTIONAL_STYLES: Record<DevotionalStyle, { title: string; description: string; icon: string }> = {
+  'theologian': {
+    title: 'Teológico & Histórico',
+    description: 'Estilo Luiz Sayão. Foco em contexto, original grego/hebraico e cultura.',
+    icon: 'Scroll'
+  },
+  'pastoral': {
+    title: 'Pastor Acolhedor',
+    description: 'Linguagem simples e empática. Ideal para novos na fé e conforto.',
+    icon: 'HeartHandshake' // Mapear este ícone no App.tsx ou usar um existente
+  },
+  'youth': {
+    title: 'Jovem & Dinâmico',
+    description: 'Linguagem moderna, foco em propósito e desafios atuais.',
+    icon: 'Zap'
+  },
+  'kids': {
+    title: 'Bíblia Kids',
+    description: 'Divertido e narrativo. Explicações fáceis com lições de moral.',
+    icon: 'Smile' // Mapear este ícone
+  },
+  'classic': {
+    title: 'Devocional Clássico',
+    description: 'Estilo reverente (ex: Spurgeon). Foco em oração e santidade.',
+    icon: 'Feather'
+  }
+};
 
 export const PLANS_CONFIG: Record<PlanType, { title: string, days: number, scope: 'ALL' | 'OLD' | 'NEW' | 'PAUL', description: string }> = {
   'BIBLE_1Y': { 

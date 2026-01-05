@@ -60,7 +60,10 @@ import {
   ChevronDown,
   ChevronUp,
   Info,
-  Megaphone
+  Megaphone,
+  HeartHandshake,
+  Smile,
+  Share2
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -73,8 +76,8 @@ import {
   Pie, 
   Cell
 } from 'recharts';
-import { BIBLE_BOOKS, TOTAL_CHAPTERS_BIBLE, ADMIN_EMAILS, PLANS_CONFIG, ACHIEVEMENTS } from './constants';
-import { BibleBook, ReadChaptersMap, ReadingLog, UserPlan, PlanType, SupportTicket } from './types';
+import { BIBLE_BOOKS, TOTAL_CHAPTERS_BIBLE, ADMIN_EMAILS, PLANS_CONFIG, ACHIEVEMENTS, DEVOTIONAL_STYLES } from './constants';
+import { BibleBook, ReadChaptersMap, ReadingLog, UserPlan, PlanType, SupportTicket, DevotionalStyle } from './types';
 import { generateDevotional } from './services/geminiService';
 import { supabase } from './services/supabase';
 
@@ -82,7 +85,7 @@ import { supabase } from './services/supabase';
 const IconMap: Record<string, React.ElementType> = {
   Moon, Sun, Star, Footprints, Calendar, CalendarRange, Crown, RefreshCcw, Flame,
   Scroll, Landmark, Feather, Cross, Map, BookOpen, Eye: Search, TreeDeciduous, SunMedium, Book, Lightbulb, Music,
-  PenTool, GraduationCap, Zap, Waves, Coffee, Sprout, Trees, Shield
+  PenTool, GraduationCap, Zap, Waves, Coffee, Sprout, Trees, Shield, HeartHandshake, Smile
 };
 
 // --- Mapeamento para API bible-api.com (Nomes em Inglês para query, retorno em PT) ---
@@ -531,8 +534,8 @@ const PlanSelectionModal = ({ onClose, onSelectPlan }: { onClose: () => void, on
       <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-2xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         <div className="p-6 border-b border-gray-100 dark:border-slate-800 flex justify-between items-center bg-indigo-600 text-white">
           <div>
-            <h3 className="font-bold text-xl">Escolha seu GPS de Leitura</h3>
-            <p className="text-indigo-200 text-sm">Selecione um plano para guiar sua jornada.</p>
+            <h3 className="font-bold text-xl">Planos de Leitura</h3>
+            <p className="text-indigo-200 text-sm">Escolha abaixo um Plano de Leitura guiado. Se preferir fazer uma Leitura Livre da Bíblia, vá para o Menu Inicial.</p>
           </div>
           <button onClick={onClose} className="text-indigo-200 hover:text-white bg-indigo-500/30 p-2 rounded-full">
             <X size={20} />
@@ -599,6 +602,12 @@ const App: React.FC = () => {
   const [userPlan, setUserPlan] = useState<UserPlan | null>(null);
   const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
 
+  // Devotional Style State
+  const [devotionalStyle, setDevotionalStyle] = useState<DevotionalStyle>(() => {
+      const stored = localStorage.getItem('devotional_style');
+      return (stored as DevotionalStyle) || 'theologian';
+  });
+
   // Data State (Admin)
   const [adminLogs, setAdminLogs] = useState<any[]>([]);
   const [isAdminLoading, setIsAdminLoading] = useState(false);
@@ -637,6 +646,11 @@ const App: React.FC = () => {
     root.classList.add(theme);
     localStorage.setItem('theme', theme);
   }, [theme]);
+
+  // --- Devotional Style Effect ---
+  useEffect(() => {
+      localStorage.setItem('devotional_style', devotionalStyle);
+  }, [devotionalStyle]);
 
   const toggleTheme = () => {
     setTheme(prev => prev === 'light' ? 'dark' : 'light');
@@ -763,7 +777,10 @@ const App: React.FC = () => {
     if (!logs.length) return new Set<number>();
 
     const unlocked = new Set<number>();
-    
+
+    // Helper Functions
+    const isBookComplete = (id: string) => (chaptersMap[id]?.length || 0) === BIBLE_BOOKS.find(b => b.id === id)?.chapters;
+
     // 1. Time Based
     const hasEarlyMorning = logs.some(l => {
         const hour = new Date(l.timestamp).getHours();
@@ -803,16 +820,130 @@ const App: React.FC = () => {
     if (maxStreak >= 7) unlocked.add(5);
     if (maxStreak >= 30) unlocked.add(6);
     if (maxStreak >= 365) unlocked.add(8);
-
-    // 4. Book Completion
-    const isBookComplete = (id: string) => (chaptersMap[id]?.length || 0) === BIBLE_BOOKS.find(b => b.id === id)?.chapters;
+    
+    // 4. Book Completion Categories
+    
+    // Pentateuco (21)
     if (['GEN', 'EXO', 'LEV', 'NUM', 'DEU'].every(isBookComplete)) unlocked.add(21);
+    
+    // Históricos AT (22)
+    const historicalOT = ['JOS', 'JDG', 'RUT', '1SA', '2SA', '1KI', '2KI', '1CH', '2CH', 'EZR', 'NEH', 'EST'];
+    if (historicalOT.every(isBookComplete)) unlocked.add(22);
+    
+    // Poéticos (23)
+    const poetical = ['JOB', 'PSA', 'PRO', 'ECC', 'SNG'];
+    if (poetical.every(isBookComplete)) unlocked.add(23);
+
+    // Evangelhos (26)
     if (['MAT', 'MRK', 'LUK', 'JHN'].every(isBookComplete)) unlocked.add(26);
+    
+    // Atos (27)
     if (isBookComplete('ACT')) unlocked.add(27);
     
-    // 5. Intensity
+    // Teologia Paulina (28)
+    if (PAULINE_BOOKS.every(isBookComplete)) unlocked.add(28);
+    
+    // Apocalipse (30)
+    if (isBookComplete('REV')) unlocked.add(30);
+
+    // Provérbios (37)
+    if (isBookComplete('PRO')) unlocked.add(37);
+
+    // Salmos (38)
+    if (isBookComplete('PSA')) unlocked.add(38);
+
+    // AT Completo (31)
+    const allOT = BIBLE_BOOKS.filter(b => b.testament === 'Old');
+    if (allOT.every(b => isBookComplete(b.id))) unlocked.add(31);
+
+    // NT Completo (32)
+    const allNT = BIBLE_BOOKS.filter(b => b.testament === 'New');
+    if (allNT.every(b => isBookComplete(b.id))) unlocked.add(32);
+
+    // Bíblia Completa (33)
+    if (allOT.every(b => isBookComplete(b.id)) && allNT.every(b => isBookComplete(b.id))) unlocked.add(33);
+    
+    // 5. Intensity & Habits
+
+    // Maratonista (72) - 10 caps em um dia
     const maxChaptersInDay = logs.reduce((max, log) => Math.max(max, log.chapters.length), 0);
     if (maxChaptersInDay >= 10) unlocked.add(72);
+
+    // Imersão Total (73) - Livro inteiro num dia
+    // Nova lógica: Agrupar capítulos lidos por 'DATA|LIVRO' e conferir se é igual ao total do livro
+    const chaptersReadByDateAndBook: Record<string, Set<number>> = {};
+    const uniqueDates = new Set<string>();
+
+    logs.forEach(log => {
+        uniqueDates.add(log.date);
+        const key = `${log.date}|${log.bookId}`;
+        if (!chaptersReadByDateAndBook[key]) {
+            chaptersReadByDateAndBook[key] = new Set();
+        }
+        log.chapters.forEach(c => chaptersReadByDateAndBook[key].add(c));
+    });
+
+    // Check Imersão Total (73)
+    let hasImmersion = false;
+    for (const [key, chaptersSet] of Object.entries(chaptersReadByDateAndBook)) {
+        const [_, bookId] = key.split('|');
+        const book = BIBLE_BOOKS.find(b => b.id === bookId);
+        if (book && chaptersSet.size === book.chapters) {
+            hasImmersion = true;
+            break;
+        }
+    }
+    if (hasImmersion) unlocked.add(73);
+
+    // Fim de Semana Bíblico (75) - Leu Sábado E Domingo
+    // Nova lógica: Para cada data única, se for Sábado, verifica se a data do dia seguinte existe nos logs
+    let hasWeekend = false;
+    const sortedDates = Array.from(uniqueDates).sort();
+    
+    for (const dateStr of sortedDates) {
+        // Usar hora fixa (meio dia) para evitar problemas de fuso horário ao converter string para objeto Date
+        const dateObj = new Date(`${dateStr}T12:00:00`);
+        
+        // 6 = Sábado
+        if (dateObj.getDay() === 6) {
+            const nextDay = new Date(dateObj);
+            nextDay.setDate(dateObj.getDate() + 1);
+            
+            // Reconstrói a string YYYY-MM-DD do dia seguinte (Domingo)
+            const nextDayStr = nextDay.toISOString().split('T')[0];
+            
+            if (uniqueDates.has(nextDayStr)) {
+                hasWeekend = true;
+                break;
+            }
+        }
+    }
+    if (hasWeekend) unlocked.add(75);
+
+    // Depth
+    // Pensador Bíblico (55) - Primeira nota
+    if (logs.some(l => l.userNotes && l.userNotes.trim().length > 0)) unlocked.add(55);
+
+    // Aluno da Palavra (56) - 10 notas
+    const notesCount = logs.filter(l => l.userNotes && l.userNotes.trim().length > 0).length;
+    if (notesCount >= 10) unlocked.add(56);
+
+    // Growth
+    if (logs.length > 0) {
+        const sorted = [...logs].sort((a,b) => a.timestamp - b.timestamp);
+        const first = sorted[0].timestamp;
+        const last = sorted[sorted.length-1].timestamp;
+        const diffDays = (last - first) / (1000 * 3600 * 24);
+        
+        // Primeiro Passo (92) - 1 semana
+        if (diffDays >= 6) unlocked.add(92); 
+        
+        // Raiz Criada (93) - 1 mês
+        if (diffDays >= 29) unlocked.add(93);
+    }
+    
+    // Super - Peregrino (117)
+    if (unlocked.has(33) && unlocked.has(8)) unlocked.add(117);
 
     return unlocked;
   };
@@ -1056,7 +1187,8 @@ const App: React.FC = () => {
     let reflection = '';
     
     try {
-        reflection = await generateDevotional(book.name, sessionSelectedChapters);
+        // Updated to pass current style
+        reflection = await generateDevotional(book.name, sessionSelectedChapters, devotionalStyle);
     } catch (e) {
         console.error(e);
     }
@@ -1538,7 +1670,7 @@ const App: React.FC = () => {
                <nav className="space-y-1 flex-1">
                   {[
                      { id: 'dashboard', label: 'Visão Geral', icon: LayoutDashboard },
-                     { id: 'tracker', label: 'Leitura', icon: BookOpen },
+                     { id: 'tracker', label: 'Leitura Livre', icon: BookOpen },
                      { id: 'history', label: 'Histórico', icon: History },
                      { id: 'achievements', label: 'Conquistas', icon: Trophy },
                      { id: 'support', label: 'Suporte', icon: LifeBuoy },
@@ -1602,7 +1734,7 @@ const App: React.FC = () => {
                          </div>
                          {!userPlan && (
                              <button onClick={() => setIsPlanModalOpen(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-lg shadow-indigo-200 dark:shadow-none">
-                                 <Target size={16} /> Escolher Plano
+                                 <Target size={16} /> Planos de Leitura
                              </button>
                          )}
                      </div>
@@ -1624,6 +1756,66 @@ const App: React.FC = () => {
                             </button>
                         </div>
                      )}
+
+                     {/* Share Card */}
+                     <div className="bg-gradient-to-r from-emerald-500 to-teal-600 rounded-xl p-6 text-white shadow-lg flex flex-col md:flex-row items-center justify-between gap-4 animate-fade-in relative overflow-hidden">
+                        {/* Decorative circle */}
+                        <div className="absolute -left-4 -bottom-10 w-32 h-32 bg-white/10 rounded-full blur-2xl"></div>
+                        
+                        <div className="relative z-10">
+                            <h3 className="font-bold text-xl mb-1 flex items-center gap-2">
+                                <Share2 size={24} /> Espalhe a Palavra
+                            </h3>
+                            <p className="text-emerald-50 text-sm max-w-md">
+                                Ajude outros a se conectarem com as Escrituras. Convide amigos para o desafio de leitura!
+                            </p>
+                        </div>
+                        <button 
+                            onClick={() => {
+                                const text = encodeURIComponent("Estou usando o Bible Tracker para acompanhar minha leitura bíblica e receber devocionais com IA. É incrível para manter a constância! Comece também: https://biblia-xi-eight.vercel.app/");
+                                window.open(`https://wa.me/?text=${text}`, '_blank');
+                            }}
+                            className="relative z-10 bg-white text-emerald-600 px-6 py-3 rounded-xl font-bold text-sm hover:bg-emerald-50 transition-colors shadow-md flex items-center gap-2 whitespace-nowrap"
+                        >
+                            Compartilhar no WhatsApp
+                        </button>
+                     </div>
+
+                     {/* AI Persona Selector */}
+                     <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800">
+                        <div className="flex items-center gap-2 mb-4">
+                            <div className="bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 p-2 rounded-lg">
+                                <Sparkles size={20} />
+                            </div>
+                            <div>
+                                <h3 className="font-bold text-gray-900 dark:text-white text-lg">Personalize seus Insights</h3>
+                                <p className="text-xs text-gray-500 dark:text-gray-400">Escolha o estilo de reflexão da Inteligência Artificial</p>
+                            </div>
+                        </div>
+                        
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+                            {Object.entries(DEVOTIONAL_STYLES).map(([key, style]) => {
+                                const StyleIcon = IconMap[style.icon] || Sparkles;
+                                const isSelected = devotionalStyle === key;
+                                return (
+                                    <button 
+                                        key={key}
+                                        onClick={() => setDevotionalStyle(key as DevotionalStyle)}
+                                        className={`flex flex-col items-center justify-center p-4 rounded-xl border transition-all duration-200 group text-center h-full
+                                            ${isSelected 
+                                                ? 'bg-indigo-600 text-white border-indigo-600 shadow-md transform scale-[1.02]' 
+                                                : 'bg-gray-50 dark:bg-slate-800 border-transparent text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700 hover:border-gray-200 dark:hover:border-slate-600'
+                                            }
+                                        `}
+                                    >
+                                        <StyleIcon size={24} className={`mb-2 ${isSelected ? 'text-white' : 'text-indigo-500 dark:text-indigo-400 opacity-70 group-hover:opacity-100'}`} />
+                                        <h4 className={`font-bold text-xs mb-1 ${isSelected ? 'text-white' : 'text-gray-700 dark:text-gray-300'}`}>{style.title}</h4>
+                                        <p className={`text-[10px] leading-tight ${isSelected ? 'text-indigo-100' : 'text-gray-400'}`}>{style.description}</p>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                     </div>
 
                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                          <StatCard title="Capítulos Lidos" value={totalReadCount} subtext={`${completionPercentage.toFixed(1)}% da Bíblia`} icon={<BookOpen size={24}/>} />
