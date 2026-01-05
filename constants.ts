@@ -1,5 +1,5 @@
 
-import { BibleBook, PlanType, Achievement, InsightProfileConfig, InsightProfileType } from './types';
+import { BibleBook, PlanType, Achievement } from './types';
 
 // Adicione aqui os e-mails que terão acesso Master
 export const ADMIN_EMAILS = [
@@ -8,44 +8,6 @@ export const ADMIN_EMAILS = [
   // Adicione o seu email real aqui para testar, ex: 'seuemail@gmail.com'
   'dev@teste.com' 
 ];
-
-export const INSIGHT_PROFILES: Record<InsightProfileType, InsightProfileConfig> = {
-  'CHILD': {
-    id: 'CHILD',
-    label: 'Explorador Mirim (Crianças)',
-    description: 'Linguagem simples e lúdica. Foca em histórias, obediência e quem é Deus. Ideal para ler com filhos (7-12 anos).',
-    icon: 'Sprout',
-    promptInstruction: 'Explique o texto como se fosse para uma criança da Escola Bíblica Dominical (7 a 12 anos). Use analogias simples, frases curtas e tom carinhoso. Foque na narrativa e na lição moral clara: "Quem é Deus aqui?" e "O que aprendemos sobre fazer o bem?". Evite palavras difíceis.'
-  },
-  'TEEN': {
-    id: 'TEEN',
-    label: 'Conexão Jovem (Adolescentes)',
-    description: 'Direto e relacional. Conecta a Bíblia com identidade, escolhas, escola e pressão social (13-18 anos).',
-    icon: 'Zap',
-    promptInstruction: 'Fale a língua do adolescente moderno (13 a 18 anos), sem usar gírias forçadas ("cringe"), mas sendo relevante e relacional. Conecte o texto com dilemas de identidade, pressão social, futuro e escola. Desafie o caráter e a autenticidade da fé.'
-  },
-  'BEGINNER': {
-    id: 'BEGINNER',
-    label: 'Primeiros Passos (Iniciante)',
-    description: 'Para quem está começando na fé. Linguagem acolhedora, sem "gospelês", focada no amor de Deus e fundamentos.',
-    icon: 'Footprints',
-    promptInstruction: 'Adote uma linguagem acolhedora, clara e didática, ideal para um novo convertido ou alguém que não cresceu na igreja. Evite jargões teológicos complexos ("gospelês"). Foque nos fundamentos da fé: Graça, Perdão e o Amor de Deus. Explique termos difíceis se aparecerem.'
-  },
-  'DISCIPLE': {
-    id: 'DISCIPLE',
-    label: 'Discípulo Maduro (Padrão)',
-    description: 'Estilo Luiz Sayão. Profundidade histórica, contexto cultural e aplicação ética para a vida adulta.',
-    icon: 'BookOpen',
-    promptInstruction: 'Atue como o hebraísta e pastor Luiz Sayão. Traga contexto histórico, cultural e nuances do original (hebraico/grego) que enriqueçam o sentido. A aplicação deve focar em maturidade, ética cristã e coerência de vida. Seja inteligente e levemente coloquial.'
-  },
-  'LEADER': {
-    id: 'LEADER',
-    label: 'Líder & Teólogo (Avançado)',
-    description: 'Foco exegético. Estrutura homilética, tipologia de Cristo e conexões teológicas profundas.',
-    icon: 'GraduationCap',
-    promptInstruction: 'Atue como um professor de seminário teológico Batista. Forneça insights exegéticos robustos. Destaque a tipologia (Cristo no texto), conexões intertextuais e doutrinas chave. Se possível, sugira uma estrutura simples de tópicos homiléticos baseada no texto.'
-  }
-};
 
 export const PLANS_CONFIG: Record<PlanType, { title: string, days: number, scope: 'ALL' | 'OLD' | 'NEW' | 'PAUL', description: string }> = {
   'BIBLE_1Y': { 
