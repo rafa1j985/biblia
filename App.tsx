@@ -1438,6 +1438,30 @@ const App: React.FC = () => {
       setUpdatingTicketId(null);
   };
 
+  const handleShareApp = async () => {
+    const text = `Estou lendo a Bíblia com o App Bíblia Tracker! Acompanhe seu progresso, ganhe conquistas e receba devocionais com IA. Comece agora: ${window.location.href}`;
+    
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'Bíblia Tracker',
+          text: text,
+          url: window.location.href,
+        });
+      } catch (error) {
+        // User cancelled or error
+        console.log('Error sharing:', error);
+      }
+    } else {
+      try {
+        await navigator.clipboard.writeText(text);
+        alert('Link copiado para a área de transferência!');
+      } catch (err) {
+        alert('Não foi possível copiar o link.');
+      }
+    }
+  };
+
   // --- Group Handlers ---
 
   const handleCreateGroup = async () => {
@@ -2233,7 +2257,7 @@ const App: React.FC = () => {
                              </div>
                           </div>
 
-                          {/* Site News Banner - Moved below the main banner */}
+                          {/* Site News Banner */}
                           {siteNews && showNews && (
                              <div className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800 rounded-xl p-4 flex items-start justify-between gap-4 animate-fade-in">
                                  <div className="flex items-start gap-3">
@@ -2304,6 +2328,28 @@ const App: React.FC = () => {
                               />
                               <StatCard title="Sequência" value={`${currentStreak} dias`} subtext="Mantenha o fogo aceso!" icon={<Flame size={24} />} colorClass="bg-orange-500" />
                               <StatCard title="Conquistas" value={unlockedAchievements.size} subtext={`de ${ACHIEVEMENTS.length}`} icon={<Trophy size={24} />} />
+                          </div>
+
+                          {/* Invite Friends Banner */}
+                          <div className="bg-gradient-to-r from-emerald-500 to-teal-600 rounded-2xl p-6 text-white shadow-lg flex flex-col sm:flex-row justify-between items-center gap-6 relative overflow-hidden">
+                              <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/3 blur-3xl"></div>
+                              
+                              <div className="flex items-center gap-4 relative z-10">
+                                  <div className="bg-white/20 p-3 rounded-xl backdrop-blur-sm">
+                                      <Share2 size={28} className="text-white" />
+                                  </div>
+                                  <div>
+                                      <h3 className="text-xl font-bold font-serif">Espalhe a Palavra</h3>
+                                      <p className="text-emerald-50 text-sm max-w-md">Compartilhe o app com amigos e familiares. Edifiquem-se juntos na leitura da Palavra.</p>
+                                  </div>
+                              </div>
+                              
+                              <button 
+                                  onClick={handleShareApp}
+                                  className="bg-white text-emerald-600 px-6 py-3 rounded-xl font-bold hover:bg-emerald-50 transition-colors shadow-md whitespace-nowrap z-10 flex items-center gap-2"
+                              >
+                                  <Send size={18} /> Convidar Amigos
+                              </button>
                           </div>
                         </div>
                       )}
