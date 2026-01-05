@@ -2,12 +2,19 @@ import { GoogleGenAI } from "@google/genai";
 import { InsightProfileType, InsightProfileConfig } from "../types";
 import { INSIGHT_PROFILES } from "../constants";
 
-declare const process: any;
+// O TypeScript reconhece 'process' através do arquivo global.d.ts
 
-// Always use named parameter for initialization and rely on process.env.API_KEY directly.
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Garante que não quebre se a chave estiver vazia durante o build, mas avisa no console
+const apiKey = process.env.API_KEY || '';
+if (!apiKey) console.warn("Gemini API Key missing");
+
+const ai = new GoogleGenAI({ apiKey });
 
 export const generateDevotional = async (bookName: string, chapters: number[], profileType: InsightProfileType = 'DISCIPLE') => {
+  if (!apiKey) {
+    return "Configuração de IA pendente. Verifique as chaves de API.";
+  }
+
   const chaptersStr = chapters.join(', ');
   
   const profile: InsightProfileConfig = INSIGHT_PROFILES[profileType] || INSIGHT_PROFILES['DISCIPLE'];

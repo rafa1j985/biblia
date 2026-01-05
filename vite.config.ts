@@ -1,16 +1,15 @@
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 
-declare const process: any;
-
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
-  // Cast process to any to avoid "Property 'cwd' does not exist on type 'Process'" error
+  // Load env file based on `mode` in the current working directory.
+  // Set the third parameter to '' to load all env regardless of the `VITE_` prefix.
   const env = loadEnv(mode, process.cwd(), '');
   return {
     plugins: [react()],
     define: {
-      // Garante que process.env funcione tanto localmente quanto na Vercel
+      // Garante que process.env funcione tanto localmente quanto na Vercel para o código cliente
       'process.env.API_KEY': JSON.stringify(env.API_KEY),
       'process.env.SUPABASE_URL': JSON.stringify(env.SUPABASE_URL),
       'process.env.SUPABASE_KEY': JSON.stringify(env.SUPABASE_KEY)
