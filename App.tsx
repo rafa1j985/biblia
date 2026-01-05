@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   Book, 
@@ -74,7 +75,9 @@ import {
   Hash,
   Plus,
   ArrowRight,
-  Heart
+  Heart,
+  HandHeart,
+  Copy
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -93,7 +96,7 @@ import {
   Area
 } from 'recharts';
 import { BIBLE_BOOKS, TOTAL_CHAPTERS_BIBLE, ADMIN_EMAILS, PLANS_CONFIG, ACHIEVEMENTS, DEVOTIONAL_STYLES } from './constants';
-import { BibleBook, ReadChaptersMap, ReadingLog, UserPlan, PlanType, SupportTicket, DevotionalStyle } from './types';
+import { BibleBook, ReadChaptersMap, ReadingLog, UserPlan, PlanType, SupportTicket, DevotionalStyle, Group, GroupMember, GroupActivity, ActivityType } from './types';
 import { generateDevotional } from './services/geminiService';
 import { supabase } from './services/supabase';
 
@@ -152,6 +155,7 @@ const StatCard = ({ title, value, subtext, icon, highlight = false, colorClass =
 );
 
 // --- Bible Reader Modal ---
+// (Mantido igual)
 const BibleReaderModal = ({ book, chapter, onClose, onNext, onPrev }: { book: BibleBook, chapter: number, onClose: () => void, onNext?: () => void, onPrev?: () => void }) => {
   const [text, setText] = useState<string>('');
   const [verses, setVerses] = useState<{number: number, text: string}[]>([]);
@@ -593,7 +597,7 @@ const App: React.FC = () => {
   const [loadingAuth, setLoadingAuth] = useState(true);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
 
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'tracker' | 'history' | 'admin' | 'achievements' | 'support'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'tracker' | 'history' | 'community' | 'admin' | 'achievements' | 'support'>('dashboard');
   const [selectedBookId, setSelectedBookId] = useState<string | null>(null);
   
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
@@ -639,6 +643,14 @@ const App: React.FC = () => {
   
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [tempNoteContent, setTempNoteContent] = useState('');
+
+  // --- Community State ---
+  const [userGroup, setUserGroup] = useState<Group | null>(null);
+  const [groupMembers, setGroupMembers] = useState<GroupMember[]>([]);
+  const [groupActivity, setGroupActivity] = useState<GroupActivity[]>([]);
+  const [isGroupLoading, setIsGroupLoading] = useState(false);
+  const [joinCode, setJoinCode] = useState('');
+  const [newGroupName, setNewGroupName] = useState('');
 
   const isAdmin = useMemo(() => {
     return user && ADMIN_EMAILS.includes(user.email);
@@ -742,13 +754,42 @@ const App: React.FC = () => {
       }
   };
 
+  const fetchGroupData = useCallback(async () => {
+      if(!user) return;
+      setIsGroupLoading(true);
+      // 1. Find if user is in a group
+      const { data: memberData } = await supabase.from('group_members').select('*').eq('user_id', user.id).single();
+      
+      if(memberData) {
+          // 2. Fetch Group Details
+          const { data: groupData } = await supabase.from('groups').select('*').eq('id', memberData.group_id).single();
+          setUserGroup(groupData);
+
+          // 3. Fetch Members
+          const { data: allMembers } = await supabase.from('group_members').select('*').eq('group_id', memberData.group_id);
+          setGroupMembers(allMembers || []);
+
+          // 4. Fetch Activity Feed
+          const { data: activityData } = await supabase.from('group_activities')
+                .select('*')
+                .eq('group_id', memberData.group_id)
+                .order('created_at', { ascending: false })
+                .limit(50);
+          setGroupActivity(activityData || []);
+      } else {
+          setUserGroup(null);
+      }
+      setIsGroupLoading(false);
+  }, [user]);
+
   useEffect(() => {
     if (user) {
       fetchData();
       fetchNews();
+      fetchGroupData();
       if (isAdmin) fetchAdminData();
     }
-  }, [user, fetchData, isAdmin]);
+  }, [user, fetchData, isAdmin, fetchGroupData]);
 
   const processLogs = (data: any[], setLogs: Function, setMap: Function) => {
       const logs = data.map((item: any) => ({
@@ -759,7 +800,8 @@ const App: React.FC = () => {
         chapters: item.chapters,
         aiReflection: item.ai_reflection,
         userNotes: item.user_notes,
-        user_name: item.user_name
+        user_name: item.user_name,
+        group_id: item.group_id
       })) as ReadingLog[];
       setLogs(logs);
 
@@ -978,7 +1020,6 @@ const App: React.FC = () => {
   }, [adminLogs, supportTickets]);
 
   // --- Handlers ---
-  // ... (handleSelectPlan, getPlanProgress, handleQuickRead, computed stats, handleLogout, handleToggleChapter, isChapterReadGlobal, handleSaveSession, handleSaveNote, handleSupportSubmit, handleSaveNews, startEditingNote, handleSendPasswordReset, handleToggleTicketStatus, maintained) ...
   
   const handleSelectPlan = (planId: PlanType) => {
     if (!user) return;
@@ -1162,10 +1203,32 @@ const App: React.FC = () => {
     return readChapters[bookId]?.includes(chapter) || false;
   };
 
+  const logGroupActivity = async (
+    groupId: string, 
+    type: ActivityType, 
+    data: any
+  ) => {
+    if(!user || !groupId) return;
+    const { error } = await supabase.from('group_activities').insert({
+        group_id: groupId,
+        user_id: user.id,
+        user_name: user.user_metadata?.full_name || user.email,
+        type: type,
+        data: data,
+        created_at: new Date().toISOString()
+    });
+    if(!error) fetchGroupData();
+  };
+
   const handleSaveSession = async () => {
     if (sessionSelectedChapters.length === 0 || !user || !selectedBookId) return;
     const book = BIBLE_BOOKS.find(b => b.id === selectedBookId)!;
     const today = new Date().toISOString().split('T')[0];
+    
+    // Capture state BEFORE save for diffing
+    const prevChaptersRead = readChapters[selectedBookId]?.length || 0;
+    const prevAchievements = new Set(unlockedAchievements);
+
     setIsGeneratingAI(true);
     let reflection = '';
     try {
@@ -1182,18 +1245,73 @@ const App: React.FC = () => {
         book_id: selectedBookId,
         chapters: sessionSelectedChapters.sort((a, b) => a - b),
         ai_reflection: reflection,
-        user_notes: ''
+        user_notes: '',
+        group_id: userGroup?.id || null // Link to group if exists
     };
     
     const { data: savedLog, error } = await supabase.from('reading_logs').insert(logEntry).select().single();
     if (error) {
         alert('Erro ao salvar: ' + error.message);
     } else {
-        await fetchData(); 
+        await fetchData(); // This updates logs and readChapters
+        
+        // --- Group Feed Logic ---
+        if (userGroup) {
+            // 1. Log the Reading
+            await logGroupActivity(userGroup.id, 'READING', {
+                bookId: selectedBookId,
+                chapters: sessionSelectedChapters,
+                text: reflection.substring(0, 100) + '...'
+            });
+
+            // 2. Check for Book Completion
+            // We use the just-fetched data. Need to recalculate read count for this book manually or rely on state update
+            // For safety, let's just calculate based on known inputs
+            const chaptersJustRead = sessionSelectedChapters.length;
+            if (prevChaptersRead + chaptersJustRead >= book.chapters) {
+                 await logGroupActivity(userGroup.id, 'BOOK_COMPLETE', {
+                     bookId: selectedBookId
+                 });
+            }
+
+            // 3. Check for New Achievements
+            // We need to re-run calculation on the UPDATED data (which we just fetched)
+            // Ideally we'd pass the new state to calculateAchievements, but since fetchData sets state async, 
+            // we can try a manual fetch or just optimistically check locally. 
+            // Simpler approach: Manual check for specific major achievements to post to feed
+            
+            // Re-fetching logs locally to calc achievements immediately
+            const { data: newLogs } = await supabase.from('reading_logs').select('*').eq('user_id', user.id);
+            if(newLogs) {
+                const tempMap: ReadChaptersMap = {};
+                const tempLogs = newLogs.map((item: any) => ({ ...item, bookId: item.book_id } as ReadingLog));
+                tempLogs.forEach(l => {
+                    if (!tempMap[l.bookId]) tempMap[l.bookId] = [];
+                    tempMap[l.bookId] = Array.from(new Set([...tempMap[l.bookId], ...l.chapters]));
+                });
+                
+                const newUnlocked = calculateAchievements(tempLogs, tempMap);
+                const newlyUnlockedIds = [...newUnlocked].filter(x => !prevAchievements.has(x));
+
+                for(const achId of newlyUnlockedIds) {
+                    const ach = ACHIEVEMENTS.find(a => a.id === achId);
+                    if(ach && (ach.rarity === 'Epic' || ach.rarity === 'Legendary' || ach.rarity === 'Rare')) {
+                        await logGroupActivity(userGroup.id, 'ACHIEVEMENT', {
+                            achievementId: ach.id,
+                            achievementTitle: ach.title
+                        });
+                    }
+                }
+            }
+            
+            // Update "Last Active"
+            await supabase.from('group_members').update({ last_active: new Date().toISOString() }).eq('user_id', user.id);
+        }
+
         if(isAdmin) fetchAdminData(); 
         setSessionSelectedChapters([]);
         alert("Leitura registrada e salva na nuvem!");
-        setActiveTab('history');
+        if (userGroup) setActiveTab('community'); else setActiveTab('history');
     }
     setIsGeneratingAI(false);
   };
@@ -1276,6 +1394,89 @@ const App: React.FC = () => {
           if(isAdmin) fetchAdminData();
       }
       setUpdatingTicketId(null);
+  };
+
+  // --- Group Handlers ---
+
+  const handleCreateGroup = async () => {
+      if(!newGroupName.trim() || !user) return;
+      setIsGroupLoading(true);
+      const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+      
+      const { data: group, error } = await supabase.from('groups').insert({
+          name: newGroupName,
+          code: code,
+          owner_id: user.id
+      }).select().single();
+
+      if(error) {
+          alert('Erro ao criar grupo: ' + error.message);
+      } else {
+          // Add self as admin
+          await supabase.from('group_members').insert({
+              group_id: group.id,
+              user_id: user.id,
+              user_name: user.user_metadata?.full_name || 'Admin',
+              role: 'admin',
+              last_active: new Date().toISOString()
+          });
+          fetchGroupData();
+      }
+      setIsGroupLoading(false);
+  };
+
+  const handleJoinGroup = async () => {
+      if(!joinCode.trim() || !user) return;
+      setIsGroupLoading(true);
+      
+      // Find group
+      const { data: group, error: searchError } = await supabase.from('groups').select('*').eq('code', joinCode.toUpperCase()).single();
+      
+      if(searchError || !group) {
+          alert('Grupo não encontrado. Verifique o código.');
+      } else {
+          const { error: joinError } = await supabase.from('group_members').insert({
+              group_id: group.id,
+              user_id: user.id,
+              user_name: user.user_metadata?.full_name || 'Membro',
+              role: 'member',
+              last_active: new Date().toISOString()
+          });
+          
+          if(joinError) {
+              if(joinError.message.includes('duplicate')) alert('Você já está neste grupo!');
+              else alert('Erro ao entrar: ' + joinError.message);
+          } else {
+              fetchGroupData();
+          }
+      }
+      setIsGroupLoading(false);
+  };
+
+  const handleReaction = async (activityId: string, type: 'amen' | 'fire') => {
+      // Optimistic update
+      setGroupActivity(prev => prev.map(a => {
+          if(a.id === activityId) {
+              return { 
+                  ...a, 
+                  amen_count: type === 'amen' ? a.amen_count + 1 : a.amen_count,
+                  fire_count: type === 'fire' ? a.fire_count + 1 : a.fire_count,
+                  user_has_reacted: true
+              };
+          }
+          return a;
+      }));
+
+      // In a real app we would have a separate reactions table. 
+      // For this MVP, let's increment a counter column on the activity table directly or create a reaction row.
+      // To simulate, we'll just increment the column.
+      const column = type === 'amen' ? 'amen_count' : 'fire_count';
+      
+      // First get current count to be safe
+      const { data: current } = await supabase.from('group_activities').select(column).eq('id', activityId).single();
+      const newCount = (current?.[column] || 0) + 1;
+
+      await supabase.from('group_activities').update({ [column]: newCount }).eq('id', activityId);
   };
 
   // --- Render Functions ---
@@ -1496,6 +1697,247 @@ const App: React.FC = () => {
     );
   };
 
+  const renderCommunity = () => {
+      if(isGroupLoading) {
+          return (
+              <div className="flex justify-center items-center h-64">
+                  <Loader2 className="animate-spin text-indigo-600" size={32} />
+              </div>
+          );
+      }
+
+      if(!userGroup) {
+          return (
+              <div className="max-w-4xl mx-auto animate-fade-in flex flex-col md:flex-row gap-8 items-stretch">
+                  <div className="flex-1 bg-white dark:bg-slate-900 p-8 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 flex flex-col justify-center text-center">
+                      <div className="w-16 h-16 bg-indigo-100 dark:bg-indigo-900/30 rounded-full flex items-center justify-center text-indigo-600 dark:text-indigo-400 mx-auto mb-6">
+                          <Users size={32} />
+                      </div>
+                      <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Criar Grupo</h2>
+                      <p className="text-gray-500 dark:text-gray-400 mb-6">Monte sua célula, grupo de discipulado ou chame sua família para ler junto.</p>
+                      
+                      <input 
+                          type="text" 
+                          placeholder="Nome do Grupo (ex: Família Silva)" 
+                          className="w-full p-3 rounded-lg border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 mb-4"
+                          value={newGroupName}
+                          onChange={e => setNewGroupName(e.target.value)}
+                      />
+                      <button onClick={handleCreateGroup} disabled={!newGroupName.trim()} className="bg-indigo-600 text-white w-full py-3 rounded-xl font-bold hover:bg-indigo-700 transition-colors">
+                          Criar Novo Grupo
+                      </button>
+                  </div>
+
+                  <div className="flex items-center justify-center">
+                      <span className="text-gray-400 font-bold uppercase tracking-widest text-sm">OU</span>
+                  </div>
+
+                  <div className="flex-1 bg-white dark:bg-slate-900 p-8 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 flex flex-col justify-center text-center">
+                      <div className="w-16 h-16 bg-emerald-100 dark:bg-emerald-900/30 rounded-full flex items-center justify-center text-emerald-600 dark:text-emerald-400 mx-auto mb-6">
+                          <LogIn size={32} />
+                      </div>
+                      <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Entrar em Grupo</h2>
+                      <p className="text-gray-500 dark:text-gray-400 mb-6">Já tem um convite? Digite o código de 6 dígitos do grupo.</p>
+                      
+                      <input 
+                          type="text" 
+                          placeholder="Código (ex: A7X9B2)" 
+                          className="w-full p-3 rounded-lg border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 mb-4 uppercase tracking-widest text-center font-mono"
+                          maxLength={6}
+                          value={joinCode}
+                          onChange={e => setJoinCode(e.target.value)}
+                      />
+                      <button onClick={handleJoinGroup} disabled={joinCode.length < 6} className="bg-emerald-600 text-white w-full py-3 rounded-xl font-bold hover:bg-emerald-700 transition-colors">
+                          Entrar no Grupo
+                      </button>
+                  </div>
+              </div>
+          );
+      }
+
+      return (
+          <div className="max-w-6xl mx-auto animate-fade-in grid grid-cols-1 lg:grid-cols-3 gap-8">
+              {/* Left Column: Feed */}
+              <div className="lg:col-span-2 space-y-6">
+                  {/* Header Mobile */}
+                  <div className="lg:hidden bg-white dark:bg-slate-900 p-6 rounded-2xl border border-gray-100 dark:border-slate-800 mb-4">
+                      <h2 className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">{userGroup.name}</h2>
+                      <div className="flex items-center gap-2 mt-2">
+                          <span className="bg-gray-100 dark:bg-slate-800 px-3 py-1 rounded-md font-mono text-sm font-bold">{userGroup.code}</span>
+                          <button onClick={() => {
+                             const text = `Olá! Entre no meu grupo de leitura bíblica '${userGroup.name}' no App Bíblia Tracker usando o código: ${userGroup.code}`;
+                             window.open(`https://wa.me/?text=${encodeURIComponent(text)}`);
+                          }} className="text-emerald-600 font-bold text-sm flex items-center gap-1 hover:underline">
+                              <Share2 size={16} /> Convidar
+                          </button>
+                      </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 mb-2">
+                       <Activity size={20} className="text-indigo-500"/> 
+                       <h3 className="font-bold text-lg text-gray-900 dark:text-white">Feed da Comunidade</h3>
+                  </div>
+
+                  {groupActivity.length === 0 ? (
+                      <div className="text-center py-12 bg-white dark:bg-slate-900 rounded-2xl border border-dashed border-gray-300 dark:border-slate-700">
+                          <p className="text-gray-500">Nenhuma atividade recente.</p>
+                          <p className="text-sm text-gray-400">Seja o primeiro a ler algo hoje!</p>
+                      </div>
+                  ) : (
+                      groupActivity.map(activity => (
+                          <div key={activity.id} className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm relative overflow-hidden group hover:shadow-md transition-all">
+                               {activity.type === 'BOOK_COMPLETE' && <div className="absolute top-0 left-0 w-1 h-full bg-yellow-400"></div>}
+                               {activity.type === 'ACHIEVEMENT' && <div className="absolute top-0 left-0 w-1 h-full bg-purple-500"></div>}
+                               {activity.type === 'READING' && <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500"></div>}
+
+                               <div className="flex items-start gap-4">
+                                   <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-white shadow-sm shrink-0
+                                       ${activity.type === 'ACHIEVEMENT' ? 'bg-purple-500' : activity.type === 'BOOK_COMPLETE' ? 'bg-yellow-500' : 'bg-indigo-500'}
+                                   `}>
+                                       {activity.user_name.charAt(0)}
+                                   </div>
+                                   <div className="flex-1">
+                                       <div className="flex justify-between items-start">
+                                           <div>
+                                               <span className="font-bold text-gray-900 dark:text-white">{activity.user_name} </span>
+                                               <span className="text-gray-600 dark:text-gray-400 text-sm">
+                                                   {activity.type === 'READING' && 'registrou uma leitura'}
+                                                   {activity.type === 'BOOK_COMPLETE' && 'completou um livro! 🎉'}
+                                                   {activity.type === 'ACHIEVEMENT' && 'desbloqueou uma conquista! 🏆'}
+                                               </span>
+                                           </div>
+                                           <span className="text-xs text-gray-400">{new Date(activity.created_at).toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'})}</span>
+                                       </div>
+
+                                       {activity.type === 'READING' && (
+                                           <div className="mt-2">
+                                               <p className="font-serif text-lg text-gray-800 dark:text-gray-200">
+                                                   {BIBLE_BOOKS.find(b => b.id === activity.data.bookId)?.name} <span className="text-indigo-600 dark:text-indigo-400">{activity.data.chapters?.join(', ')}</span>
+                                               </p>
+                                               {activity.data.text && (
+                                                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 italic border-l-2 border-indigo-100 dark:border-indigo-900 pl-3">"{activity.data.text}"</p>
+                                               )}
+                                           </div>
+                                       )}
+
+                                       {activity.type === 'BOOK_COMPLETE' && (
+                                           <div className="mt-2 bg-yellow-50 dark:bg-yellow-900/20 p-3 rounded-lg border border-yellow-100 dark:border-yellow-900/30">
+                                               <p className="font-bold text-yellow-800 dark:text-yellow-200 flex items-center gap-2">
+                                                   <CheckCircle2 size={18} /> 
+                                                   Livro de {BIBLE_BOOKS.find(b => b.id === activity.data.bookId)?.name} Finalizado!
+                                               </p>
+                                           </div>
+                                       )}
+
+                                       {activity.type === 'ACHIEVEMENT' && (
+                                           <div className="mt-2 bg-purple-50 dark:bg-purple-900/20 p-3 rounded-lg border border-purple-100 dark:border-purple-900/30">
+                                               <p className="font-bold text-purple-800 dark:text-purple-200 flex items-center gap-2">
+                                                   <Award size={18} /> 
+                                                   Nova Medalha: {activity.data.achievementTitle}
+                                               </p>
+                                           </div>
+                                       )}
+
+                                       <div className="flex gap-4 mt-4">
+                                           <button 
+                                               onClick={() => handleReaction(activity.id, 'amen')}
+                                               className={`flex items-center gap-1.5 text-sm font-medium transition-colors ${activity.user_has_reacted ? 'text-emerald-600' : 'text-gray-500 hover:text-emerald-600'}`}
+                                           >
+                                               <HandHeart size={18} /> 
+                                               <span>Amém {activity.amen_count > 0 && `(${activity.amen_count})`}</span>
+                                           </button>
+                                           <button 
+                                               onClick={() => handleReaction(activity.id, 'fire')}
+                                               className={`flex items-center gap-1.5 text-sm font-medium transition-colors ${activity.user_has_reacted ? 'text-orange-500' : 'text-gray-500 hover:text-orange-500'}`}
+                                           >
+                                               <Flame size={18} /> 
+                                               <span>Glória {activity.fire_count > 0 && `(${activity.fire_count})`}</span>
+                                           </button>
+                                       </div>
+                                   </div>
+                               </div>
+                          </div>
+                      ))
+                  )}
+              </div>
+
+              {/* Right Column: Group Info */}
+              <div className="space-y-6">
+                  <div className="bg-indigo-600 rounded-2xl p-6 text-white shadow-xl hidden lg:block">
+                      <div className="flex justify-between items-start mb-4">
+                          <div>
+                              <p className="text-indigo-200 text-xs font-bold uppercase tracking-wider">GRUPO ATIVO</p>
+                              <h2 className="text-2xl font-bold font-serif">{userGroup.name}</h2>
+                          </div>
+                          <div className="bg-white/20 p-2 rounded-lg">
+                              <Users size={24} />
+                          </div>
+                      </div>
+                      
+                      <div className="bg-black/20 rounded-xl p-4 mb-4 backdrop-blur-sm">
+                          <p className="text-xs text-indigo-200 mb-1">CÓDIGO DE CONVITE</p>
+                          <div className="flex justify-between items-center">
+                              <span className="font-mono text-xl font-bold tracking-widest">{userGroup.code}</span>
+                              <button onClick={() => {
+                                  navigator.clipboard.writeText(userGroup.code);
+                                  alert('Copiado!');
+                              }} className="text-white hover:text-indigo-200">
+                                  <Copy size={16} />
+                              </button>
+                          </div>
+                      </div>
+
+                      <button onClick={() => {
+                             const text = `Olá! Entre no meu grupo de leitura bíblica '${userGroup.name}' no App Bíblia Tracker usando o código: ${userGroup.code}`;
+                             window.open(`https://wa.me/?text=${encodeURIComponent(text)}`);
+                          }} className="w-full bg-emerald-500 hover:bg-emerald-600 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-colors shadow-lg">
+                          <Share2 size={18} /> Convidar via WhatsApp
+                      </button>
+                  </div>
+
+                  <div className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 p-6 shadow-sm">
+                      <h3 className="font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                          <Users size={18} className="text-indigo-500"/> Membros ({groupMembers.length})
+                      </h3>
+                      <div className="space-y-3">
+                          {groupMembers.map(member => {
+                              const lastActive = new Date(member.last_active);
+                              const today = new Date();
+                              const diffHours = Math.abs(today.getTime() - lastActive.getTime()) / 36e5;
+                              
+                              let statusColor = 'bg-gray-400';
+                              if (diffHours < 24) statusColor = 'bg-emerald-500';
+                              else if (diffHours < 48) statusColor = 'bg-amber-400';
+
+                              return (
+                                  <div key={member.id} className="flex items-center justify-between">
+                                      <div className="flex items-center gap-3">
+                                          <div className="w-8 h-8 rounded-full bg-gray-100 dark:bg-slate-800 flex items-center justify-center text-gray-600 dark:text-gray-400 text-xs font-bold">
+                                              {member.user_name.charAt(0)}
+                                          </div>
+                                          <div>
+                                              <p className="text-sm font-bold text-gray-900 dark:text-white">{member.user_name}</p>
+                                              <p className="text-[10px] text-gray-400">{member.role === 'admin' ? 'Administrador' : 'Membro'}</p>
+                                          </div>
+                                      </div>
+                                      <div title={diffHours < 24 ? "Leu hoje" : "Não lê há dias"} className={`w-3 h-3 rounded-full ${statusColor} ring-2 ring-white dark:ring-slate-900`}></div>
+                                  </div>
+                              );
+                          })}
+                      </div>
+                      <div className="mt-4 pt-4 border-t border-gray-100 dark:border-slate-800 text-center">
+                          <p className="text-xs text-gray-400 flex items-center justify-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-emerald-500"></span> Leu hoje
+                              <span className="w-2 h-2 rounded-full bg-amber-400"></span> Ontem
+                              <span className="w-2 h-2 rounded-full bg-gray-400"></span> +2 dias
+                          </p>
+                      </div>
+                  </div>
+              </div>
+          </div>
+      );
+  };
+
   const renderSupport = () => (
       <div className="max-w-2xl mx-auto space-y-6 animate-fade-in">
           <div className="text-center mb-8">
@@ -1606,6 +2048,7 @@ const App: React.FC = () => {
                       {[
                         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
                         { id: 'tracker', label: 'Leitura', icon: BookOpen },
+                        { id: 'community', label: 'Comunidade', icon: Users },
                         { id: 'history', label: 'Histórico', icon: History },
                         { id: 'achievements', label: 'Conquistas', icon: Trophy },
                         { id: 'support', label: 'Suporte', icon: LifeBuoy },
@@ -1672,6 +2115,7 @@ const App: React.FC = () => {
                              {[
                                 { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
                                 { id: 'tracker', label: 'Leitura', icon: BookOpen },
+                                { id: 'community', label: 'Comunidade', icon: Users },
                                 { id: 'history', label: 'Histórico', icon: History },
                                 { id: 'achievements', label: 'Conquistas', icon: Trophy },
                                 { id: 'support', label: 'Suporte', icon: LifeBuoy },
@@ -1703,6 +2147,7 @@ const App: React.FC = () => {
                               <h1 className="text-2xl font-bold text-gray-900 dark:text-white transition-colors">
                                   {activeTab === 'dashboard' && 'Visão Geral'}
                                   {activeTab === 'tracker' && 'Leitura Bíblica'}
+                                  {activeTab === 'community' && 'Comunidade'}
                                   {activeTab === 'history' && 'Histórico de Leitura'}
                                   {activeTab === 'achievements' && 'Conquistas'}
                                   {activeTab === 'admin' && 'Painel Administrativo'}
@@ -1780,66 +2225,6 @@ const App: React.FC = () => {
                               <StatCard title="Livros Completos" value={advancedStats.completedBooks} subtext={`Faltam ${advancedStats.remainingBooks}`} icon={<CheckCircle2 size={24} />} />
                               <StatCard title="Conquistas" value={unlockedAchievements.size} subtext={`de ${ACHIEVEMENTS.length}`} icon={<Trophy size={24} />} />
                           </div>
-
-                          <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm animate-fade-in">
-                              <div className="flex items-center justify-between mb-4">
-                                  <h3 className="font-bold text-lg text-gray-900 dark:text-white flex items-center gap-2">
-                                      <Sparkles size={20} className="text-indigo-500" /> Personalidade do Devocional
-                                  </h3>
-                                  <span className="text-xs font-medium px-3 py-1 rounded-full bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400">
-                                      {DEVOTIONAL_STYLES[devotionalStyle].title}
-                                  </span>
-                              </div>
-                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-                                  {Object.entries(DEVOTIONAL_STYLES).map(([key, style]) => {
-                                      const Icon = IconMap[style.icon] || Star;
-                                      const isSelected = devotionalStyle === key;
-                                      return (
-                                          <button
-                                              key={key}
-                                              onClick={() => setDevotionalStyle(key as DevotionalStyle)}
-                                              className={`p-3 rounded-xl border text-left transition-all relative overflow-hidden group ${
-                                                  isSelected 
-                                                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-md transform scale-105 ring-2 ring-offset-2 ring-indigo-500 dark:ring-offset-slate-900' 
-                                                  : 'bg-gray-50 dark:bg-slate-800 border-gray-200 dark:border-slate-700 text-gray-600 dark:text-gray-400 hover:bg-white dark:hover:bg-slate-700'
-                                              }`}
-                                          >
-                                              <div className="flex items-center gap-2 mb-2">
-                                                  <Icon size={18} className={isSelected ? 'text-indigo-200' : 'text-gray-400'} />
-                                                  <span className="font-bold text-sm truncate">{style.title}</span>
-                                              </div>
-                                              <p className={`text-xs leading-tight line-clamp-2 ${isSelected ? 'text-indigo-100' : 'text-gray-500 dark:text-gray-500'}`}>
-                                                  {style.description}
-                                              </p>
-                                          </button>
-                                      )
-                                  })}
-                              </div>
-                          </div>
-
-                          <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm">
-                             <h3 className="font-bold text-lg mb-6 flex items-center gap-2 text-gray-900 dark:text-white"><Activity size={20} className="text-indigo-500"/> Atividade Recente</h3>
-                             <div className="h-64 w-full">
-                                <ResponsiveContainer width="100%" height="100%">
-                                   <AreaChart data={chartData}>
-                                      <defs>
-                                        <linearGradient id="colorChapters" x1="0" y1="0" x2="0" y2="1">
-                                          <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/>
-                                          <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
-                                        </linearGradient>
-                                      </defs>
-                                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme === 'dark' ? '#334155' : '#e2e8f0'} />
-                                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: theme === 'dark' ? '#94a3b8' : '#64748b', fontSize: 12}} dy={10} />
-                                      <YAxis axisLine={false} tickLine={false} tick={{fill: theme === 'dark' ? '#94a3b8' : '#64748b', fontSize: 12}} />
-                                      <Tooltip 
-                                        contentStyle={{backgroundColor: theme === 'dark' ? '#1e293b' : '#fff', borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}
-                                        itemStyle={{color: theme === 'dark' ? '#fff' : '#1e293b'}}
-                                      />
-                                      <Area type="monotone" dataKey="chapters" stroke="#6366f1" strokeWidth={3} fillOpacity={1} fill="url(#colorChapters)" />
-                                   </AreaChart>
-                                </ResponsiveContainer>
-                             </div>
-                          </div>
                         </div>
                       )}
 
@@ -1848,6 +2233,8 @@ const App: React.FC = () => {
                       {activeTab === 'achievements' && renderAchievements()}
                       
                       {activeTab === 'support' && renderSupport()}
+
+                      {activeTab === 'community' && renderCommunity()}
 
                       {activeTab === 'history' && (
                           <div className="space-y-4 animate-fade-in max-w-4xl mx-auto">

@@ -1,3 +1,4 @@
+
 export type PlanType = 'BIBLE_1Y' | 'BIBLE_6M' | 'BIBLE_3M' | 'NT_3M' | 'OT_9M' | 'CHRONO_1Y' | 'PAUL_3C';
 
 export type DevotionalStyle = 'theologian' | 'youth' | 'pastoral' | 'kids' | 'classic';
@@ -55,36 +56,44 @@ export interface SupportTicket {
   created_at: string;
 }
 
-// --- Novos Tipos para Família ---
+// --- Novos Tipos para Família/Comunidade ---
 
-export interface FamilyGroup {
+export interface Group {
   id: string;
   name: string;
   code: string;
   owner_id: string;
   created_at: string;
-  active_plan_id?: PlanType | null; // O plano que o grupo está seguindo junto
 }
 
 export interface GroupMember {
-  id: string;
+  id: string; // ID da relação
   group_id: string;
-  user_id: string | null; // Null se for um dependente (criança)
-  name: string;
-  role: 'admin' | 'member' | 'child';
-  pin?: string; // Apenas para crianças
-  avatar_seed?: string; // Para gerar avatar consistente
+  user_id: string;
+  user_name: string;
+  role: 'admin' | 'member';
+  joined_at: string;
+  last_active: string; // Timestamp ISO da última leitura
 }
 
-export interface FamilyPost {
+export type ActivityType = 'READING' | 'BOOK_COMPLETE' | 'PLAN_COMPLETE' | 'ACHIEVEMENT';
+
+export interface GroupActivity {
   id: string;
   group_id: string;
-  member_id: string;
-  member_name: string;
-  type: 'reading' | 'insight' | 'manual';
-  content: string;
-  book_id?: string;
-  chapters?: number[];
+  user_id: string;
+  user_name: string;
+  type: ActivityType;
+  data: {
+    bookId?: string;
+    chapters?: number[];
+    planName?: string;
+    achievementId?: number;
+    achievementTitle?: string;
+    text?: string;
+  };
   created_at: string;
   amen_count: number;
+  fire_count: number;
+  user_has_reacted?: boolean; // Auxiliar para UI
 }
