@@ -12,7 +12,6 @@ import {
   X,
   Target,
   Trophy,
-  Clock,
   PenLine,
   Save,
   History,
@@ -21,15 +20,12 @@ import {
   UserCircle,
   Loader2,
   ShieldAlert,
-  Users,
   Search,
   KeyRound,
-  ArrowLeft,
   Mail,
   User,
   Send,
   Map,
-  PlayCircle,
   Award,
   Moon,
   Sun,
@@ -57,38 +53,27 @@ import {
   Shield,
   Eye,
   ChevronLeft,
-  TrendingUp,
   Activity,
   LifeBuoy,
   MessageSquare,
   AlertTriangle,
-  Inbox,
-  Check,
-  XCircle,
-  Filter,
   ChevronDown,
   ChevronUp,
-  Info,
-  UserPlus,
-  LogIn,
-  Copy
+  Info
 } from 'lucide-react';
 import { 
   BarChart, 
   Bar, 
   XAxis, 
-  YAxis, 
   CartesianGrid, 
   Tooltip, 
   ResponsiveContainer,
-  AreaChart,
-  Area,
-  PieChart,
-  Pie,
+  PieChart, 
+  Pie, 
   Cell
 } from 'recharts';
 import { BIBLE_BOOKS, TOTAL_CHAPTERS_BIBLE, ADMIN_EMAILS, PLANS_CONFIG, ACHIEVEMENTS } from './constants';
-import { BibleBook, ReadChaptersMap, ReadingLog, UserPlan, PlanType, Achievement, SupportTicket, UserProfile, Family, FamilyMemberStats } from './types';
+import { BibleBook, ReadChaptersMap, ReadingLog, UserPlan, PlanType, SupportTicket } from './types';
 import { generateDevotional } from './services/geminiService';
 import { supabase } from './services/supabase';
 
@@ -117,7 +102,6 @@ const BIBLE_API_MAPPING: Record<string, string> = {
   'JUD': 'Jude', 'REV': 'Revelation'
 };
 
-// Constants specific for logic
 const PAULINE_BOOKS = ['ROM', '1CO', '2CO', 'GAL', 'EPH', 'PHP', 'COL', '1TH', '2TH', '1TI', '2TI', 'TIT', 'PHM'];
 
 // --- Helper Components ---
@@ -147,7 +131,7 @@ const StatCard = ({ title, value, subtext, icon, highlight = false, colorClass =
   </div>
 );
 
-// --- Bible Reader Modal (Integration Feature with Stable API) ---
+// --- Bible Reader Modal ---
 const BibleReaderModal = ({ book, chapter, onClose, onNext, onPrev }: { book: BibleBook, chapter: number, onClose: () => void, onNext?: () => void, onPrev?: () => void }) => {
   const [text, setText] = useState<string>('');
   const [verses, setVerses] = useState<{number: number, text: string}[]>([]);
@@ -273,7 +257,6 @@ const LoginScreen = ({ onLogin }: { onLogin: (user: any) => void }) => {
   const [successMsg, setSuccessMsg] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Limpa mensagens ao trocar de modo
   useEffect(() => {
     setError('');
     setSuccessMsg('');
@@ -482,20 +465,16 @@ const ChangePasswordModal = ({ onClose }: { onClose: () => void }) => {
 
   const handleChange = async (e: React.FormEvent) => {
     e.preventDefault();
-    
     if (newPassword.length < 6) {
       setMessage({ type: 'error', text: 'A nova senha deve ter pelo menos 6 caracteres.' });
       return;
     }
-
     if (newPassword !== confirmPassword) {
       setMessage({ type: 'error', text: 'As novas senhas não coincidem.' });
       return;
     }
-
     setLoading(true);
     const { error } = await supabase.auth.updateUser({ password: newPassword });
-
     if (error) {
       setMessage({ type: 'error', text: 'Erro ao atualizar senha.' });
     } else {
@@ -514,7 +493,6 @@ const ChangePasswordModal = ({ onClose }: { onClose: () => void }) => {
             <X size={20} />
           </button>
         </div>
-
         <form onSubmit={handleChange} className="space-y-3">
           <input 
             type="password" 
@@ -532,13 +510,11 @@ const ChangePasswordModal = ({ onClose }: { onClose: () => void }) => {
             className="w-full p-3 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
             required
           />
-
           {message && (
             <div className={`p-3 text-sm rounded-lg ${message.type === 'success' ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300' : 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-300'}`}>
               {message.text}
             </div>
           )}
-
           <button type="submit" disabled={loading} className="w-full bg-indigo-600 text-white py-2.5 rounded-lg font-bold text-sm hover:bg-indigo-700 flex justify-center">
              {loading ? <Loader2 size={16} className="animate-spin" /> : 'Salvar Nova Senha'}
           </button>
@@ -561,7 +537,6 @@ const PlanSelectionModal = ({ onClose, onSelectPlan }: { onClose: () => void, on
             <X size={20} />
           </button>
         </div>
-
         <div className="overflow-y-auto p-6 space-y-4 bg-white dark:bg-slate-900">
           {Object.entries(PLANS_CONFIG).map(([key, config]) => (
             <button 
@@ -599,8 +574,8 @@ const App: React.FC = () => {
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
 
   // --- App State ---
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'tracker' | 'history' | 'admin' | 'achievements' | 'support' | 'family'>('dashboard');
-  const [selectedBookId, setSelectedBookId] = useState<string | null>(null); // Changed default to null for accordion
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'tracker' | 'history' | 'admin' | 'achievements' | 'support'>('dashboard');
+  const [selectedBookId, setSelectedBookId] = useState<string | null>(null);
   
   // Theme State
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
@@ -618,23 +593,14 @@ const App: React.FC = () => {
   const [readChapters, setReadChapters] = useState<ReadChaptersMap>({});
   const [readingLogs, setReadingLogs] = useState<ReadingLog[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(false);
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   
   // Plan State
   const [userPlan, setUserPlan] = useState<UserPlan | null>(null);
   const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
 
-  // Family State
-  const [familyData, setFamilyData] = useState<Family | null>(null);
-  const [familyMembers, setFamilyMembers] = useState<FamilyMemberStats[]>([]);
-  const [isCreatingFamily, setIsCreatingFamily] = useState(false);
-  const [joinCode, setJoinCode] = useState('');
-  const [newFamilyName, setNewFamilyName] = useState('');
-
   // Data State (Admin)
   const [adminLogs, setAdminLogs] = useState<any[]>([]);
   const [isAdminLoading, setIsAdminLoading] = useState(false);
-  const [selectedUserForAdmin, setSelectedUserForAdmin] = useState<string | null>(null);
   const [adminView, setAdminView] = useState<'overview' | 'messages'>('overview');
   const [supportTickets, setSupportTickets] = useState<SupportTicket[]>([]);
   const [updatingTicketId, setUpdatingTicketId] = useState<string | null>(null);
@@ -672,17 +638,13 @@ const App: React.FC = () => {
 
   // --- Check Auth on Mount ---
   useEffect(() => {
-    // Handle initial session check with error handling for refresh token
     const initAuth = async () => {
       try {
         const { data: { session }, error } = await supabase.auth.getSession();
         
         if (error) {
-           // Explicitly check for refresh token errors and sign out if found
-           // Also checking "Invalid Refresh Token" case explicitly
            if (error.message.includes('Refresh Token') || error.message.includes('refresh_token')) {
              console.warn("Invalid refresh token, signing out to clear state.");
-             // Aggressively clear supabase keys from localStorage
              Object.keys(localStorage).forEach(key => {
                  if (key.startsWith('sb-')) localStorage.removeItem(key);
              });
@@ -692,7 +654,6 @@ const App: React.FC = () => {
              console.error("Session check error:", error.message);
            }
         }
-        
         setUser(session?.user ?? null);
       } catch (err) {
         console.error("Unexpected auth initialization error:", err);
@@ -711,7 +672,6 @@ const App: React.FC = () => {
       if (e === 'SIGNED_OUT' || e === 'USER_DELETED') {
         setUser(null);
       } else if (e === 'TOKEN_REFRESH_REVOKED') {
-        console.warn("Token revoked, signing out");
         Object.keys(localStorage).forEach(key => {
              if (key.startsWith('sb-')) localStorage.removeItem(key);
         });
@@ -724,32 +684,6 @@ const App: React.FC = () => {
 
     return () => subscription.unsubscribe();
   }, []);
-
-  // --- Auto-create Profile on Auth and Fetch Profile ---
-  useEffect(() => {
-    if (user) {
-        const fetchAndCreateProfile = async () => {
-            const { data: profile, error } = await supabase
-                .from('profiles')
-                .select('*')
-                .eq('id', user.id)
-                .single();
-
-            if (!profile && !error) { // Only create if not exists
-                 const { error: upsertError } = await supabase.from('profiles').upsert({
-                    id: user.id,
-                    email: user.email,
-                    full_name: user.user_metadata?.full_name || user.email.split('@')[0],
-                    avatar_url: ''
-                });
-                if(upsertError) console.error("Error creating profile", upsertError);
-            } else if (profile) {
-                setUserProfile(profile);
-            }
-        };
-        fetchAndCreateProfile();
-    }
-  }, [user]);
 
   // --- Load Plan from LocalStorage ---
   useEffect(() => {
@@ -787,141 +721,6 @@ const App: React.FC = () => {
     }
   }, [user, fetchData, isAdmin]);
 
-  // --- Family Logic ---
-  useEffect(() => {
-      if (userProfile?.family_id) {
-          fetchFamilyData();
-      }
-  }, [userProfile]);
-
-  const fetchFamilyData = async () => {
-      if (!userProfile?.family_id) return;
-
-      const { data: family } = await supabase
-          .from('families')
-          .select('*')
-          .eq('id', userProfile.family_id)
-          .single();
-      
-      if (family) {
-          setFamilyData(family);
-          
-          // Fetch members profiles
-          const { data: profiles } = await supabase
-              .from('profiles')
-              .select('*')
-              .eq('family_id', family.id);
-          
-          if (profiles) {
-              const membersStats: FamilyMemberStats[] = [];
-              const today = new Date().toISOString().split('T')[0];
-
-              for (const p of profiles) {
-                  // Fetch basic stats for each member
-                  const { data: logs } = await supabase
-                      .from('reading_logs')
-                      .select('*')
-                      .eq('user_id', p.id);
-                  
-                  const userLogs = (logs || []) as ReadingLog[];
-                  const totalRead = userLogs.reduce((acc, l) => acc + (l.chapters?.length || 0), 0);
-                  const readToday = userLogs
-                      .filter(l => l.date === today)
-                      .reduce((acc, l) => acc + (l.chapters?.length || 0), 0);
-                  
-                  // Simple streak calc (same as main app logic)
-                  const sortedLogs = [...userLogs].sort((a, b) => b.timestamp - a.timestamp);
-                  let streak = 0;
-                  if (sortedLogs.length > 0) {
-                      const uniqueDates = Array.from(new Set(sortedLogs.map(log => log.date)));
-                      let currentDate = new Date(today);
-                      // Check if read today or yesterday to maintain streak
-                      if (uniqueDates[0] === today || uniqueDates[0] === new Date(Date.now() - 86400000).toISOString().split('T')[0]) {
-                          for (let i = 0; i < uniqueDates.length; i++) {
-                              const logDate = new Date(uniqueDates[i]);
-                              const diffTime = Math.abs(currentDate.getTime() - logDate.getTime());
-                              const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                              if (i === 0) streak = 1;
-                              else if (diffDays === 1) { streak++; currentDate = logDate; }
-                              else break;
-                          }
-                      }
-                  }
-
-                  membersStats.push({
-                      userId: p.id,
-                      name: p.full_name,
-                      email: p.email,
-                      streak,
-                      chaptersReadToday: readToday,
-                      totalChaptersRead: totalRead,
-                      lastActive: userLogs.length > 0 ? userLogs[0].date : 'N/A'
-                  });
-              }
-              setFamilyMembers(membersStats.sort((a, b) => b.chaptersReadToday - a.chaptersReadToday));
-          }
-      }
-  };
-
-  const handleCreateFamily = async () => {
-      if (!newFamilyName.trim() || !user) return;
-      
-      const code = Math.random().toString(36).substring(2, 8).toUpperCase();
-      
-      const { data, error } = await supabase
-          .from('families')
-          .insert({ name: newFamilyName, invite_code: code })
-          .select()
-          .single();
-      
-      if (error) {
-          alert('Erro ao criar família. Verifique se a tabela "families" existe no banco de dados.');
-          console.error(error);
-          return;
-      }
-
-      if (data) {
-          // Update user profile
-          const { error: updateError } = await supabase
-              .from('profiles')
-              .update({ family_id: data.id })
-              .eq('id', user.id);
-          
-          if (!updateError) {
-              setUserProfile({ ...userProfile!, family_id: data.id });
-              alert('Família criada com sucesso!');
-              setIsCreatingFamily(false);
-          }
-      }
-  };
-
-  const handleJoinFamily = async () => {
-      if (!joinCode.trim() || !user) return;
-
-      const { data: family, error } = await supabase
-          .from('families')
-          .select('*')
-          .eq('invite_code', joinCode.toUpperCase())
-          .single();
-      
-      if (error || !family) {
-          alert('Código inválido ou família não encontrada.');
-          return;
-      }
-
-      const { error: updateError } = await supabase
-          .from('profiles')
-          .update({ family_id: family.id })
-          .eq('id', user.id);
-      
-      if (!updateError) {
-          setUserProfile({ ...userProfile!, family_id: family.id });
-          alert(`Bem-vindo à família ${family.name}!`);
-      } else {
-          alert('Erro ao entrar na família.');
-      }
-  };
-
   // --- Helpers ---
   const processLogs = (data: any[], setLogs: Function, setMap: Function) => {
       const logs = data.map((item: any) => ({
@@ -943,7 +742,7 @@ const App: React.FC = () => {
       setMap(map);
   };
 
-  // --- Achievement Logic (Reusable) ---
+  // --- Achievement Logic ---
   const calculateAchievements = (logs: ReadingLog[], chaptersMap: ReadChaptersMap) => {
     if (!logs.length) return new Set<number>();
 
@@ -1096,7 +895,6 @@ const App: React.FC = () => {
     };
   }, [userPlan, readChapters]);
 
-
   const handleQuickRead = (batch: {bookId: string, chapter: number}[]) => {
     if (batch.length === 0) return;
     const targetBook = batch[0].bookId;
@@ -1124,21 +922,7 @@ const App: React.FC = () => {
         if (read === book.chapters) completedBooks++;
     });
     const remainingBooks = BIBLE_BOOKS.length - completedBooks;
-
-    const chaptersByDate: Record<string, number> = {};
-    logs.forEach(log => {
-        chaptersByDate[log.date] = (chaptersByDate[log.date] || 0) + log.chapters.length;
-    });
     
-    let maxChapters = 0;
-    let bestDate = '';
-    Object.entries(chaptersByDate).forEach(([date, count]) => {
-        if (count > maxChapters) {
-            maxChapters = count;
-            bestDate = date;
-        }
-    });
-
     let estimatedCompletionDate = "N/A";
     let daysToFinish = 0;
     
@@ -1164,7 +948,6 @@ const App: React.FC = () => {
     return {
         completedBooks,
         remainingBooks,
-        bestDay: { date: bestDate, count: maxChapters },
         projection: { date: estimatedCompletionDate, days: daysToFinish }
     };
   };
@@ -1173,11 +956,8 @@ const App: React.FC = () => {
 
   const currentStreak = useMemo(() => {
     if (readingLogs.length === 0) return 0;
-    
     const sortedLogs = [...readingLogs].sort((a, b) => b.timestamp - a.timestamp);
     const uniqueDates = Array.from(new Set(sortedLogs.map(log => log.date))) as string[];
-    
-    let streak = 0;
     const today = new Date().toISOString().split('T')[0];
     const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
 
@@ -1185,6 +965,7 @@ const App: React.FC = () => {
       return 0; 
     }
 
+    let streak = 0;
     let currentDate = new Date(uniqueDates[0]);
     
     for (let i = 0; i < uniqueDates.length; i++) {
@@ -1202,30 +983,6 @@ const App: React.FC = () => {
         }
     }
     return streak;
-  }, [readingLogs]);
-
-  const lastReadChaptersList = useMemo(() => {
-    const list: { id: string, bookName: string, chapter: number, date: string }[] = [];
-    const sortedLogs = [...readingLogs].sort((a, b) => b.timestamp - a.timestamp);
-    
-    for (const log of sortedLogs) {
-        const book = BIBLE_BOOKS.find(b => b.id === log.bookId);
-        if (!book) continue;
-        
-        [...log.chapters].reverse().forEach(chapter => {
-            if (list.length < 10) {
-                list.push({
-                    id: `${log.id}-${chapter}`,
-                    bookName: book.name,
-                    chapter,
-                    date: log.date
-                });
-            }
-        });
-        
-        if (list.length >= 10) break;
-    }
-    return list;
   }, [readingLogs]);
 
   const chartData = useMemo(() => {
@@ -1250,7 +1007,7 @@ const App: React.FC = () => {
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    setUser(null); // Fix: Force state update immediately
+    setUser(null); 
     setMobileMenuOpen(false);
     setActiveTab('dashboard');
   };
@@ -1303,14 +1060,6 @@ const App: React.FC = () => {
     setIsGeneratingAI(false);
 
     if (error) {
-        if(error.message.includes("column") && (error.message.includes("user_email") || error.message.includes("user_name"))) {
-             alert("Leitura salva, mas aviso ao Admin: Adicione as colunas 'user_name' e 'user_email' no Supabase para ver quem salvou.");
-             await fetchData(); 
-             if(isAdmin) fetchAdminData();
-             setSessionSelectedChapters([]);
-             setActiveTab('history');
-             return;
-        }
         alert('Erro ao salvar: ' + error.message);
     } else {
         await fetchData(); 
@@ -1356,15 +1105,10 @@ const App: React.FC = () => {
       setIsSubmittingSupport(false);
 
       if (error) {
-          if (error.message.includes('relation "support_tickets" does not exist')) {
-              alert('Erro: O Administrador precisa criar a tabela "support_tickets" no banco de dados.');
-          } else {
-              alert('Erro ao enviar mensagem: ' + error.message);
-          }
+         alert('Erro ao enviar mensagem: ' + error.message);
       } else {
           setSupportSuccess(true);
           setSupportForm({ ...supportForm, message: '' });
-          // Hide success message after 5 seconds
           setTimeout(() => setSupportSuccess(false), 5000);
       }
   };
@@ -1393,10 +1137,8 @@ const App: React.FC = () => {
 
   const handleToggleTicketStatus = async (ticketId: string, currentStatus: string | undefined | null) => {
       setUpdatingTicketId(ticketId);
-      // Treat null/undefined as 'open'. Switch logic: if 'resolved' -> 'open', else -> 'resolved'
       const newStatus = currentStatus === 'resolved' ? 'open' : 'resolved';
       
-      // Optimistic update
       setSupportTickets(prev => prev.map(t => t.id === ticketId ? { ...t, status: newStatus } : t));
       
       const { error } = await supabase
@@ -1404,156 +1146,18 @@ const App: React.FC = () => {
           .update({ status: newStatus })
           .eq('id', ticketId);
       
-      // Fetch latest data to ensure consistency and prevent UI reversion if optimism failed silently
       if (!error) {
           await fetchAdminData();
+      } else {
+          console.error("Error updating ticket:", error);
+          alert('Erro ao atualizar status: ' + error.message);
+          if(isAdmin) fetchAdminData();
       }
       
       setUpdatingTicketId(null);
-
-      if (error) {
-          console.error("Error updating ticket:", error);
-          alert('Erro ao atualizar status: ' + error.message);
-          // Revert optimistic update on error by fetching
-          if(isAdmin) fetchAdminData();
-      }
   };
 
   // --- Render Functions ---
-
-  const renderFamily = () => {
-      if (!userProfile?.family_id) {
-          return (
-              <div className="max-w-2xl mx-auto space-y-8 animate-fade-in">
-                  <div className="text-center">
-                      <h2 className="text-2xl font-bold text-gray-900 dark:text-white serif mb-2">Conecte sua Família</h2>
-                      <p className="text-gray-500 dark:text-gray-400">Leiam juntos, motivem-se e cresçam em comunhão.</p>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      {/* Create Family Card */}
-                      <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 hover:shadow-md transition-shadow">
-                          <div className="w-12 h-12 bg-indigo-100 dark:bg-indigo-900/30 rounded-xl flex items-center justify-center text-indigo-600 dark:text-indigo-400 mb-4">
-                              <UserPlus size={24} />
-                          </div>
-                          <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Criar Nova Família</h3>
-                          <p className="text-sm text-gray-500 dark:text-gray-400 mb-6 min-h-[40px]">
-                              Comece um novo grupo e convide membros para participar.
-                          </p>
-                          {isCreatingFamily ? (
-                              <div className="space-y-3">
-                                  <input 
-                                      type="text" 
-                                      placeholder="Nome da Família (ex: Silva)" 
-                                      value={newFamilyName}
-                                      onChange={e => setNewFamilyName(e.target.value)}
-                                      className="w-full p-2 text-sm border rounded-lg dark:bg-slate-800 dark:border-slate-700 dark:text-white outline-none focus:border-indigo-500"
-                                  />
-                                  <div className="flex gap-2">
-                                      <button onClick={() => setIsCreatingFamily(false)} className="px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-lg">Cancelar</button>
-                                      <button onClick={handleCreateFamily} className="flex-1 bg-indigo-600 text-white px-3 py-2 text-sm rounded-lg hover:bg-indigo-700">Criar</button>
-                                  </div>
-                              </div>
-                          ) : (
-                              <button onClick={() => setIsCreatingFamily(true)} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold text-sm hover:bg-indigo-700 transition-colors">
-                                  Criar Família
-                              </button>
-                          )}
-                      </div>
-
-                      {/* Join Family Card */}
-                      <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 hover:shadow-md transition-shadow">
-                          <div className="w-12 h-12 bg-green-100 dark:bg-green-900/30 rounded-xl flex items-center justify-center text-green-600 dark:text-green-400 mb-4">
-                              <LogIn size={24} />
-                          </div>
-                          <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Entrar em Família</h3>
-                          <p className="text-sm text-gray-500 dark:text-gray-400 mb-6 min-h-[40px]">
-                              Já tem um código? Entre para ver o progresso do grupo.
-                          </p>
-                          <div className="space-y-3">
-                              <input 
-                                  type="text" 
-                                  placeholder="Código de Convite (ex: A1B2C3)" 
-                                  value={joinCode}
-                                  onChange={e => setJoinCode(e.target.value)}
-                                  className="w-full p-3 text-sm border border-gray-200 dark:border-slate-700 rounded-xl dark:bg-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-green-500 uppercase tracking-widest text-center font-mono"
-                              />
-                              <button onClick={handleJoinFamily} className="w-full bg-green-600 text-white py-3 rounded-xl font-bold text-sm hover:bg-green-700 transition-colors">
-                                  Entrar Agora
-                              </button>
-                          </div>
-                      </div>
-                  </div>
-              </div>
-          );
-      }
-
-      return (
-          <div className="space-y-6 animate-fade-in">
-              <div className="bg-indigo-600 rounded-2xl p-6 text-white shadow-lg relative overflow-hidden">
-                  <div className="relative z-10">
-                      <h2 className="text-2xl font-bold mb-1">Família {familyData?.name}</h2>
-                      <div className="flex items-center gap-2 text-indigo-100 text-sm mb-6">
-                          <Users size={16} /> {familyMembers.length} membros
-                      </div>
-                      
-                      <div className="bg-white/10 backdrop-blur-sm p-3 rounded-lg inline-flex items-center gap-3 border border-white/20">
-                          <span className="text-xs font-bold uppercase tracking-wide text-indigo-200">Código de Convite:</span>
-                          <span className="font-mono text-lg font-bold tracking-wider">{familyData?.invite_code}</span>
-                          <button 
-                              onClick={() => { navigator.clipboard.writeText(familyData?.invite_code || ''); alert('Código copiado!'); }}
-                              className="p-1 hover:bg-white/20 rounded transition-colors"
-                              title="Copiar código"
-                          >
-                              <Copy size={16} />
-                          </button>
-                      </div>
-                  </div>
-                  <Users className="absolute -bottom-6 -right-6 text-indigo-500 opacity-50" size={150} />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {familyMembers.map(member => (
-                      <div key={member.userId} className="bg-white dark:bg-slate-900 p-5 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 flex items-center justify-between">
-                          <div className="flex items-center gap-4">
-                              <div className="w-12 h-12 rounded-full bg-gray-100 dark:bg-slate-800 flex items-center justify-center font-bold text-gray-600 dark:text-gray-300 text-lg">
-                                  {member.name.charAt(0).toUpperCase()}
-                              </div>
-                              <div>
-                                  <h4 className="font-bold text-gray-900 dark:text-white leading-tight">{member.name.split(' ')[0]}</h4>
-                                  <p className="text-xs text-gray-500 dark:text-gray-400">Última leitura: {member.lastActive !== 'N/A' ? new Date(member.lastActive).toLocaleDateString() : '-'}</p>
-                              </div>
-                          </div>
-                          <div className="text-right">
-                              <div className="flex items-center justify-end gap-1 text-orange-500 font-bold mb-1">
-                                  <Flame size={16} /> {member.streak}
-                              </div>
-                              <div className="text-xs font-medium text-gray-400 bg-gray-100 dark:bg-slate-800 px-2 py-1 rounded">
-                                  {member.chaptersReadToday} caps hoje
-                              </div>
-                          </div>
-                      </div>
-                  ))}
-              </div>
-
-              <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800">
-                  <h3 className="font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-                      <BarChart3 size={20} className="text-green-500"/> Comparativo Diário
-                  </h3>
-                  <div className="h-64 w-full">
-                      <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={familyMembers.map(m => ({ name: m.name.split(' ')[0], hoje: m.chaptersReadToday, total: m.totalChaptersRead }))}>
-                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme === 'dark' ? '#334155' : '#e5e7eb'} />
-                              <XAxis dataKey="name" tick={{fontSize: 12, fill: theme === 'dark' ? '#94a3b8' : '#6b7280'}} axisLine={false} tickLine={false} />
-                              <Tooltip cursor={{fill: theme === 'dark' ? '#1e293b' : '#f3f4f6'}} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', backgroundColor: theme === 'dark' ? '#1e293b' : '#fff', color: theme === 'dark' ? '#fff' : '#000' }} />
-                              <Bar dataKey="hoje" name="Lidos Hoje" fill="#10b981" radius={[4, 4, 0, 0]} barSize={40} />
-                          </BarChart>
-                      </ResponsiveContainer>
-                  </div>
-              </div>
-          </div>
-      );
-  };
 
   const renderSupport = () => (
       <div className="max-w-2xl mx-auto space-y-6 animate-fade-in">
@@ -1729,7 +1333,6 @@ const App: React.FC = () => {
                 <h2 className="text-2xl font-bold text-gray-900 dark:text-white serif">Leitura Bíblica</h2>
                 <p className="text-sm text-gray-500 dark:text-gray-400">Selecione um livro para marcar capítulos.</p>
              </div>
-             {/* Total Global Save Button (optional, kept for clarity if user selects multiple across books) */}
              {sessionSelectedChapters.length > 0 && (
                 <button 
                    onClick={handleSaveSession}
@@ -1749,7 +1352,6 @@ const App: React.FC = () => {
                 const isCompleted = progress === book.chapters;
                 const isExpanded = selectedBookId === book.id;
                 
-                // Get the last selected chapter specifically for this book to show the read button
                 const lastSelectedForThisBook = sessionSelectedChapters.length > 0 
                     ? sessionSelectedChapters[sessionSelectedChapters.length - 1] 
                     : null;
@@ -1762,8 +1364,6 @@ const App: React.FC = () => {
                                  setSelectedBookId(null);
                              } else {
                                  setSelectedBookId(book.id);
-                                 // Clear session if switching books to avoid confusion, or keep it if we want multi-book save.
-                                 // Let's clear to keep it simple per book focus.
                                  setSessionSelectedChapters([]);
                              }
                          }}
@@ -1789,7 +1389,6 @@ const App: React.FC = () => {
                       {isExpanded && (
                           <div className="p-4 bg-gray-50/50 dark:bg-slate-900/50 border-t border-gray-100 dark:border-slate-800 animate-fade-in">
                              
-                             {/* Mobile UX Improvement: Banner Informativo */}
                              <div className="mb-4 bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg border border-blue-100 dark:border-blue-900/30 flex gap-3">
                                  <Info className="text-blue-600 dark:text-blue-400 flex-shrink-0" size={18} />
                                  <p className="text-xs text-blue-800 dark:text-blue-300 leading-relaxed">
@@ -1806,7 +1405,7 @@ const App: React.FC = () => {
                                        <button
                                           key={chapter}
                                           onClick={(e) => {
-                                              e.stopPropagation(); // Prevent accordion toggle
+                                              e.stopPropagation();
                                               handleToggleChapter(chapter);
                                           }}
                                           onDoubleClick={(e) => {
@@ -1829,7 +1428,6 @@ const App: React.FC = () => {
                                 })}
                              </div>
                              
-                             {/* Mobile UX Improvement: Action Bar */}
                              <div className="flex flex-col sm:flex-row justify-end items-center gap-3 pt-2 border-t border-gray-200 dark:border-slate-700/50">
                                  {sessionSelectedChapters.length === 1 && (
                                      <button 
@@ -1914,7 +1512,6 @@ const App: React.FC = () => {
                      { id: 'tracker', label: 'Leitura', icon: BookOpen },
                      { id: 'history', label: 'Histórico', icon: History },
                      { id: 'achievements', label: 'Conquistas', icon: Trophy },
-                     { id: 'family', label: 'Família', icon: Users },
                      { id: 'support', label: 'Suporte', icon: LifeBuoy },
                      ...(isAdmin ? [{ id: 'admin', label: 'Administração', icon: ShieldAlert }] : [])
                   ].map(item => (
@@ -2096,8 +1693,6 @@ const App: React.FC = () => {
 
              {activeTab === 'tracker' && renderTracker()}
              
-             {activeTab === 'family' && renderFamily()}
-
              {activeTab === 'achievements' && renderAchievements()}
              
              {activeTab === 'support' && renderSupport()}
@@ -2311,7 +1906,6 @@ const App: React.FC = () => {
                 if(nextChap <= readingChapter.book.chapters) {
                     setReadingChapter({ ...readingChapter, chapter: nextChap });
                 } else {
-                    // Try next book? For now just stay.
                     alert('Fim do livro!');
                 }
             }}

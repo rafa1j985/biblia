@@ -1,10 +1,17 @@
 import { GoogleGenAI } from "@google/genai";
 
-// Always use named parameter for initialization and rely on process.env.API_KEY directly.
-// We assume the API key is valid and configured in the environment.
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Use fallback empty string if process is undefined (browser safety)
+const apiKey = (typeof process !== 'undefined' && process.env && process.env.API_KEY) ? process.env.API_KEY : '';
+
+// Always use named parameter for initialization
+const ai = new GoogleGenAI({ apiKey });
 
 export const generateDevotional = async (bookName: string, chapters: number[]) => {
+  if (!apiKey) {
+      console.warn("API Key not found. AI features disabled.");
+      return "Configuração de IA pendente.";
+  }
+
   const chaptersStr = chapters.join(', ');
   
   // Prompt engineered to mimic Luiz Sayão's style
