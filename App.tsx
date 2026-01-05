@@ -59,7 +59,8 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronUp,
-  Info
+  Info,
+  Megaphone
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -601,10 +602,15 @@ const App: React.FC = () => {
   // Data State (Admin)
   const [adminLogs, setAdminLogs] = useState<any[]>([]);
   const [isAdminLoading, setIsAdminLoading] = useState(false);
-  const [adminView, setAdminView] = useState<'overview' | 'messages'>('overview');
+  const [adminView, setAdminView] = useState<'overview' | 'messages' | 'news'>('overview');
   const [supportTickets, setSupportTickets] = useState<SupportTicket[]>([]);
   const [updatingTicketId, setUpdatingTicketId] = useState<string | null>(null);
   const [messageFilter, setMessageFilter] = useState<'all' | 'open' | 'resolved'>('all');
+
+  // News Logic
+  const [siteNews, setSiteNews] = useState('');
+  const [editingNews, setEditingNews] = useState('');
+  const [showNews, setShowNews] = useState(true);
 
   // Support State (User)
   const [supportForm, setSupportForm] = useState({ type: 'question', message: '' });
@@ -714,9 +720,19 @@ const App: React.FC = () => {
     setIsLoadingData(false);
   }, [user]);
 
+  const fetchNews = async () => {
+      // Assuming a table 'app_config' exists with key/value pairs
+      const { data } = await supabase.from('app_config').select('value').eq('key', 'site_news').single();
+      if (data) {
+          setSiteNews(data.value);
+          setEditingNews(data.value);
+      }
+  };
+
   useEffect(() => {
     if (user) {
       fetchData();
+      fetchNews();
       if (isAdmin) fetchAdminData();
     }
   }, [user, fetchData, isAdmin]);
@@ -1110,6 +1126,19 @@ const App: React.FC = () => {
           setSupportSuccess(true);
           setSupportForm({ ...supportForm, message: '' });
           setTimeout(() => setSupportSuccess(false), 5000);
+      }
+  };
+
+  const handleSaveNews = async () => {
+      const { error } = await supabase
+          .from('app_config')
+          .upsert({ key: 'site_news', value: editingNews });
+      
+      if (error) {
+          alert('Erro ao salvar notícia.');
+      } else {
+          setSiteNews(editingNews);
+          alert('Notícia publicada com sucesso!');
       }
   };
 
@@ -1578,6 +1607,24 @@ const App: React.FC = () => {
                          )}
                      </div>
 
+                     {/* Site News Banner */}
+                     {siteNews && showNews && (
+                        <div className="bg-gradient-to-r from-blue-500 to-indigo-600 rounded-xl p-4 text-white shadow-md flex items-start gap-3 animate-fade-in relative">
+                            <Megaphone size={24} className="flex-shrink-0 mt-1" />
+                            <div className="flex-1 pr-6">
+                                <h3 className="font-bold text-sm mb-1 uppercase tracking-wide opacity-90">Mural de Novidades</h3>
+                                <p className="text-sm font-medium whitespace-pre-line leading-relaxed">{siteNews}</p>
+                            </div>
+                            <button 
+                                onClick={() => setShowNews(false)}
+                                className="absolute top-2 right-2 text-white/70 hover:text-white hover:bg-white/20 p-1 rounded-full transition-colors"
+                                title="Ocultar novidades"
+                            >
+                                <X size={16} />
+                            </button>
+                        </div>
+                     )}
+
                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                          <StatCard title="Capítulos Lidos" value={totalReadCount} subtext={`${completionPercentage.toFixed(1)}% da Bíblia`} icon={<BookOpen size={24}/>} />
                          <StatCard title="Sequência Atual" value={`${currentStreak} dias`} subtext="Mantenha o ritmo!" icon={<Flame size={24}/>} highlight colorClass="bg-orange-500" />
@@ -1798,8 +1845,37 @@ const App: React.FC = () => {
                              >
                                  Suporte ({supportTickets.filter(t => t.status === 'open').length})
                              </button>
+                             <button 
+                                 onClick={() => setAdminView('news')}
+                                 className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${adminView === 'news' ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300' : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'}`}
+                             >
+                                 Notícias
+                             </button>
                          </div>
                      </div>
+
+                     {adminView === 'news' && (
+                        <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800">
+                            <h3 className="font-bold text-lg mb-4 text-gray-900 dark:text-white flex items-center gap-2">
+                                <Megaphone size={20} className="text-indigo-500"/>
+                                Gerenciar Mural de Novidades
+                            </h3>
+                            <p className="text-sm text-gray-500 mb-4">Esta mensagem aparecerá no topo do Dashboard de todos os usuários. Deixe em branco para remover.</p>
+                            
+                            <textarea 
+                                value={editingNews} 
+                                onChange={e => setEditingNews(e.target.value)} 
+                                className="w-full p-4 border rounded-xl dark:bg-slate-800 dark:border-slate-700 dark:text-white h-40 mb-4 focus:ring-2 focus:ring-indigo-500 outline-none"
+                                placeholder="Ex: Nova atualização disponível! Agora temos conquistas..."
+                            ></textarea>
+                            
+                            <div className="flex justify-end">
+                                <button onClick={handleSaveNews} className="bg-indigo-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-indigo-700 shadow-md">
+                                    Publicar Notícia
+                                </button>
+                            </div>
+                        </div>
+                     )}
 
                      {adminView === 'overview' && (
                          <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden">
