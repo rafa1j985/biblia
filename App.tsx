@@ -78,7 +78,8 @@ import {
   Heart,
   HandHeart,
   Copy,
-  Flag
+  Flag,
+  Hourglass
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -129,7 +130,6 @@ const BIBLE_API_MAPPING: Record<string, string> = {
 const PAULINE_BOOKS = ['ROM', '1CO', '2CO', 'GAL', 'EPH', 'PHP', 'COL', '1TH', '2TH', '1TI', '2TI', 'TIT', 'PHM'];
 
 // --- Helper Components ---
-// ... (ProgressBar, StatCard, BibleReaderModal, Auth Components remain same) ...
 const ProgressBar = ({ current, total, color = "bg-indigo-600" }: { current: number; total: number; color?: string }) => {
   const percentage = Math.min(100, Math.max(0, (current / total) * 100));
   return (
@@ -142,16 +142,23 @@ const ProgressBar = ({ current, total, color = "bg-indigo-600" }: { current: num
   );
 };
 
-const StatCard = ({ title, value, subtext, icon, highlight = false, colorClass = "bg-indigo-600" }: { title: string; value: string | number; subtext?: string; icon: React.ReactNode, highlight?: boolean, colorClass?: string }) => (
-  <div className={`rounded-xl p-6 shadow-sm border flex items-start justify-between transition-colors ${highlight ? `${colorClass} border-transparent text-white` : 'bg-white dark:bg-slate-900 border-gray-100 dark:border-slate-800'}`}>
-    <div>
-      <p className={`text-sm font-medium mb-1 ${highlight ? 'text-indigo-100' : 'text-gray-500 dark:text-gray-400'}`}>{title}</p>
-      <h3 className={`text-2xl font-bold ${highlight ? 'text-white' : 'text-gray-900 dark:text-white'}`}>{value}</h3>
-      {subtext && <p className={`text-xs mt-1 ${highlight ? 'text-indigo-200' : 'text-gray-400 dark:text-gray-500'}`}>{subtext}</p>}
+const StatCard = ({ title, value, subtext, icon, highlight = false, colorClass = "bg-indigo-600", progress }: { title: string; value: string | number; subtext?: string; icon: React.ReactNode, highlight?: boolean, colorClass?: string, progress?: number }) => (
+  <div className={`rounded-xl p-6 shadow-sm border flex flex-col justify-between transition-colors ${highlight ? `${colorClass} border-transparent text-white` : 'bg-white dark:bg-slate-900 border-gray-100 dark:border-slate-800'}`}>
+    <div className="flex items-start justify-between w-full">
+      <div>
+        <p className={`text-sm font-medium mb-1 ${highlight ? 'text-indigo-100' : 'text-gray-500 dark:text-gray-400'}`}>{title}</p>
+        <h3 className={`text-2xl font-bold ${highlight ? 'text-white' : 'text-gray-900 dark:text-white'}`}>{value}</h3>
+        {subtext && <p className={`text-xs mt-1 ${highlight ? 'text-indigo-200' : 'text-gray-400 dark:text-gray-500'}`}>{subtext}</p>}
+      </div>
+      <div className={`p-2 rounded-lg ${highlight ? 'bg-white/20 text-white' : 'bg-indigo-50 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400'}`}>
+        {icon}
+      </div>
     </div>
-    <div className={`p-2 rounded-lg ${highlight ? 'bg-white/20 text-white' : 'bg-indigo-50 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400'}`}>
-      {icon}
-    </div>
+    {progress !== undefined && (
+      <div className={`w-full h-1.5 rounded-full mt-4 overflow-hidden ${highlight ? 'bg-black/20' : 'bg-gray-100 dark:bg-slate-800'}`}>
+         <div className={`h-full rounded-full transition-all duration-1000 ${highlight ? 'bg-white/90' : 'bg-indigo-500'}`} style={{ width: `${progress}%` }}></div>
+      </div>
+    )}
   </div>
 );
 
@@ -1113,7 +1120,7 @@ const App: React.FC = () => {
     let daysToFinish = 0;
     if (logs.length > 0) {
         const sortedLogs = [...logs].sort((a, b) => a.timestamp - b.timestamp);
-        const firstLogDate = new Date(sortedLogs[0].date);
+        const firstLogDate = new Date(sortedLogs[sortedLogs.length - 1].date);
         const today = new Date();
         const timeDiff = Math.abs(today.getTime() - firstLogDate.getTime());
         const daysElapsed = Math.max(1, Math.ceil(timeDiff / (1000 * 3600 * 24)));
@@ -1657,7 +1664,7 @@ const App: React.FC = () => {
 
             {trackerMode === 'select' && (
                <div className="mt-8 pt-6 border-t border-gray-100 dark:border-slate-800">
-                  {sessionSelectedChapters.length > 0 && (
+                  {sessionSelectedChapters.length > 0 ? (
                      <div className="mb-6 animate-fade-in">
                        <h3 className="font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-2 text-sm uppercase tracking-wide">
                           <Sparkles size={16} className="text-indigo-500" /> Estilo do Devocional IA
@@ -1680,7 +1687,10 @@ const App: React.FC = () => {
                                      <Icon size={18} />
                                  </div>
                                  <div>
-                                     <div className="font-bold text-sm text-gray-900 dark:text-white">{style.title}</div>
+                                     <div className="font-bold text-sm text-gray-900 dark:text-white flex items-center gap-2">
+                                         {style.title}
+                                         {key === 'theologian' && <span className="text-[10px] bg-gray-200 dark:bg-slate-700 text-gray-600 dark:text-gray-300 px-1.5 py-0.5 rounded-full">Padrão</span>}
+                                     </div>
                                      <div className="text-xs text-gray-500 dark:text-gray-400 leading-tight mt-0.5">{style.description}</div>
                                  </div>
                               </button>
@@ -1688,6 +1698,10 @@ const App: React.FC = () => {
                          })}
                        </div>
                      </div>
+                  ) : (
+                    <div className="mb-4 text-sm text-gray-400 text-center italic">
+                        Selecione capítulos para ver as opções de Devocional IA.
+                    </div>
                   )}
 
                   <div className="flex justify-end items-center gap-4">
@@ -2188,12 +2202,6 @@ const App: React.FC = () => {
                               </p>
                           </div>
                           <div className="flex items-center gap-3">
-                              {siteNews && showNews && (
-                                <div className="bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 animate-pulse">
-                                  <Megaphone size={16} /> {siteNews}
-                                  <button onClick={() => setShowNews(false)} className="ml-2 hover:text-indigo-900"><X size={14} /></button>
-                                </div>
-                              )}
                               <button onClick={() => setIsChangePasswordOpen(true)} className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-slate-800 text-gray-500 dark:text-gray-400 transition-colors" title="Alterar Senha">
                                   <KeyRound size={20} />
                               </button>
@@ -2249,10 +2257,41 @@ const App: React.FC = () => {
                              </div>
                           </div>
 
+                          {/* Site News Banner - Moved below the main banner */}
+                          {siteNews && showNews && (
+                             <div className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800 rounded-xl p-4 flex items-start justify-between gap-4 animate-fade-in">
+                                 <div className="flex items-start gap-3">
+                                     <div className="bg-indigo-100 dark:bg-indigo-800/50 p-2 rounded-lg text-indigo-600 dark:text-indigo-300">
+                                         <Megaphone size={20} />
+                                     </div>
+                                     <div>
+                                         <h4 className="font-bold text-gray-900 dark:text-white text-sm uppercase tracking-wide mb-1">Novidades</h4>
+                                         <p className="text-sm text-gray-600 dark:text-gray-300">{siteNews}</p>
+                                     </div>
+                                 </div>
+                                 <button onClick={() => setShowNews(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+                                     <X size={18} />
+                                 </button>
+                             </div>
+                          )}
+
                           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                              <StatCard title="Total Lido" value={totalReadCount} subtext={`${completionPercentage.toFixed(1)}% da Bíblia`} icon={<BookOpen size={24} />} highlight={true} />
+                              <StatCard 
+                                title="Total Lido" 
+                                value={totalReadCount} 
+                                subtext={`${completionPercentage.toFixed(1)}% da Bíblia`} 
+                                icon={<BookOpen size={24} />} 
+                                highlight={true} 
+                                progress={completionPercentage}
+                              />
+                              <StatCard 
+                                title="Previsão de Conclusão" 
+                                value={advancedStats.projection.date} 
+                                subtext="Neste ritmo atual" 
+                                icon={<Hourglass size={24} />} 
+                                colorClass="bg-purple-600"
+                              />
                               <StatCard title="Sequência" value={`${currentStreak} dias`} subtext="Mantenha o fogo aceso!" icon={<Flame size={24} />} colorClass="bg-orange-500" />
-                              <StatCard title="Livros Completos" value={advancedStats.completedBooks} subtext={`Faltam ${advancedStats.remainingBooks}`} icon={<CheckCircle2 size={24} />} />
                               <StatCard title="Conquistas" value={unlockedAchievements.size} subtext={`de ${ACHIEVEMENTS.length}`} icon={<Trophy size={24} />} />
                           </div>
                         </div>
