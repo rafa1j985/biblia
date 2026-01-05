@@ -78,7 +78,11 @@ import {
   HandHeart,
   Copy,
   Flag,
-  Hourglass
+  Hourglass,
+  Check,
+  Trash2,
+  Calculator,
+  Gem
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -91,7 +95,7 @@ import {
   PieChart, 
   Pie, 
   Cell,
-  LineChart,
+  LineChart, 
   Line,
   AreaChart,
   Area
@@ -100,6 +104,20 @@ import { BIBLE_BOOKS, TOTAL_CHAPTERS_BIBLE, ADMIN_EMAILS, PLANS_CONFIG, ACHIEVEM
 import { BibleBook, ReadChaptersMap, ReadingLog, UserPlan, PlanType, SupportTicket, DevotionalStyle, Group, GroupMember, GroupActivity, ActivityType } from './types';
 import { generateDevotional } from './services/geminiService';
 import { supabase } from './services/supabase';
+
+// --- Versículos Diários ---
+const DAILY_VERSES = [
+  { text: "Lâmpada para os meus pés é tua palavra, e luz para o meu caminho.", ref: "Salmos 119:105" },
+  { text: "Busquem, pois, em primeiro lugar o Reino de Deus e a sua justiça, e todas essas coisas lhes serão acrescentadas.", ref: "Mateus 6:33" },
+  { text: "O Senhor é o meu pastor; de nada terei falta.", ref: "Salmos 23:1" },
+  { text: "Tudo posso naquele que me fortalece.", ref: "Filipenses 4:13" },
+  { text: "Porque sou eu que conheço os planos que tenho para vocês', diz o Senhor, 'planos de fazê-los prosperar e não de causar dano, planos de dar a vocês esperança e um futuro.", ref: "Jeremias 29:11" },
+  { text: "Não fui eu que ordenei a você? Seja forte e corajoso! Não se apavore nem desanime, pois o Senhor, o seu Deus, estará com você por onde você andar.", ref: "Josué 1:9" },
+  { text: "Venham a mim, todos os que estão cansados e sobrecarregados, e eu darei descanso a vocês.", ref: "Mateus 11:28" },
+  { text: "Mas os que esperam no Senhor renovarão as suas forças. Voarão alto como águias; correrão e não ficarão exaustos, andarão e não se cansarão.", ref: "Isaías 40:31" },
+  { text: "Deem graças em todas as circunstâncias, pois esta é a vontade de Deus para vocês em Cristo Jesus.", ref: "1 Tessalonicenses 5:18" },
+  { text: "Confie no Senhor de todo o seu coração e não se apoie em seu próprio entendimento.", ref: "Provérbios 3:5" },
+];
 
 // --- Icon Mapping Helper ---
 const IconMap: Record<string, React.ElementType> = {
@@ -127,6 +145,35 @@ const BIBLE_API_MAPPING: Record<string, string> = {
 };
 
 const PAULINE_BOOKS = ['ROM', '1CO', '2CO', 'GAL', 'EPH', 'PHP', 'COL', '1TH', '2TH', '1TI', '2TI', 'TIT', 'PHM'];
+
+// --- Custom Toast Component ---
+const NotificationToast = ({ message, type, onClose }: { message: string, type: 'success' | 'error', onClose: () => void }) => {
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      onClose();
+    }, 4000);
+    return () => clearTimeout(timer);
+  }, [onClose]);
+
+  return (
+    <div className={`fixed top-4 left-1/2 transform -translate-x-1/2 z-[100] flex items-center gap-3 px-6 py-4 rounded-xl shadow-2xl animate-fade-in-down border ${
+      type === 'success' 
+        ? 'bg-white dark:bg-slate-800 text-gray-800 dark:text-white border-green-500' 
+        : 'bg-white dark:bg-slate-800 text-gray-800 dark:text-white border-red-500'
+    }`}>
+      <div className={`p-2 rounded-full ${type === 'success' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+        {type === 'success' ? <CheckCircle2 size={24} /> : <AlertTriangle size={24} />}
+      </div>
+      <div>
+        <p className="font-bold text-sm">{type === 'success' ? 'Sucesso!' : 'Atenção'}</p>
+        <p className="text-sm opacity-90">{message}</p>
+      </div>
+      <button onClick={onClose} className="ml-4 text-gray-400 hover:text-gray-600">
+        <X size={18} />
+      </button>
+    </div>
+  );
+};
 
 // --- Helper Components ---
 const ProgressBar = ({ current, total, color = "bg-indigo-600" }: { current: number; total: number; color?: string }) => {
@@ -599,8 +646,11 @@ const App: React.FC = () => {
   const [user, setUser] = useState<any>(null); 
   const [loadingAuth, setLoadingAuth] = useState(true);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
+  
+  // Custom Toast State
+  const [notification, setNotification] = useState<{message: string, type: 'success' | 'error'} | null>(null);
 
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'tracker' | 'history' | 'community' | 'admin' | 'achievements' | 'support'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'tracker' | 'history' | 'community' | 'admin' | 'achievements' | 'support' | 'devotional'>('dashboard');
   const [selectedBookId, setSelectedBookId] = useState<string | null>(null);
   
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
@@ -655,23 +705,54 @@ const App: React.FC = () => {
   const [joinCode, setJoinCode] = useState('');
   const [newGroupName, setNewGroupName] = useState('');
 
+  // --- New States for Features ---
+  const [dailyVerse, setDailyVerse] = useState<{text: string, ref: string} | null>(null);
+  const [simulatedPace, setSimulatedPace] = useState<number>(3); // Capítulos por dia default para simulação
+  const [isGoldenTheme, setIsGoldenTheme] = useState(false);
+
+  const showNotification = useCallback((message: string, type: 'success' | 'error' = 'success') => {
+      setNotification({ message, type });
+  }, []);
+
   const isAdmin = useMemo(() => {
     return user && ADMIN_EMAILS.includes(user.email);
   }, [user]);
 
   useEffect(() => {
     const root = window.document.documentElement;
-    root.classList.remove('light', 'dark');
-    root.classList.add(theme);
-    localStorage.setItem('theme', theme);
-  }, [theme]);
+    root.classList.remove('light', 'dark', 'golden');
+    if (isGoldenTheme) {
+        root.classList.add('golden', 'dark'); // Golden implies dark mode base
+        localStorage.setItem('theme', 'golden');
+    } else {
+        root.classList.add(theme);
+        localStorage.setItem('theme', theme);
+    }
+  }, [theme, isGoldenTheme]);
 
   useEffect(() => {
-      localStorage.setItem('devotional_style', devotionalStyle);
-  }, [devotionalStyle]);
+      // Load Daily Verse on Mount
+      const randomVerse = DAILY_VERSES[Math.floor(Math.random() * DAILY_VERSES.length)];
+      setDailyVerse(randomVerse);
+      
+      // Check local storage for golden theme preference (if saved as 'golden' in theme)
+      if (localStorage.getItem('theme') === 'golden') {
+          setIsGoldenTheme(true);
+      }
+  }, []);
 
   const toggleTheme = () => {
-    setTheme(prev => prev === 'light' ? 'dark' : 'light');
+    if (isGoldenTheme) {
+        setIsGoldenTheme(false);
+        setTheme('dark');
+    } else {
+        setTheme(prev => prev === 'light' ? 'dark' : 'light');
+    }
+  };
+
+  const activateGoldenTheme = () => {
+      setIsGoldenTheme(true);
+      showNotification("Tema Peregrino Ativado! Parabéns pela jornada completa!", "success");
   };
 
   useEffect(() => {
@@ -1050,7 +1131,15 @@ const App: React.FC = () => {
     setUserPlan(newPlan);
     localStorage.setItem(`bible_plan_${user.id}`, JSON.stringify(newPlan));
     setIsPlanModalOpen(false);
-    alert(`Plano "${config.title}" ativado! Seu GPS foi configurado.`);
+    showNotification(`Plano "${config.title}" ativado com sucesso!`, 'success');
+  };
+
+  const handleAbandonPlan = () => {
+      if(window.confirm("Tem certeza que deseja abandonar o plano atual? Seu histórico de leitura será mantido, mas o progresso do plano será resetado.")) {
+          setUserPlan(null);
+          localStorage.removeItem(`bible_plan_${user.id}`);
+          showNotification("Plano removido. Você está livre para escolher outro.", "success");
+      }
   };
 
   const getPlanProgress = useMemo(() => {
@@ -1117,6 +1206,7 @@ const App: React.FC = () => {
     const remainingBooks = BIBLE_BOOKS.length - completedBooks;
     let estimatedCompletionDate = "N/A";
     let daysToFinish = 0;
+    let avgChaptersPerDay = 0;
     
     if (logs.length > 0) {
         // Ordena do mais antigo para o mais novo para pegar o "Início da Jornada"
@@ -1138,7 +1228,7 @@ const App: React.FC = () => {
         const daysElapsed = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
         
         // Média = Total Lido / Dias Corridos
-        const avgChaptersPerDay = totalRead / daysElapsed;
+        avgChaptersPerDay = totalRead / daysElapsed;
         
         const chaptersRemaining = TOTAL_CHAPTERS_BIBLE - totalRead;
 
@@ -1154,7 +1244,8 @@ const App: React.FC = () => {
     return {
         completedBooks,
         remainingBooks,
-        projection: { date: estimatedCompletionDate, days: daysToFinish }
+        projection: { date: estimatedCompletionDate, days: daysToFinish },
+        avgChaptersPerDay
     };
   };
 
@@ -1181,6 +1272,24 @@ const App: React.FC = () => {
     }
     return streak;
   }, [readingLogs]);
+
+  const getStreakMessage = (streak: number) => {
+      if (streak >= 365) return "Lenda da Fé! Mais de um ano!";
+      if (streak >= 30) return "Hábito de ferro! Sua constância inspira.";
+      if (streak >= 10) return "Parabéns!! São 10 dias de comprometimento com a Palavra!";
+      if (streak >= 7) return "Uma semana perfeita! Continue assim.";
+      if (streak >= 3) return "O fogo acendeu! Mantenha o ritmo.";
+      return "Todo dia conta. Não desista!";
+  };
+
+  const calculateSimulationDate = (dailyChapters: number) => {
+      const remaining = TOTAL_CHAPTERS_BIBLE - totalReadCount;
+      if (remaining <= 0) return "Hoje!";
+      const days = Math.ceil(remaining / dailyChapters);
+      const date = new Date();
+      date.setDate(date.getDate() + days);
+      return date.toLocaleDateString('pt-BR');
+  };
 
   const chartData = useMemo(() => {
     const last7Days = Array.from({ length: 7 }, (_, i) => {
@@ -1271,7 +1380,7 @@ const App: React.FC = () => {
     
     const { data: savedLog, error } = await supabase.from('reading_logs').insert(logEntry).select().single();
     if (error) {
-        alert('Erro ao salvar: ' + error.message);
+        showNotification('Erro ao salvar: ' + error.message, 'error');
     } else {
         await fetchData(); // This updates logs and readChapters
         
@@ -1343,6 +1452,7 @@ const App: React.FC = () => {
                     await logGroupActivity(userGroup.id, 'PLAN_COMPLETE', {
                         planName: userPlan.title
                     });
+                    showNotification("Parabéns!! Você completou o plano " + userPlan.title + "! 🎉", "success");
                 }
             }
             
@@ -1352,7 +1462,7 @@ const App: React.FC = () => {
 
         if(isAdmin) fetchAdminData(); 
         setSessionSelectedChapters([]);
-        alert("Leitura registrada e salva na nuvem!");
+        showNotification("Registrado com sucesso! Que Deus te abençoe!", 'success');
         if (userGroup) setActiveTab('community'); else setActiveTab('history');
     }
     setIsGeneratingAI(false);
@@ -1365,8 +1475,9 @@ const App: React.FC = () => {
           if(isAdmin) fetchAdminData();
           setEditingNoteId(null);
           setTempNoteContent('');
+          showNotification('Nota salva com sucesso!', 'success');
       } else {
-          alert('Erro ao salvar nota.');
+          showNotification('Erro ao salvar nota.', 'error');
       }
   };
 
@@ -1385,10 +1496,11 @@ const App: React.FC = () => {
       });
       setIsSubmittingSupport(false);
       if (error) {
-         alert('Erro ao enviar mensagem: ' + error.message);
+         showNotification('Erro ao enviar mensagem: ' + error.message, 'error');
       } else {
           setSupportSuccess(true);
           setSupportForm({ ...supportForm, message: '' });
+          showNotification('Mensagem enviada! Entraremos em contato.', 'success');
           setTimeout(() => setSupportSuccess(false), 5000);
       }
   };
@@ -1396,10 +1508,10 @@ const App: React.FC = () => {
   const handleSaveNews = async () => {
       const { error } = await supabase.from('app_config').upsert({ key: 'site_news', value: editingNews });
       if (error) {
-          alert('Erro ao salvar notícia.');
+          showNotification('Erro ao salvar notícia.', 'error');
       } else {
           setSiteNews(editingNews);
-          alert('Notícia publicada com sucesso!');
+          showNotification('Notícia publicada com sucesso!', 'success');
       }
   };
 
@@ -1410,15 +1522,15 @@ const App: React.FC = () => {
 
   const handleSendPasswordReset = async (email: string) => {
       if (!email || !email.includes('@')) {
-          alert('E-mail inválido ou não disponível para este usuário.');
+          showNotification('E-mail inválido ou não disponível para este usuário.', 'error');
           return;
       }
       if (confirm(`Enviar e-mail de redefinição de senha para ${email}?`)) {
           const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
           if (error) {
-              alert('Erro ao enviar email: ' + error.message);
+              showNotification('Erro ao enviar email: ' + error.message, 'error');
           } else {
-              alert('E-mail de redefinição enviado com sucesso!');
+              showNotification('E-mail de redefinição enviado com sucesso!', 'success');
           }
       }
   };
@@ -1432,7 +1544,7 @@ const App: React.FC = () => {
           await fetchAdminData();
       } else {
           console.error("Error updating ticket:", error);
-          alert('Erro ao atualizar status: ' + error.message);
+          showNotification('Erro ao atualizar status: ' + error.message, 'error');
           if(isAdmin) fetchAdminData();
       }
       setUpdatingTicketId(null);
@@ -1455,9 +1567,9 @@ const App: React.FC = () => {
     } else {
       try {
         await navigator.clipboard.writeText(text);
-        alert('Link copiado para a área de transferência!');
+        showNotification('Link copiado para a área de transferência!', 'success');
       } catch (err) {
-        alert('Não foi possível copiar o link.');
+        showNotification('Não foi possível copiar o link.', 'error');
       }
     }
   };
@@ -1476,7 +1588,7 @@ const App: React.FC = () => {
       }).select().single();
 
       if(error) {
-          alert('Erro ao criar grupo: ' + error.message);
+          showNotification('Erro ao criar grupo: ' + error.message, 'error');
       } else {
           // Add self as admin
           await supabase.from('group_members').insert({
@@ -1499,7 +1611,7 @@ const App: React.FC = () => {
       const { data: group, error: searchError } = await supabase.from('groups').select('*').eq('code', joinCode.toUpperCase()).single();
       
       if(searchError || !group) {
-          alert('Grupo não encontrado. Verifique o código.');
+          showNotification('Grupo não encontrado. Verifique o código.', 'error');
       } else {
           const { error: joinError } = await supabase.from('group_members').insert({
               group_id: group.id,
@@ -1510,8 +1622,8 @@ const App: React.FC = () => {
           });
           
           if(joinError) {
-              if(joinError.message.includes('duplicate')) alert('Você já está neste grupo!');
-              else alert('Erro ao entrar: ' + joinError.message);
+              if(joinError.message.includes('duplicate')) showNotification('Você já está neste grupo!', 'error');
+              else showNotification('Erro ao entrar: ' + joinError.message, 'error');
           } else {
               fetchGroupData();
           }
@@ -1543,6 +1655,11 @@ const App: React.FC = () => {
       const newCount = (current?.[column] || 0) + 1;
 
       await supabase.from('group_activities').update({ [column]: newCount }).eq('id', activityId);
+  };
+
+  const handleSaveDevotionalStyle = () => {
+    localStorage.setItem('devotional_style', devotionalStyle);
+    showNotification('Estilo de devocional atualizado com sucesso!', 'success');
   };
 
   // --- Render Functions ---
@@ -1924,7 +2041,7 @@ const App: React.FC = () => {
                               <span className="font-mono text-xl font-bold tracking-widest">{userGroup.code}</span>
                               <button onClick={() => {
                                   navigator.clipboard.writeText(userGroup.code);
-                                  alert('Copiado!');
+                                  showNotification('Copiado!', 'success');
                               }} className="text-white hover:text-indigo-200">
                                   <Copy size={16} />
                               </button>
@@ -1982,95 +2099,216 @@ const App: React.FC = () => {
       );
   };
 
-  const renderSupport = () => (
-      <div className="max-w-2xl mx-auto space-y-6 animate-fade-in">
+  const renderDevotional = () => (
+      <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
           <div className="text-center mb-8">
               <div className="inline-flex p-4 bg-indigo-100 dark:bg-slate-800 rounded-full text-indigo-600 dark:text-indigo-400 mb-4">
-                  <LifeBuoy size={32} />
+                  <Sparkles size={32} />
               </div>
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-white serif">Como podemos ajudar?</h2>
-              <p className="text-gray-500 dark:text-gray-400 mt-2">Encontrou um bug, tem uma ideia ou precisa de ajuda? Escreva para nós.</p>
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white serif">Configuração do Devocional IA</h2>
+              <p className="text-gray-500 dark:text-gray-400 mt-2 max-w-xl mx-auto">
+                  A Inteligência Artificial do Bíblia Tracker gera reflexões personalizadas cada vez que você registra uma leitura. 
+                  Escolha abaixo qual "personalidade" você quer que a IA adote para falar com você.
+              </p>
           </div>
-          <form onSubmit={handleSupportSubmit} className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 space-y-4">
-              <textarea
-                  required
-                  value={supportForm.message}
-                  onChange={(e) => setSupportForm({ ...supportForm, message: e.target.value })}
-                  className="w-full p-3 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none h-32 resize-none"
-                  placeholder="Descreva detalhadamente..."
-              />
-              <button
-                  type="submit"
-                  disabled={isSubmittingSupport}
-                  className="w-full bg-indigo-600 text-white py-3 rounded-lg font-bold flex items-center justify-center gap-2 hover:bg-indigo-700 transition-colors disabled:opacity-70"
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {Object.entries(DEVOTIONAL_STYLES).map(([key, style]) => {
+                  const Icon = IconMap[style.icon] || Star;
+                  const isSelected = devotionalStyle === key;
+                  return (
+                    <button
+                      key={key}
+                      onClick={() => setDevotionalStyle(key as DevotionalStyle)}
+                      className={`p-6 rounded-2xl border text-left transition-all relative overflow-hidden group hover:shadow-lg ${
+                        isSelected 
+                        ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-500 ring-2 ring-indigo-500' 
+                        : 'bg-white dark:bg-slate-900 border-gray-200 dark:border-slate-700 hover:border-indigo-300'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between mb-4">
+                          <div className={`p-3 rounded-xl ${isSelected ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-slate-800 text-gray-500'}`}>
+                              <Icon size={24} />
+                          </div>
+                          {isSelected && <div className="bg-indigo-600 text-white text-[10px] font-bold px-2 py-1 rounded-full uppercase">Selecionado</div>}
+                      </div>
+                      
+                      <h4 className="font-bold text-gray-900 dark:text-white text-lg mb-2">{style.title}</h4>
+                      <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">{style.description}</p>
+                    </button>
+                  )
+              })}
+          </div>
+
+          <div className="flex justify-end pt-6 border-t border-gray-100 dark:border-slate-800">
+              <button 
+                  onClick={handleSaveDevotionalStyle}
+                  className="bg-indigo-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-indigo-700 transition-colors shadow-lg flex items-center gap-2"
               >
-                  {isSubmittingSupport ? <Loader2 className="animate-spin" /> : <Send size={18} />}
-                  Enviar Mensagem
+                  <Check size={20} /> Salvar Preferência
               </button>
-          </form>
+          </div>
       </div>
   );
 
-  const renderAchievements = () => {
-      return (
-          <div className="space-y-8 animate-fade-in pb-12">
-               <div className="bg-gradient-to-r from-yellow-500 to-amber-600 rounded-2xl p-8 text-white shadow-xl relative overflow-hidden">
-                    <div className="relative z-10">
-                        <h2 className="text-3xl font-bold font-serif mb-2">Sala de Troféus</h2>
-                        <div className="flex items-center gap-4">
-                            <span className="font-bold text-xl">{unlockedAchievements.size}</span>
-                            <span className="text-sm text-yellow-100 uppercase tracking-wide">Desbloqueadas de {ACHIEVEMENTS.length}</span>
-                        </div>
-                        <div className="mt-4 w-full bg-black/20 rounded-full h-2">
-                            <div className="bg-white h-2 rounded-full transition-all duration-1000" style={{ width: `${(unlockedAchievements.size / ACHIEVEMENTS.length) * 100}%` }}></div>
-                        </div>
-                    </div>
-               </div>
-               
-               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                  {ACHIEVEMENTS.map(ach => {
-                      const isUnlocked = unlockedAchievements.has(ach.id);
-                      const Icon = IconMap[ach.icon] || Star;
-                      
-                      return (
-                          <div key={ach.id} className={`p-4 rounded-xl border flex flex-col items-center text-center transition-all duration-300 relative overflow-hidden group ${
-                              isUnlocked 
-                              ? 'bg-white dark:bg-slate-900 border-yellow-200 dark:border-yellow-900/30 shadow-md hover:shadow-lg hover:-translate-y-1' 
-                              : 'bg-gray-50 dark:bg-slate-900/50 border-gray-200 dark:border-slate-800 opacity-70 grayscale hover:opacity-100 hover:grayscale-0'
-                          }`}>
-                              {isUnlocked && (ach.rarity === 'Legendary' || ach.rarity === 'Epic') && (
-                                  <div className="absolute inset-0 bg-gradient-to-tr from-yellow-100/20 to-transparent pointer-events-none"></div>
-                              )}
+  const renderAchievements = () => (
+    <div className="max-w-6xl mx-auto animate-fade-in">
+      <div className="text-center mb-8">
+        <div className="inline-flex p-4 bg-yellow-100 dark:bg-yellow-900/30 rounded-full text-yellow-600 dark:text-yellow-400 mb-4">
+          <Trophy size={32} />
+        </div>
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-white serif">Galeria de Conquistas</h2>
+        <p className="text-gray-500 dark:text-gray-400 mt-2">
+          Você já desbloqueou {unlockedAchievements.size} de {ACHIEVEMENTS.length} conquistas.
+        </p>
+      </div>
 
-                              <div className={`w-14 h-14 rounded-full flex items-center justify-center mb-3 shadow-inner ${
-                                  isUnlocked ? ach.color : 'bg-gray-200 dark:bg-slate-800'
-                              }`}>
-                                  <Icon size={24} className={isUnlocked ? 'text-gray-800' : 'text-gray-400'} />
-                              </div>
-                              
-                              <h4 className="font-bold text-gray-900 dark:text-white text-sm mb-1 line-clamp-1">{ach.title}</h4>
-                              <p className="text-xs text-gray-500 dark:text-gray-400 leading-tight mb-3 line-clamp-2 min-h-[2.5em]">{ach.description}</p>
-                              
-                              <div className="mt-auto">
-                                  <span className={`text-[10px] uppercase font-bold px-2 py-1 rounded-full border ${
-                                      isUnlocked 
-                                      ? 'bg-green-50 text-green-700 border-green-200' 
-                                      : 'bg-gray-100 text-gray-500 border-gray-200'
-                                  }`}>
-                                      {isUnlocked ? 'Conquistado' : 'Bloqueado'}
-                                  </span>
-                              </div>
-                          </div>
-                      );
-                  })}
-               </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {ACHIEVEMENTS.map((ach) => {
+          const isUnlocked = unlockedAchievements.has(ach.id);
+          const Icon = IconMap[ach.icon] || Star;
+
+          return (
+            <div
+              key={ach.id}
+              className={`p-4 rounded-xl border relative overflow-hidden group transition-all ${
+                isUnlocked
+                  ? 'bg-white dark:bg-slate-900 border-gray-200 dark:border-slate-800 shadow-sm'
+                  : 'bg-gray-50 dark:bg-slate-800/50 border-transparent opacity-60'
+              }`}
+            >
+              {!isUnlocked && (
+                <div className="absolute inset-0 bg-gray-100/50 dark:bg-black/50 backdrop-blur-[1px] z-10 flex items-center justify-center">
+                  <Lock className="text-gray-400" size={24} />
+                </div>
+              )}
+
+              <div className="flex items-start gap-4 relative z-0">
+                <div
+                  className={`p-3 rounded-xl ${
+                    isUnlocked ? ach.color : 'bg-gray-200 dark:bg-slate-700'
+                  } ${isUnlocked ? 'text-gray-800' : 'text-gray-400'}`}
+                >
+                  <Icon size={24} />
+                </div>
+                <div>
+                  <h4 className="font-bold text-gray-900 dark:text-white">{ach.title}</h4>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{ach.description}</p>
+                  {isUnlocked && (
+                    <div className="mt-2 text-[10px] font-bold uppercase tracking-wider text-emerald-600 flex items-center gap-1">
+                      <CheckCircle2 size={10} /> Desbloqueado
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+
+  const renderSupport = () => (
+    <div className="max-w-2xl mx-auto animate-fade-in">
+      <div className="text-center mb-8">
+        <div className="inline-flex p-4 bg-indigo-100 dark:bg-indigo-900/30 rounded-full text-indigo-600 dark:text-indigo-400 mb-4">
+          <LifeBuoy size={32} />
+        </div>
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-white serif">Como podemos ajudar?</h2>
+        <p className="text-gray-500 dark:text-gray-400 mt-2">
+          Envie dúvidas, sugestões ou relate problemas. Nossa equipe responderá em breve.
+        </p>
+      </div>
+
+      <div className="bg-white dark:bg-slate-900 p-8 rounded-2xl shadow-xl border border-gray-100 dark:border-slate-800">
+        {supportSuccess ? (
+          <div className="text-center py-12">
+            <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center text-green-600 mx-auto mb-4">
+              <CheckCircle2 size={32} />
+            </div>
+            <h3 className="text-xl font-bold text-gray-900 dark:text-white">Mensagem Recebida!</h3>
+            <p className="text-gray-500 dark:text-gray-400 mt-2">
+              Obrigado pelo seu contato. Responderemos o mais breve possível.
+            </p>
+            <button
+              onClick={() => setSupportSuccess(false)}
+              className="mt-6 text-indigo-600 font-bold text-sm hover:underline"
+            >
+              Enviar nova mensagem
+            </button>
           </div>
-      );
-  };
+        ) : (
+          <form onSubmit={handleSupportSubmit} className="space-y-6">
+            <div>
+              <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                Tipo de Mensagem
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                {(['question', 'suggestion', 'problem'] as const).map((type) => (
+                  <button
+                    key={type}
+                    type="button"
+                    onClick={() => setSupportForm({ ...supportForm, type })}
+                    className={`py-2 rounded-lg text-sm font-medium border transition-all ${
+                      supportForm.type === type
+                        ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-500 text-indigo-700 dark:text-indigo-300'
+                        : 'bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-700 text-gray-600 dark:text-gray-400'
+                    }`}
+                  >
+                    {type === 'question' && 'Dúvida'}
+                    {type === 'suggestion' && 'Sugestão'}
+                    {type === 'problem' && 'Problema'}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                Sua Mensagem
+              </label>
+              <textarea
+                required
+                value={supportForm.message}
+                onChange={(e) => setSupportForm({ ...supportForm, message: e.target.value })}
+                className="w-full p-4 rounded-xl border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none min-h-[150px]"
+                placeholder="Descreva detalhadamente..."
+              ></textarea>
+            </div>
+            <button
+              type="submit"
+              disabled={isSubmittingSupport || !supportForm.message.trim()}
+              className="w-full bg-indigo-600 text-white py-4 rounded-xl font-bold hover:bg-indigo-700 transition-colors shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center gap-2"
+            >
+              {isSubmittingSupport ? <Loader2 className="animate-spin" /> : <Send size={20} />}
+              Enviar Mensagem
+            </button>
+          </form>
+        )}
+      </div>
+
+      <div className="mt-8 text-center">
+        <p className="text-xs text-gray-400">
+          Você também pode nos contatar diretamente pelo e-mail{' '}
+          <a href="mailto:suporte@bibliatracker.com" className="text-indigo-500 hover:underline">
+            suporte@bibliatracker.com
+          </a>
+        </p>
+      </div>
+    </div>
+  );
 
   return (
     <div className={`min-h-screen transition-colors ${theme === 'dark' ? 'dark bg-slate-950' : 'bg-slate-50'}`}>
       
+      {/* Toast Notification */}
+      {notification && (
+        <NotificationToast 
+          message={notification.message} 
+          type={notification.type} 
+          onClose={() => setNotification(null)} 
+        />
+      )}
+
       {loadingAuth ? (
           <div className="flex h-screen items-center justify-center">
               <Loader2 className="animate-spin text-indigo-600" size={48} />
@@ -2091,7 +2329,8 @@ const App: React.FC = () => {
                   <nav className="flex-1 px-4 space-y-2 overflow-y-auto py-4">
                       {[
                         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-                        { id: 'tracker', label: 'Leitura', icon: BookOpen },
+                        { id: 'tracker', label: 'Leitura Livre', icon: BookOpen },
+                        { id: 'devotional', label: 'Devocional', icon: Sparkles },
                         { id: 'community', label: 'Comunidade', icon: Users },
                         { id: 'history', label: 'Histórico', icon: History },
                         { id: 'achievements', label: 'Conquistas', icon: Trophy },
@@ -2158,7 +2397,8 @@ const App: React.FC = () => {
                         <nav className="space-y-2 flex-1 overflow-y-auto">
                              {[
                                 { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-                                { id: 'tracker', label: 'Leitura', icon: BookOpen },
+                                { id: 'tracker', label: 'Leitura Livre', icon: BookOpen },
+                                { id: 'devotional', label: 'Devocional', icon: Sparkles },
                                 { id: 'community', label: 'Comunidade', icon: Users },
                                 { id: 'history', label: 'Histórico', icon: History },
                                 { id: 'achievements', label: 'Conquistas', icon: Trophy },
@@ -2191,21 +2431,34 @@ const App: React.FC = () => {
                               <h1 className="text-2xl font-bold text-gray-900 dark:text-white transition-colors">
                                   {activeTab === 'dashboard' && 'Visão Geral'}
                                   {activeTab === 'tracker' && 'Leitura Bíblica'}
+                                  {activeTab === 'devotional' && 'Configuração Devocional'}
                                   {activeTab === 'community' && 'Comunidade'}
                                   {activeTab === 'history' && 'Histórico de Leitura'}
                                   {activeTab === 'achievements' && 'Conquistas'}
                                   {activeTab === 'admin' && 'Painel Administrativo'}
                                   {activeTab === 'support' && 'Suporte'}
                               </h1>
-                              <p className="text-gray-500 dark:text-gray-400 text-sm">
-                                  Olá, {user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Visitante'}
-                              </p>
+                              <div className="flex items-center gap-2 mt-1">
+                                <p className="text-gray-500 dark:text-gray-400 text-sm">
+                                    Olá, {user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Visitante'}
+                                </p>
+                                {unlockedAchievements.has(117) && (
+                                    <div className="flex items-center gap-1 bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-400 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border border-yellow-200 dark:border-yellow-700">
+                                        <CheckCircle2 size={10} /> Peregrino
+                                    </div>
+                                )}
+                              </div>
+                              {dailyVerse && (
+                                <div className="mt-2 text-xs text-indigo-600 dark:text-indigo-400 italic">
+                                    "{dailyVerse.text}" <span className="font-bold not-italic ml-1">- {dailyVerse.ref}</span>
+                                </div>
+                              )}
                           </div>
                           <div className="flex items-center gap-3">
                               <button onClick={() => setIsChangePasswordOpen(true)} className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-slate-800 text-gray-500 dark:text-gray-400 transition-colors" title="Alterar Senha">
                                   <KeyRound size={20} />
                               </button>
-                              <div className="w-10 h-10 rounded-full bg-indigo-100 dark:bg-indigo-900/50 flex items-center justify-center text-indigo-700 dark:text-indigo-300 font-bold shadow-sm">
+                              <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold shadow-sm ${isGoldenTheme ? 'bg-gradient-to-br from-yellow-400 to-amber-600' : 'bg-indigo-600'}`}>
                                   {user?.user_metadata?.full_name?.charAt(0) || user?.email?.charAt(0) || 'U'}
                               </div>
                           </div>
@@ -2216,13 +2469,22 @@ const App: React.FC = () => {
                       {activeTab === 'dashboard' && (
                         <div className="space-y-6 animate-fade-in">
                           {/* Welcome / Plan Widget */}
-                          <div className="bg-indigo-600 rounded-2xl p-8 text-white relative overflow-hidden shadow-xl">
+                          <div className={`rounded-2xl p-8 text-white relative overflow-hidden shadow-xl ${isGoldenTheme ? 'bg-gradient-to-br from-gray-900 to-black border border-yellow-500/30' : 'bg-indigo-600'}`}>
                              <div className="absolute right-0 top-0 h-full w-1/3 bg-gradient-to-l from-white/10 to-transparent pointer-events-none"></div>
                              <div className="relative z-10 max-w-2xl">
-                                <h2 className="text-3xl font-bold font-serif mb-2">Continue sua jornada</h2>
+                                <h2 className={`text-3xl font-bold font-serif mb-2 ${isGoldenTheme ? 'text-yellow-400' : 'text-white'}`}>Continue sua jornada</h2>
                                 {userPlan ? (
                                    <div>
-                                     <p className="text-indigo-100 mb-4">Plano Ativo: <strong>{userPlan.title}</strong></p>
+                                     <div className="flex justify-between items-center mb-4">
+                                        <p className="text-indigo-100">Plano Ativo: <strong>{userPlan.title}</strong></p>
+                                        <button 
+                                            onClick={handleAbandonPlan}
+                                            className="text-indigo-200 hover:text-white hover:bg-red-500/20 p-2 rounded-full transition-colors"
+                                            title="Abandonar Plano"
+                                        >
+                                            <Trash2 size={16} />
+                                        </button>
+                                     </div>
                                      {getPlanProgress && (
                                         <div className="bg-black/20 rounded-xl p-4 mb-4 backdrop-blur-sm">
                                            <div className="flex justify-between text-sm mb-2 font-medium">
@@ -2230,7 +2492,7 @@ const App: React.FC = () => {
                                               <span>{Math.round(getPlanProgress.percent)}%</span>
                                            </div>
                                            <div className="w-full bg-black/20 rounded-full h-2 mb-4">
-                                              <div className="bg-white h-2 rounded-full transition-all" style={{ width: `${getPlanProgress.percent}%` }}></div>
+                                              <div className={`h-2 rounded-full transition-all ${isGoldenTheme ? 'bg-yellow-400' : 'bg-white'}`} style={{ width: `${getPlanProgress.percent}%` }}></div>
                                            </div>
                                            <div className="flex flex-wrap gap-2 items-center">
                                               <span className="text-sm text-indigo-100 mr-2">Próximos:</span>
@@ -2239,7 +2501,7 @@ const App: React.FC = () => {
                                               )) : <span className="text-sm font-bold">Meta diária cumprida! 🎉</span>}
                                            </div>
                                            {getPlanProgress.nextBatch.length > 0 && (
-                                              <button onClick={() => handleQuickRead(getPlanProgress.nextBatch)} className="mt-4 bg-white text-indigo-600 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-indigo-50 transition-colors">
+                                              <button onClick={() => handleQuickRead(getPlanProgress.nextBatch)} className={`mt-4 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:opacity-90 transition-colors ${isGoldenTheme ? 'bg-yellow-500 text-black' : 'bg-white text-indigo-600'}`}>
                                                  Ler Agora <ArrowRight size={16} />
                                               </button>
                                            )}
@@ -2275,41 +2537,6 @@ const App: React.FC = () => {
                              </div>
                           )}
 
-                          {/* AI Devotional Personality Selection */}
-                          <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-gray-100 dark:border-slate-800 shadow-sm">
-                             <h3 className="font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-                                <Sparkles size={18} className="text-indigo-500" /> Personalidade do Devocional IA
-                             </h3>
-                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                                {Object.entries(DEVOTIONAL_STYLES).map(([key, style]) => {
-                                   const Icon = IconMap[style.icon] || Star;
-                                   const isSelected = devotionalStyle === key;
-                                   return (
-                                     <button
-                                       key={key}
-                                       onClick={() => setDevotionalStyle(key as DevotionalStyle)}
-                                       className={`p-3 rounded-xl border text-left transition-all flex items-start gap-3 ${
-                                          isSelected 
-                                          ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-500 ring-1 ring-indigo-500' 
-                                          : 'bg-gray-50 dark:bg-slate-800 border-gray-200 dark:border-slate-700 hover:border-indigo-300'
-                                       }`}
-                                     >
-                                        <div className={`p-2 rounded-lg ${isSelected ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-200 dark:bg-slate-700 text-gray-500'}`}>
-                                            <Icon size={18} />
-                                        </div>
-                                        <div>
-                                            <div className="font-bold text-sm text-gray-900 dark:text-white flex items-center gap-2">
-                                                {style.title}
-                                                {key === 'theologian' && <span className="text-[10px] bg-gray-200 dark:bg-slate-600 text-gray-600 dark:text-gray-300 px-1.5 py-0.5 rounded-full">Padrão</span>}
-                                            </div>
-                                            <div className="text-xs text-gray-500 dark:text-gray-400 leading-tight mt-0.5">{style.description}</div>
-                                        </div>
-                                     </button>
-                                   )
-                                })}
-                             </div>
-                          </div>
-
                           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                               <StatCard 
                                 title="Total Lido" 
@@ -2317,18 +2544,86 @@ const App: React.FC = () => {
                                 subtext={`${completionPercentage.toFixed(1)}% da Bíblia`} 
                                 icon={<BookOpen size={24} />} 
                                 highlight={true} 
+                                colorClass={isGoldenTheme ? 'bg-yellow-600' : 'bg-indigo-600'}
                                 progress={completionPercentage}
                               />
                               <StatCard 
                                 title="Previsão de Conclusão" 
                                 value={advancedStats.projection.date} 
-                                subtext="Neste ritmo atual" 
+                                subtext={`Você vai concluir a Bíblia toda em ${advancedStats.projection.date} nesse ritmo atual.`} 
                                 icon={<Hourglass size={24} />} 
                                 colorClass="bg-purple-600"
                               />
-                              <StatCard title="Sequência" value={`${currentStreak} dias`} subtext="Mantenha o fogo aceso!" icon={<Flame size={24} />} colorClass="bg-orange-500" />
-                              <StatCard title="Conquistas" value={unlockedAchievements.size} subtext={`de ${ACHIEVEMENTS.length}`} icon={<Trophy size={24} />} />
+                              <StatCard 
+                                title="Ritmo Atual" 
+                                value={advancedStats.avgChaptersPerDay.toFixed(1)} 
+                                subtext="capítulos por dia (média)" 
+                                icon={<Activity size={24} />} 
+                                colorClass="bg-emerald-600"
+                              />
+                              <StatCard 
+                                title="Sequência" 
+                                value={`${currentStreak} dias`} 
+                                subtext={getStreakMessage(currentStreak)} 
+                                icon={<Flame size={24} />} 
+                                colorClass="bg-orange-500" 
+                              />
                           </div>
+
+                          {/* Simulador de Ritmo */}
+                          <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-gray-100 dark:border-slate-800 shadow-sm animate-fade-in">
+                              <h3 className="font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                                  <Calculator size={18} className="text-indigo-500" /> Simulador de Conclusão
+                              </h3>
+                              <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">Veja como aumentar seu ritmo diário antecipa a conclusão de toda a Bíblia.</p>
+                              
+                              <div className="flex flex-col md:flex-row items-center gap-8">
+                                  <div className="flex-1 w-full">
+                                      <div className="flex justify-between mb-2">
+                                          <label className="text-sm font-bold text-gray-700 dark:text-gray-300">Ler {simulatedPace} capítulos por dia</label>
+                                          <span className="text-xs text-gray-400">Arraste para simular</span>
+                                      </div>
+                                      <input 
+                                          type="range" 
+                                          min="1" 
+                                          max="20" 
+                                          value={simulatedPace} 
+                                          onChange={(e) => setSimulatedPace(parseInt(e.target.value))}
+                                          className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700 accent-indigo-600"
+                                      />
+                                      <div className="flex justify-between mt-1 text-xs text-gray-400">
+                                          <span>1 cap/dia</span>
+                                          <span>10 caps/dia</span>
+                                          <span>20 caps/dia</span>
+                                      </div>
+                                  </div>
+                                  <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl min-w-[200px] text-center border border-indigo-100 dark:border-indigo-800">
+                                      <p className="text-xs text-indigo-600 dark:text-indigo-300 uppercase font-bold tracking-wider mb-1">Previsão Simulada</p>
+                                      <p className="text-2xl font-bold text-gray-900 dark:text-white">{calculateSimulationDate(simulatedPace)}</p>
+                                  </div>
+                              </div>
+                          </div>
+
+                          {/* Completion Badge Activation */}
+                          {totalReadCount >= TOTAL_CHAPTERS_BIBLE && !isGoldenTheme && (
+                              <div className="bg-gradient-to-r from-yellow-400 to-amber-500 rounded-2xl p-6 text-white shadow-xl flex items-center justify-between gap-4 animate-pulse">
+                                  <div className="flex items-center gap-4">
+                                      <div className="bg-white/20 p-3 rounded-full">
+                                          <Gem size={32} className="text-white" />
+                                      </div>
+                                      <div>
+                                          <h3 className="text-xl font-bold">Jornada Completa!</h3>
+                                          <p className="text-yellow-50 text-sm">Você leu toda a Bíblia. Desbloqueie o tema exclusivo.</p>
+                                      </div>
+                                  </div>
+                                  <button 
+                                      onClick={activateGoldenTheme}
+                                      className="bg-white text-amber-600 px-6 py-2 rounded-xl font-bold hover:bg-yellow-50 transition-colors shadow-md"
+                                  >
+                                      Ativar Tema Peregrino
+                                  </button>
+                              </div>
+                          )}
 
                           {/* Invite Friends Banner */}
                           <div className="bg-gradient-to-r from-emerald-500 to-teal-600 rounded-2xl p-6 text-white shadow-lg flex flex-col sm:flex-row justify-between items-center gap-6 relative overflow-hidden">
@@ -2355,6 +2650,8 @@ const App: React.FC = () => {
                       )}
 
                       {activeTab === 'tracker' && renderTracker()}
+                      
+                      {activeTab === 'devotional' && renderDevotional()}
                       
                       {activeTab === 'achievements' && renderAchievements()}
                       
