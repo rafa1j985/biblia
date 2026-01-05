@@ -1436,18 +1436,53 @@ const App: React.FC = () => {
             </div>
 
             {trackerMode === 'select' && (
-               <div className="mt-8 pt-6 border-t border-gray-100 dark:border-slate-800 flex justify-end items-center gap-4">
-                  <div className="text-sm text-gray-500 dark:text-gray-400">
-                     {sessionSelectedChapters.length} capítulos selecionados
+               <div className="mt-8 pt-6 border-t border-gray-100 dark:border-slate-800">
+                  {sessionSelectedChapters.length > 0 && (
+                     <div className="mb-6 animate-fade-in">
+                       <h3 className="font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-2 text-sm uppercase tracking-wide">
+                          <Sparkles size={16} className="text-indigo-500" /> Estilo do Devocional IA
+                       </h3>
+                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                         {Object.entries(DEVOTIONAL_STYLES).map(([key, style]) => {
+                            const Icon = IconMap[style.icon] || Star;
+                            const isSelected = devotionalStyle === key;
+                            return (
+                              <button
+                                key={key}
+                                onClick={() => setDevotionalStyle(key as DevotionalStyle)}
+                                className={`p-3 rounded-xl border text-left transition-all flex items-start gap-3 ${
+                                   isSelected 
+                                   ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-500 ring-1 ring-indigo-500' 
+                                   : 'bg-white dark:bg-slate-900 border-gray-200 dark:border-slate-700 hover:border-indigo-300'
+                                }`}
+                              >
+                                 <div className={`p-2 rounded-lg ${isSelected ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-100 text-gray-500'}`}>
+                                     <Icon size={18} />
+                                 </div>
+                                 <div>
+                                     <div className="font-bold text-sm text-gray-900 dark:text-white">{style.title}</div>
+                                     <div className="text-xs text-gray-500 dark:text-gray-400 leading-tight mt-0.5">{style.description}</div>
+                                 </div>
+                              </button>
+                            )
+                         })}
+                       </div>
+                     </div>
+                  )}
+
+                  <div className="flex justify-end items-center gap-4">
+                      <div className="text-sm text-gray-500 dark:text-gray-400">
+                         {sessionSelectedChapters.length} capítulos selecionados
+                      </div>
+                      <button 
+                         onClick={handleSaveSession}
+                         disabled={sessionSelectedChapters.length === 0 || isGeneratingAI}
+                         className="bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-indigo-700 text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-indigo-200 dark:shadow-none flex items-center gap-2 transition-all"
+                      >
+                         {isGeneratingAI ? <Loader2 className="animate-spin" /> : <Save size={20} />}
+                         Salvar Leitura
+                      </button>
                   </div>
-                  <button 
-                     onClick={handleSaveSession}
-                     disabled={sessionSelectedChapters.length === 0 || isGeneratingAI}
-                     className="bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-indigo-700 text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-indigo-200 dark:shadow-none flex items-center gap-2 transition-all"
-                  >
-                     {isGeneratingAI ? <Loader2 className="animate-spin" /> : <Save size={20} />}
-                     Salvar Leitura
-                  </button>
                </div>
             )}
             
