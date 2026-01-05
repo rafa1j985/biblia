@@ -69,10 +69,9 @@ import {
   BrainCircuit,
   PenLine,
   Save,
-  Baby,
   SmilePlus,
-  SwitchCamera,
-  Edit
+  Edit,
+  UserCog
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -637,7 +636,7 @@ const App: React.FC = () => {
   const [isCreatingFamily, setIsCreatingFamily] = useState(false);
   const [joinCode, setJoinCode] = useState('');
   const [newFamilyName, setNewFamilyName] = useState('');
-  
+
   // Data State (Admin)
   const [adminLogs, setAdminLogs] = useState<any[]>([]);
   const [isAdminLoading, setIsAdminLoading] = useState(false);
@@ -704,38 +703,46 @@ const App: React.FC = () => {
       if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
         setUser(null);
         setCurrentProfile(null);
-      } else {
+      } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION' || event === 'PASSWORD_RECOVERY') {
         setUser(session?.user ?? null);
       }
     });
     return () => subscription.unsubscribe();
   }, []);
 
+  // Fetch Main Profile and Dependents
   useEffect(() => {
     if (user) {
         const fetchProfiles = async () => {
+            // 1. Fetch Main Profile (Parent)
             const { data: mainProfile, error: mainError } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+            
+            let loadedMainProfile = mainProfile;
+
             if (!mainProfile && !mainError) { 
+                  // Create if not exists
                   const { data: newProfile } = await supabase.from('profiles').upsert({
                     id: user.id,
                     email: user.email,
                     full_name: user.user_metadata?.full_name || user.email.split('@')[0],
                     avatar_url: ''
                 }).select().single();
-                if(newProfile) {
-                    setCurrentProfile(newProfile);
-                    setUserProfile(newProfile);
-                }
-            } else if (mainProfile) {
-                setCurrentProfile(mainProfile);
-                setUserProfile(mainProfile);
+                loadedMainProfile = newProfile;
+            }
+
+            // 3. Set Current Profile (Default to Main if not set)
+            if (loadedMainProfile) {
+                // Keep userProfile as the main user profile to allow correct family management
+                setUserProfile(loadedMainProfile);
+                setCurrentProfile(loadedMainProfile);
             }
         };
         fetchProfiles();
         fetchNews();
     }
-  }, [user]);
+  }, [user, familyData]); // Refresh when family joined
 
+  // Fetch Data when Current Profile Changes
   useEffect(() => {
     if (currentProfile) {
       const storedPlan = localStorage.getItem(`bible_plan_${currentProfile.id}`);
@@ -748,7 +755,8 @@ const App: React.FC = () => {
       if(storedProfile) {
           setInsightProfile(storedProfile as InsightProfileType);
       } else {
-          setInsightProfile('DISCIPLE');
+          // Default profile based on role
+          setInsightProfile(currentProfile.manager_id ? 'CHILD' : 'DISCIPLE');
       }
       fetchData(currentProfile.id);
     }
@@ -815,7 +823,7 @@ const App: React.FC = () => {
                   membersStats.push({
                       userId: p.id,
                       name: p.full_name,
-                      email: p.email || (p.username ? `@${p.username}` : 'Dependente'),
+                      email: p.email || (p.manager_id ? 'Dependente' : 'Usuário'),
                       streak,
                       chaptersReadToday: readToday,
                       totalChaptersRead: totalRead,
@@ -843,7 +851,10 @@ const App: React.FC = () => {
       const { data, error } = await supabase.from('families').insert({ name: newFamilyName, invite_code: code }).select().single();
       if (error) { alert('Erro ao criar família.'); return; }
       if (data) {
-          await supabase.from('profiles').update({ family_id: data.id }).eq('id', user.id);
+          // Update Current Profile only
+          await supabase.from('profiles').update({ family_id: data.id }).eq('id', currentProfile?.id);
+          // Also update dependents if they exist? Typically whole family joins.
+          // For simplicity, just update current for now.
           setUserProfile({ ...userProfile!, family_id: data.id });
           alert('Família criada!');
           setIsCreatingFamily(false);
@@ -854,7 +865,13 @@ const App: React.FC = () => {
       if (!joinCode.trim() || !user) return;
       const { data: family } = await supabase.from('families').select('*').eq('invite_code', joinCode.toUpperCase()).single();
       if (!family) { alert('Código inválido.'); return; }
-      await supabase.from('profiles').update({ family_id: family.id }).eq('id', user.id);
+      
+      // Update Current Profile
+      await supabase.from('profiles').update({ family_id: family.id }).eq('id', currentProfile?.id);
+      
+      // If parent joins, maybe ask to move dependents too? 
+      // For now, let's assume manual joining or auto-join later.
+      
       setUserProfile({ ...userProfile!, family_id: family.id });
       alert(`Bem-vindo à família ${family.name}!`);
   };
@@ -1094,6 +1111,7 @@ const App: React.FC = () => {
     setIsGeneratingAI(true);
     let reflection = await generateDevotional(book.name, sessionSelectedChapters, insightProfile);
     
+    // IMPORTANT: Saves logs to the CURRENT PROFILE ID, not just the auth user ID
     await supabase.from('reading_logs').insert({
         user_id: currentProfile.id,
         user_email: currentProfile.email || currentProfile.username, 
@@ -1168,8 +1186,6 @@ const App: React.FC = () => {
       setUpdatingTicketId(null);
   };
 
-  // --- Render Helpers ---
-
   const renderTracker = () => {
     return (
       <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
@@ -1235,7 +1251,7 @@ const App: React.FC = () => {
           <div className="max-w-6xl mx-auto animate-fade-in">
               <div className="text-center mb-8">
                   <h2 className="text-3xl font-bold text-gray-900 dark:text-white serif">Sala de Troféus</h2>
-                  <p className="text-gray-500 dark:text-gray-400">Sua jornada de fidelidade e constância.</p>
+                  <p className="text-gray-500 dark:text-gray-400">Jornada de {currentProfile?.full_name}</p>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1265,160 +1281,113 @@ const App: React.FC = () => {
   };
 
   const renderFamily = () => {
-      // Parent View (No Family)
-      if (!userProfile?.family_id) {
-          return (
-              <div className="max-w-2xl mx-auto space-y-8 animate-fade-in">
-                  <div className="text-center">
-                      <h2 className="text-2xl font-bold text-gray-900 dark:text-white serif mb-2">Conecte sua Família</h2>
-                      <p className="text-gray-500 dark:text-gray-400">Leiam juntos, motivem-se e cresçam em comunhão.</p>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 hover:shadow-md transition-shadow">
-                          <div className="w-12 h-12 bg-indigo-100 dark:bg-indigo-900/30 rounded-xl flex items-center justify-center text-indigo-600 dark:text-indigo-400 mb-4"><UserPlus size={24} /></div>
-                          <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Criar Nova Família</h3>
-                          {isCreatingFamily ? (
-                              <div className="space-y-3">
-                                  <input type="text" placeholder="Nome da Família" value={newFamilyName} onChange={e => setNewFamilyName(e.target.value)} className="w-full p-2 text-sm border rounded-lg dark:bg-slate-800 dark:border-slate-700 dark:text-white" />
-                                  <button onClick={handleCreateFamily} className="w-full bg-indigo-600 text-white px-3 py-2 text-sm rounded-lg hover:bg-indigo-700">Criar</button>
-                              </div>
-                          ) : (
-                              <button onClick={() => setIsCreatingFamily(true)} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold text-sm hover:bg-indigo-700 transition-colors">Começar</button>
-                          )}
-                      </div>
-                      <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 hover:shadow-md transition-shadow">
-                          <div className="w-12 h-12 bg-green-100 dark:bg-green-900/30 rounded-xl flex items-center justify-center text-green-600 dark:text-green-400 mb-4"><LogIn size={24} /></div>
-                          <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Entrar em Família</h3>
-                          <div className="space-y-3">
-                              <input type="text" placeholder="Código de Convite" value={joinCode} onChange={e => setJoinCode(e.target.value)} className="w-full p-3 text-sm border rounded-xl dark:bg-slate-800 dark:text-white uppercase text-center font-mono" />
-                              <button onClick={handleJoinFamily} className="w-full bg-green-600 text-white py-3 rounded-xl font-bold text-sm hover:bg-green-700 transition-colors">Entrar</button>
-                          </div>
-                      </div>
-                  </div>
-              </div>
-          );
-      }
-
-      // Parent View (With Family)
       return (
-          <div className="space-y-6 animate-fade-in">
-              <div className="bg-indigo-600 rounded-2xl p-6 text-white shadow-lg relative overflow-hidden">
-                  <div className="relative z-10">
-                      <h2 className="text-2xl font-bold mb-1">Família {familyData?.name}</h2>
-                      <div className="flex items-center gap-2 text-indigo-100 text-sm mb-6"><Users size={16} /> {familyMembers.length} membros</div>
-                      <div className="bg-white/10 backdrop-blur-sm p-3 rounded-lg inline-flex items-center gap-3 border border-white/20">
-                          <span className="text-xs font-bold uppercase tracking-wide text-indigo-200">Código:</span>
-                          <span className="font-mono text-lg font-bold tracking-wider">{familyData?.invite_code}</span>
-                          <button onClick={() => { navigator.clipboard.writeText(familyData?.invite_code || ''); alert('Copiado!'); }} className="p-1 hover:bg-white/20 rounded"><Copy size={16} /></button>
+          <div className="space-y-8 animate-fade-in">
+              {/* 2. SEÇÃO DE GRUPO FAMILIAR (Condicional) */}
+              {!userProfile?.family_id ? (
+                  // Parent View (No Family Group)
+                  <div className="border-t border-gray-200 dark:border-slate-800 pt-8">
+                      <div className="text-center mb-6">
+                          <h2 className="text-2xl font-bold text-gray-900 dark:text-white serif mb-2">Conecte sua Casa</h2>
+                          <p className="text-gray-500 dark:text-gray-400 max-w-md mx-auto">
+                              Crie um <strong>Grupo Familiar</strong> para convidar outros adultos (cônjuge, avós) e compartilhar o feed de leitura e ranking com todos os perfis.
+                          </p>
                       </div>
-                  </div>
-                  <Users className="absolute -bottom-6 -right-6 text-indigo-500 opacity-50" size={150} />
-              </div>
-
-              {/* General Family Feed */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {/* Stats List */}
-                  <div className="md:col-span-1 space-y-4">
-                      <h3 className="font-bold text-gray-900 dark:text-white text-lg">Ranking</h3>
-                      {familyMembers.map((member, i) => (
-                          <div key={member.userId} className="bg-white dark:bg-slate-900 p-4 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 flex items-center justify-between">
-                              <div className="flex items-center gap-3">
-                                  <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${i===0 ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-600'}`}>{i+1}</div>
-                                  <div className="overflow-hidden">
-                                      <p className="font-bold text-sm truncate w-24">{member.name}</p>
-                                      <p className="text-[10px] text-gray-400">{member.streak} dias 🔥</p>
-                                  </div>
-                              </div>
-                              <div className="text-right">
-                                  <p className="font-bold text-indigo-600">{member.totalChaptersRead}</p>
-                                  <p className="text-[10px] text-gray-400">Total</p>
-                              </div>
-                          </div>
-                      ))}
-                  </div>
-
-                  {/* Feed */}
-                  <div className="md:col-span-2 space-y-4">
-                      <h3 className="font-bold text-gray-900 dark:text-white text-lg flex items-center gap-2"><Activity size={20}/> Atividade Recente</h3>
-                      {familyFeed.map(log => {
-                          const isLiked = log.likes?.includes(currentProfile?.id || '');
-                          return (
-                              <div key={log.id} className="bg-white dark:bg-slate-900 p-4 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800">
-                                  <div className="flex justify-between items-start">
-                                      <div className="flex items-center gap-3">
-                                          <div className="w-10 h-10 rounded-full bg-indigo-50 dark:bg-slate-800 flex items-center justify-center text-sm font-bold text-indigo-600 dark:text-indigo-400">{log.user_name ? log.user_name.charAt(0).toUpperCase() : 'U'}</div>
-                                          <div>
-                                              <p className="text-sm text-gray-900 dark:text-white"><span className="font-bold">{log.user_name}</span> leu <span className="font-bold text-indigo-600 dark:text-indigo-400">{log.bookId} {log.chapters.join(', ')}</span></p>
-                                              <p className="text-xs text-gray-400">{new Date(log.timestamp).toLocaleDateString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 hover:shadow-md transition-shadow relative overflow-hidden group">
+                              <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-50 dark:bg-slate-800 rounded-bl-full -mr-4 -mt-4 transition-transform group-hover:scale-110"></div>
+                              <div className="relative z-10">
+                                  <div className="w-12 h-12 bg-indigo-100 dark:bg-indigo-900/30 rounded-xl flex items-center justify-center text-indigo-600 dark:text-indigo-400 mb-4"><Users size={24} /></div>
+                                  <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Criar Novo Grupo</h3>
+                                  {isCreatingFamily ? (
+                                      <div className="space-y-3 animate-fade-in">
+                                          <input type="text" placeholder="Sobrenome da Família" value={newFamilyName} onChange={e => setNewFamilyName(e.target.value)} className="w-full p-2 text-sm border rounded-lg dark:bg-slate-800 dark:border-slate-700 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none" />
+                                          <div className="flex gap-2">
+                                              <button onClick={() => setIsCreatingFamily(false)} className="flex-1 bg-gray-100 text-gray-600 px-3 py-2 text-sm rounded-lg hover:bg-gray-200">Cancelar</button>
+                                              <button onClick={handleCreateFamily} className="flex-1 bg-indigo-600 text-white px-3 py-2 text-sm rounded-lg hover:bg-indigo-700 font-bold">Criar</button>
                                           </div>
                                       </div>
-                                      <button onClick={() => handleToggleLike(log.id, log.likes)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${isLiked ? 'text-pink-600 bg-pink-50 dark:bg-pink-900/20' : 'text-gray-500 hover:bg-gray-100'}`}><Heart size={14} fill={isLiked ? "currentColor" : "none"} /> {log.likes?.length || 0}</button>
+                                  ) : (
+                                      <button onClick={() => setIsCreatingFamily(true)} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold text-sm hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-200 dark:shadow-none">Começar Grupo</button>
+                                  )}
+                              </div>
+                          </div>
+                          <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 hover:shadow-md transition-shadow relative overflow-hidden group">
+                              <div className="absolute top-0 right-0 w-24 h-24 bg-green-50 dark:bg-slate-800 rounded-bl-full -mr-4 -mt-4 transition-transform group-hover:scale-110"></div>
+                              <div className="relative z-10">
+                                  <div className="w-12 h-12 bg-green-100 dark:bg-green-900/30 rounded-xl flex items-center justify-center text-green-600 dark:text-green-400 mb-4"><LogIn size={24} /></div>
+                                  <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Entrar em Grupo Existente</h3>
+                                  <div className="space-y-3">
+                                      <input type="text" placeholder="Código de Convite" value={joinCode} onChange={e => setJoinCode(e.target.value)} className="w-full p-3 text-sm border rounded-xl dark:bg-slate-800 dark:text-white uppercase text-center font-mono focus:ring-2 focus:ring-green-500 outline-none" />
+                                      <button onClick={handleJoinFamily} className="w-full bg-green-600 text-white py-3 rounded-xl font-bold text-sm hover:bg-green-700 transition-colors shadow-lg shadow-green-200 dark:shadow-none">Entrar</button>
                                   </div>
                               </div>
-                          );
-                      })}
-                  </div>
-              </div>
-          </div>
-      );
-  };
-
-  const renderSupport = () => {
-      return (
-          <div className="max-w-2xl mx-auto space-y-6 animate-fade-in">
-              <div className="bg-white dark:bg-slate-900 p-8 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 text-center">
-                   <div className="bg-indigo-100 dark:bg-indigo-900/30 w-16 h-16 rounded-full flex items-center justify-center text-indigo-600 dark:text-indigo-400 mx-auto mb-4">
-                       <LifeBuoy size={32} />
-                   </div>
-                   <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Como podemos ajudar?</h2>
-                   <p className="text-gray-500 dark:text-gray-400 text-sm">Envie dúvidas, sugestões ou relate problemas.</p>
-              </div>
-
-              <form onSubmit={handleSupportSubmit} className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800">
-                  {supportSuccess ? (
-                      <div className="text-center py-8">
-                          <div className="text-green-500 mb-2 flex justify-center"><CheckCircle2 size={48} /></div>
-                          <h3 className="text-xl font-bold text-gray-900 dark:text-white">Mensagem Enviada!</h3>
-                          <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">Nossa equipe responderá em breve por e-mail.</p>
-                          <button type="button" onClick={() => setSupportSuccess(false)} className="mt-4 text-indigo-600 font-bold text-sm hover:underline">Enviar nova mensagem</button>
+                          </div>
                       </div>
-                  ) : (
-                      <div className="space-y-4">
-                          <div>
-                              <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Tipo de Mensagem</label>
-                              <div className="grid grid-cols-3 gap-2">
-                                  {['problem', 'suggestion', 'question'].map(type => (
-                                      <button
-                                          key={type}
-                                          type="button"
-                                          onClick={() => setSupportForm({...supportForm, type})}
-                                          className={`py-2 text-sm font-medium rounded-lg border ${supportForm.type === type ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-500 text-indigo-700 dark:text-indigo-300' : 'bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-700 text-gray-600 dark:text-gray-400'}`}
-                                      >
-                                          {type === 'problem' ? 'Problema' : type === 'suggestion' ? 'Sugestão' : 'Dúvida'}
-                                      </button>
-                                  ))}
+                  </div>
+              ) : (
+                  // Parent View (With Family Group)
+                  <div className="space-y-6 animate-fade-in">
+                      <div className="bg-indigo-600 rounded-2xl p-6 text-white shadow-lg relative overflow-hidden">
+                          <div className="relative z-10">
+                              <h2 className="text-2xl font-bold mb-1">Família {familyData?.name}</h2>
+                              <div className="flex items-center gap-2 text-indigo-100 text-sm mb-6"><Users size={16} /> {familyMembers.length} membros no grupo</div>
+                              <div className="bg-white/10 backdrop-blur-sm p-3 rounded-lg inline-flex items-center gap-3 border border-white/20">
+                                  <span className="text-xs font-bold uppercase tracking-wide text-indigo-200">Código de Convite:</span>
+                                  <span className="font-mono text-lg font-bold tracking-wider">{familyData?.invite_code}</span>
+                                  <button onClick={() => { navigator.clipboard.writeText(familyData?.invite_code || ''); alert('Copiado!'); }} className="p-1 hover:bg-white/20 rounded"><Copy size={16} /></button>
                               </div>
                           </div>
-                          <div>
-                              <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Sua Mensagem</label>
-                              <textarea
-                                  value={supportForm.message}
-                                  onChange={e => setSupportForm({...supportForm, message: e.target.value})}
-                                  required
-                                  className="w-full p-3 rounded-xl border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-white text-sm outline-none focus:ring-2 focus:ring-indigo-500 h-32 resize-none"
-                                  placeholder="Descreva detalhadamente..."
-                              />
-                          </div>
-                          <button 
-                              type="submit" 
-                              disabled={isSubmittingSupport}
-                              className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold hover:bg-indigo-700 transition-colors flex justify-center"
-                          >
-                              {isSubmittingSupport ? <Loader2 className="animate-spin" /> : 'Enviar Mensagem'}
-                          </button>
+                          <Users className="absolute -bottom-6 -right-6 text-indigo-500 opacity-50" size={150} />
                       </div>
-                  )}
-              </form>
+
+                      {/* General Family Feed */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                          {/* Stats List */}
+                          <div className="md:col-span-1 space-y-4">
+                              <h3 className="font-bold text-gray-900 dark:text-white text-lg flex items-center gap-2"><Trophy size={18} className="text-yellow-500"/> Ranking</h3>
+                              {familyMembers.map((member, i) => (
+                                  <div key={member.userId} className="bg-white dark:bg-slate-900 p-4 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 flex items-center justify-between">
+                                      <div className="flex items-center gap-3">
+                                          <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${i===0 ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-600'}`}>{i+1}</div>
+                                          <div className="overflow-hidden">
+                                              <p className="font-bold text-sm truncate w-24">{member.name}</p>
+                                              <p className="text-[10px] text-gray-400">{member.streak} dias 🔥</p>
+                                          </div>
+                                      </div>
+                                      <div className="text-right">
+                                          <p className="font-bold text-indigo-600">{member.totalChaptersRead}</p>
+                                          <p className="text-[10px] text-gray-400">Total</p>
+                                      </div>
+                                  </div>
+                              ))}
+                          </div>
+
+                          {/* Feed */}
+                          <div className="md:col-span-2 space-y-4">
+                              <h3 className="font-bold text-gray-900 dark:text-white text-lg flex items-center gap-2"><Activity size={20} className="text-blue-500"/> Atividade Recente</h3>
+                              {familyFeed.map(log => {
+                                  const isLiked = log.likes?.includes(currentProfile?.id || '');
+                                  return (
+                                      <div key={log.id} className="bg-white dark:bg-slate-900 p-4 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800">
+                                          <div className="flex justify-between items-start">
+                                              <div className="flex items-center gap-3">
+                                                  <div className="w-10 h-10 rounded-full bg-indigo-50 dark:bg-slate-800 flex items-center justify-center text-sm font-bold text-indigo-600 dark:text-indigo-400">{log.user_name ? log.user_name.charAt(0).toUpperCase() : 'U'}</div>
+                                                  <div>
+                                                      <p className="text-sm text-gray-900 dark:text-white"><span className="font-bold">{log.user_name}</span> leu <span className="font-bold text-indigo-600 dark:text-indigo-400">{log.bookId} {log.chapters.join(', ')}</span></p>
+                                                      <p className="text-xs text-gray-400">{new Date(log.timestamp).toLocaleDateString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</p>
+                                                  </div>
+                                              </div>
+                                              <button onClick={() => handleToggleLike(log.id, log.likes)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${isLiked ? 'text-pink-600 bg-pink-50 dark:bg-pink-900/20' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-slate-800'}`}><Heart size={14} fill={isLiked ? "currentColor" : "none"} /> {log.likes?.length || 0}</button>
+                                          </div>
+                                      </div>
+                                  );
+                              })}
+                              {familyFeed.length === 0 && <p className="text-gray-400 text-sm text-center py-4">Nenhuma atividade recente.</p>}
+                          </div>
+                      </div>
+                  </div>
+              )}
           </div>
       );
   };
@@ -1431,795 +1400,404 @@ const App: React.FC = () => {
     );
   }
 
-  if (!user && !currentProfile) {
-    return <LoginScreen onLogin={(usr, profile) => {
-        setUser(usr);
-        if(profile) {
-            setCurrentProfile(profile);
-            setUserProfile(profile);
-        }
-    }} />;
+  if (!user) {
+    return <LoginScreen onLogin={(u) => setUser(u)} />;
+  }
+
+  if (!currentProfile) {
+     return <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950"><Loader2 className="animate-spin text-indigo-600"/></div>;
   }
 
   return (
-    <div className={`min-h-screen transition-colors ${theme === 'dark' ? 'dark bg-slate-950' : 'bg-slate-50'}`}>
-      {/* Mobile Header / Nav */}
-      <div className="md:hidden p-4 bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-800 flex justify-between items-center sticky top-0 z-40">
-         <div className="flex items-center gap-2">
-            <div className="bg-indigo-600 p-1.5 rounded-lg text-white">
-               <Book size={20} />
-            </div>
-            <span className="font-bold text-gray-900 dark:text-white serif">Bible Tracker</span>
-         </div>
-         <div className="flex items-center gap-2">
-            <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="p-2 text-gray-600 dark:text-gray-300">
-                {mobileMenuOpen ? <X size={24}/> : <Menu size={24}/>}
-            </button>
-         </div>
-      </div>
+    <div className={`min-h-screen transition-colors duration-300 ${theme === 'dark' ? 'dark bg-slate-950 text-white' : 'bg-slate-50 text-gray-900'}`}>
+       {/* Modals */}
+       {isChangePasswordOpen && <ChangePasswordModal onClose={() => setIsChangePasswordOpen(false)} />}
+       {isPlanModalOpen && <PlanSelectionModal onClose={() => setIsPlanModalOpen(false)} onSelectPlan={handleSelectPlan} />}
+       {readingChapter && (
+         <BibleReaderModal 
+            book={readingChapter.book} 
+            chapter={readingChapter.chapter} 
+            onClose={() => setReadingChapter(null)} 
+            onNext={() => {
+                const current = readingChapter.chapter;
+                if (current < readingChapter.book.chapters) {
+                    setReadingChapter({ ...readingChapter, chapter: current + 1 });
+                }
+            }}
+            onPrev={() => {
+                const current = readingChapter.chapter;
+                if (current > 1) {
+                    setReadingChapter({ ...readingChapter, chapter: current - 1 });
+                }
+            }}
+         />
+       )}
 
-      <div className="flex max-w-7xl mx-auto min-h-screen">
-         {/* Sidebar */}
-         <aside className={`
-            fixed inset-y-0 left-0 z-50 w-64 bg-white dark:bg-slate-900 border-r border-gray-200 dark:border-slate-800 transform transition-transform duration-300 ease-in-out md:translate-x-0 md:static md:h-auto overflow-y-auto
-            ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
-         `}>
-            <div className="p-6 h-full flex flex-col">
-               <div className="flex items-center gap-3 mb-6 px-2">
-                  <div className="bg-indigo-600 p-2 rounded-xl text-white shadow-lg shadow-indigo-200 dark:shadow-none">
-                     <Book size={24} />
-                  </div>
-                  <div>
-                     <h1 className="font-bold text-lg text-gray-900 dark:text-white serif">Bible Tracker</h1>
-                     <p className="text-xs text-gray-500 dark:text-gray-400">Jornada Diária</p>
-                  </div>
-               </div>
+       {/* Top Navigation Bar */}
+       <header className="sticky top-0 z-40 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-gray-200 dark:border-slate-800 px-4 py-3">
+          <div className="max-w-7xl mx-auto flex justify-between items-center">
+             <div className="flex items-center gap-3">
+                <div className="bg-indigo-600 p-2 rounded-lg text-white shadow-lg shadow-indigo-200 dark:shadow-none">
+                    <BookOpen size={20} />
+                </div>
+                <div>
+                   <h1 className="font-bold text-lg leading-tight hidden sm:block">Bíblia Tracker</h1>
+                   <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">Olá, {currentProfile.full_name.split(' ')[0]}</p>
+                </div>
+             </div>
 
-               <nav className="space-y-1 flex-1">
-                  {[
-                     { id: 'dashboard', label: 'Visão Geral', icon: LayoutDashboard },
-                     { id: 'tracker', label: 'Leitura Livre', icon: BookOpen },
-                     { id: 'history', label: 'Histórico', icon: History },
-                     { id: 'achievements', label: 'Conquistas', icon: Trophy },
-                     { id: 'family', label: 'Família', icon: Users },
-                     { id: 'support', label: 'Suporte', icon: LifeBuoy },
-                     ...(isAdmin ? [{ id: 'admin', label: 'Administração', icon: ShieldAlert }] : [])
-                  ].map(item => (
-                     <button
-                        key={item.id}
-                        onClick={() => { setActiveTab(item.id as any); setMobileMenuOpen(false); }}
-                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium transition-all ${
-                           activeTab === item.id 
-                           ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-300' 
-                           : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-800'
-                        }`}
-                     >
-                        <item.icon size={20} />
-                        {item.label}
-                     </button>
-                  ))}
-               </nav>
+             <div className="flex items-center gap-2 sm:gap-4">
+                <button onClick={toggleTheme} className="p-2 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-full transition-colors">
+                   {theme === 'light' ? <Moon size={20} className="text-gray-600" /> : <Sun size={20} className="text-gray-300" />}
+                </button>
+                <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="p-2 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-full md:hidden">
+                   {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+                </button>
+                <button onClick={handleLogout} className="hidden md:flex items-center gap-2 text-sm font-bold text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 px-3 py-2 rounded-lg transition-colors">
+                   <LogOut size={18} /> Sair
+                </button>
+             </div>
+          </div>
+       </header>
 
-               <div className="mt-auto pt-4 border-t border-gray-100 dark:border-slate-800 space-y-2">
-                  <div className="px-3 py-2 flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-indigo-100 dark:bg-slate-800 flex items-center justify-center text-indigo-600 dark:text-indigo-400 font-bold text-xs">
-                          {currentProfile?.full_name?.charAt(0).toUpperCase()}
-                      </div>
-                      <div className="flex-1 overflow-hidden">
-                          <p className="text-sm font-bold text-gray-900 dark:text-white truncate">{currentProfile?.full_name || 'Usuário'}</p>
-                          <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{currentProfile?.username ? `@${currentProfile.username}` : user?.email}</p>
-                      </div>
-                  </div>
-                  
-                  <button onClick={toggleTheme} className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors">
-                     {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
-                     {theme === 'light' ? 'Modo Escuro' : 'Modo Claro'}
-                  </button>
-                  
-                  <button onClick={() => setIsChangePasswordOpen(true)} className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors">
-                      <KeyRound size={18} /> Alterar Senha
-                  </button>
+       {/* Main Layout */}
+       <div className="max-w-7xl mx-auto flex flex-col md:flex-row gap-6 p-4 md:p-8">
+          
+          {/* Sidebar / Navigation */}
+          <nav className={`md:w-64 space-y-2 ${mobileMenuOpen ? 'block' : 'hidden'} md:block`}>
+             <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all ${activeTab === 'dashboard' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200 dark:shadow-none' : 'text-gray-600 dark:text-gray-400 hover:bg-white dark:hover:bg-slate-800'}`}>
+                <LayoutDashboard size={20} /> Início
+             </button>
+             <button onClick={() => setActiveTab('tracker')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all ${activeTab === 'tracker' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200 dark:shadow-none' : 'text-gray-600 dark:text-gray-400 hover:bg-white dark:hover:bg-slate-800'}`}>
+                <BookOpen size={20} /> Leitura
+             </button>
+             <button onClick={() => setActiveTab('history')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all ${activeTab === 'history' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200 dark:shadow-none' : 'text-gray-600 dark:text-gray-400 hover:bg-white dark:hover:bg-slate-800'}`}>
+                <History size={20} /> Histórico
+             </button>
+             <button onClick={() => setActiveTab('achievements')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all ${activeTab === 'achievements' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200 dark:shadow-none' : 'text-gray-600 dark:text-gray-400 hover:bg-white dark:hover:bg-slate-800'}`}>
+                <Trophy size={20} /> Conquistas
+             </button>
+             <button onClick={() => setActiveTab('family')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all ${activeTab === 'family' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200 dark:shadow-none' : 'text-gray-600 dark:text-gray-400 hover:bg-white dark:hover:bg-slate-800'}`}>
+                <Users size={20} /> Família
+             </button>
+             <button onClick={() => setActiveTab('support')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all ${activeTab === 'support' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200 dark:shadow-none' : 'text-gray-600 dark:text-gray-400 hover:bg-white dark:hover:bg-slate-800'}`}>
+                <LifeBuoy size={20} /> Suporte
+             </button>
+             {isAdmin && (
+                <button onClick={() => setActiveTab('admin')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all ${activeTab === 'admin' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200 dark:shadow-none' : 'text-gray-600 dark:text-gray-400 hover:bg-white dark:hover:bg-slate-800'}`}>
+                    <ShieldAlert size={20} /> Admin
+                </button>
+             )}
+          </nav>
 
-                  <button onClick={handleLogout} className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
-                     <LogOut size={18} /> Sair
-                  </button>
-               </div>
-            </div>
-         </aside>
-
-         {/* Main Content */}
-         <main className="flex-1 p-4 md:p-8 overflow-x-hidden bg-gray-50/50 dark:bg-slate-950">
+          {/* Content Area */}
+          <main className="flex-1 min-w-0">
              {activeTab === 'dashboard' && (
-                 <div className="space-y-6 max-w-5xl mx-auto animate-fade-in">
-                     {/* News Banner */}
-                     {siteNews && (
-                        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl p-4 text-white shadow-lg mb-6 flex items-start gap-4 animate-fade-in">
-                           <div className="bg-white/20 p-2 rounded-lg flex-shrink-0">
-                               <Megaphone size={24} />
-                           </div>
-                           <div>
-                               <h3 className="font-bold text-lg mb-1">Novidades no App</h3>
-                               <p className="text-blue-50 text-sm leading-relaxed whitespace-pre-line">{siteNews}</p>
-                           </div>
+                <div className="space-y-6 animate-fade-in">
+                    {/* Welcome & Stats */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <StatCard title="Capítulos Lidos" value={totalReadCount} subtext={`${completionPercentage.toFixed(1)}% da Bíblia`} icon={<BookOpen size={20}/>} highlight={true} />
+                        <StatCard title="Ofensiva (Dias)" value={currentStreak} subtext="Continue firme!" icon={<Flame size={20}/>} />
+                        <StatCard title="Plano Atual" value={userPlan?.title || "Leitura Livre"} subtext={userPlan ? `${Math.round(getPlanProgress?.percent || 0)}% concluído` : "Definir plano"} icon={<Map size={20}/>} />
+                        <StatCard title="Conquistas" value={unlockedAchievements.size} subtext={`${ACHIEVEMENTS.length} disponíveis`} icon={<Trophy size={20}/>} />
+                    </div>
+
+                    {/* Site News */}
+                    {siteNews && (
+                        <div className="bg-gradient-to-r from-blue-500 to-indigo-600 rounded-xl p-4 text-white shadow-md flex items-start gap-3">
+                            <Megaphone size={24} className="flex-shrink-0 mt-1" />
+                            <div>
+                                <h3 className="font-bold text-sm mb-1">Novidades!</h3>
+                                <p className="text-sm opacity-90 whitespace-pre-line">{siteNews}</p>
+                            </div>
                         </div>
-                     )}
+                    )}
 
-                     {/* Greeting & Insight Config */}
-                     <div className="flex flex-col gap-6">
-                         <div className="flex flex-col md:flex-row gap-6 items-start justify-between">
-                             <div>
-                                 <h2 className="text-2xl font-bold text-gray-900 dark:text-white serif">
-                                     Olá, {currentProfile?.full_name?.split(' ')[0] || 'Peregrino'}!
-                                 </h2>
-                                 <p className="text-gray-500 dark:text-gray-400">
-                                     {userPlan ? `Seguindo o plano: ${userPlan.title}` : 'Que tal começar um plano de leitura hoje?'}
-                                 </p>
-                             </div>
-                             {!userPlan && (
-                                 <button onClick={() => setIsPlanModalOpen(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-lg shadow-indigo-200 dark:shadow-none transition-colors">
-                                     <Target size={16} /> Escolher Plano de Leitura
-                                 </button>
-                             )}
-                         </div>
+                    {/* Plan Progress */}
+                    {userPlan && getPlanProgress && (
+                        <div className="bg-white dark:bg-slate-900 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-slate-800">
+                            <div className="flex justify-between items-center mb-4">
+                                <h3 className="font-bold text-lg text-gray-900 dark:text-white">Seu Progresso no Plano</h3>
+                                <button onClick={() => setIsPlanModalOpen(true)} className="text-xs text-indigo-600 dark:text-indigo-400 font-bold hover:underline">Alterar</button>
+                            </div>
+                            <div className="mb-4">
+                                <div className="flex justify-between text-sm mb-1 text-gray-500 dark:text-gray-400">
+                                    <span>{getPlanProgress.readInScope} de {getPlanProgress.totalInScope} capítulos</span>
+                                    <span>{getPlanProgress.percent.toFixed(1)}%</span>
+                                </div>
+                                <ProgressBar current={getPlanProgress.readInScope} total={getPlanProgress.totalInScope} />
+                            </div>
+                            {getPlanProgress.nextBatch.length > 0 && (
+                                <div className="mt-4 bg-indigo-50 dark:bg-slate-800/50 rounded-lg p-4 flex justify-between items-center">
+                                    <div>
+                                        <p className="text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase mb-1">Próxima Leitura</p>
+                                        <p className="text-sm font-bold text-gray-900 dark:text-white">
+                                            {BIBLE_BOOKS.find(b=>b.id===getPlanProgress.nextBatch[0].bookId)?.name} {getPlanProgress.nextBatch[0].chapter}
+                                            {getPlanProgress.nextBatch.length > 1 ? ` - ${getPlanProgress.nextBatch[getPlanProgress.nextBatch.length-1].chapter}` : ''}
+                                        </p>
+                                    </div>
+                                    <button onClick={() => handleQuickRead(getPlanProgress.nextBatch)} className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-md hover:bg-indigo-700 transition-colors flex items-center gap-1">
+                                        Ler Agora <ChevronRight size={16}/>
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                    
+                    {!userPlan && (
+                        <div className="bg-indigo-50 dark:bg-slate-900/50 border border-indigo-100 dark:border-slate-800 rounded-xl p-6 text-center">
+                            <Map size={48} className="mx-auto text-indigo-300 mb-3" />
+                            <h3 className="font-bold text-gray-900 dark:text-white">Nenhum plano ativo</h3>
+                            <p className="text-gray-500 dark:text-gray-400 text-sm mb-4 max-w-sm mx-auto">Escolha um plano de leitura para guiar seus estudos e manter a constância.</p>
+                            <button onClick={() => setIsPlanModalOpen(true)} className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl font-bold shadow-lg shadow-indigo-200 dark:shadow-none hover:bg-indigo-700 transition-colors">
+                                Escolher Plano
+                            </button>
+                        </div>
+                    )}
 
-                         {/* Insight Profile Selector */}
-                         <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-indigo-100 dark:border-indigo-900/30 shadow-sm">
-                             <div className="flex items-center gap-2 mb-3">
-                                 <BrainCircuit className="text-indigo-600 dark:text-indigo-400" size={20} />
-                                 <h3 className="font-bold text-gray-900 dark:text-white">Configurar Insights de IA</h3>
-                             </div>
-                             <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-                                 Escolha o estilo de reflexão que a inteligência artificial deve gerar para <strong>{currentProfile?.full_name}</strong> ao final de cada leitura.
-                             </p>
-                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                 <div>
-                                     <select 
-                                         value={insightProfile} 
-                                         onChange={(e) => handleProfileChange(e.target.value as InsightProfileType)}
-                                         className="w-full p-3 rounded-lg border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-white text-sm font-medium focus:ring-2 focus:ring-indigo-500 outline-none"
-                                     >
-                                         {Object.values(INSIGHT_PROFILES).map((profile) => (
-                                             <option key={profile.id} value={profile.id}>
-                                                 {profile.label}
-                                             </option>
-                                         ))}
-                                     </select>
-                                 </div>
-                                 <div className="bg-indigo-50 dark:bg-indigo-900/20 p-3 rounded-lg border border-indigo-100 dark:border-indigo-900/30">
-                                     <div className="flex gap-3">
-                                         <div className="mt-1 text-indigo-600 dark:text-indigo-400">
-                                             <Info size={18} />
-                                         </div>
-                                         <div>
-                                             <p className="text-xs font-bold text-indigo-800 dark:text-indigo-200 uppercase mb-1">
-                                                 {INSIGHT_PROFILES[insightProfile].label}
-                                             </p>
-                                             <p className="text-xs text-indigo-700 dark:text-indigo-300 leading-relaxed">
-                                                 {INSIGHT_PROFILES[insightProfile].description}
-                                             </p>
-                                         </div>
-                                     </div>
-                                 </div>
-                             </div>
-                         </div>
-                     </div>
-
-                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                         <StatCard title="Capítulos Lidos" value={totalReadCount} subtext={`${completionPercentage.toFixed(1)}% da Bíblia`} icon={<BookOpen size={24}/>} />
-                         <StatCard title="Sequência Atual" value={`${currentStreak} dias`} subtext="Mantenha o ritmo!" icon={<Flame size={24}/>} highlight colorClass="bg-orange-500" />
-                         <StatCard title="Conquistas" value={unlockedAchievements.size} subtext={`${ACHIEVEMENTS.length} disponíveis`} icon={<Trophy size={24}/>} />
-                         <StatCard title="Previsão de Fim" value={advancedStats.projection.date} subtext={advancedStats.projection.days > 0 ? `${advancedStats.projection.days} dias restantes` : 'Concluído'} icon={<Calendar size={24}/>} />
-                     </div>
-
-                     {/* Plan Progress */}
-                     {userPlan && getPlanProgress && (
-                         <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800">
-                             <div className="flex justify-between items-end mb-4">
-                                 <div>
-                                     <h3 className="font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                                         <Map size={20} className="text-indigo-500" /> Progresso do Plano
-                                     </h3>
-                                     <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                                         {getPlanProgress.readInScope} de {getPlanProgress.totalInScope} capítulos
-                                     </p>
-                                 </div>
-                                 <div className="text-right">
-                                     <span className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">{getPlanProgress.percent.toFixed(1)}%</span>
-                                 </div>
-                             </div>
-                             <ProgressBar current={getPlanProgress.readInScope} total={getPlanProgress.totalInScope} />
-                             
-                             {getPlanProgress.nextBatch.length > 0 ? (
-                                 <div className="mt-6 p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg border border-indigo-100 dark:border-indigo-900/30">
-                                     <h4 className="text-sm font-bold text-indigo-900 dark:text-indigo-200 mb-2">Leitura de Hoje (Meta: {userPlan.targetDailyChapters} caps)</h4>
-                                     <div className="flex flex-wrap gap-2">
-                                         {getPlanProgress.nextBatch.slice(0, userPlan.targetDailyChapters).map((item, idx) => (
-                                             <span key={idx} className="bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-300 px-3 py-1 rounded-md text-xs font-bold border border-indigo-100 dark:border-indigo-800 shadow-sm">
-                                                 {item.bookId} {item.chapter}
-                                             </span>
-                                         ))}
-                                     </div>
-                                     <button 
-                                         onClick={() => handleQuickRead(getPlanProgress.nextBatch.slice(0, userPlan.targetDailyChapters))}
-                                         className="mt-4 w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-lg text-sm font-bold transition-colors"
-                                     >
-                                         Ir para Leitura
-                                     </button>
-                                 </div>
-                             ) : (
-                                 <div className="mt-6 text-center py-4 text-green-600 dark:text-green-400 font-medium bg-green-50 dark:bg-green-900/20 rounded-lg">
-                                     <CheckCircle2 className="inline-block mr-2" size={20} />
-                                     Você está em dia com seu plano!
-                                 </div>
-                             )}
-                         </div>
-                     )}
-
-                     {/* Charts */}
-                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                         <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800">
-                             <h3 className="font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-                                 <Activity size={20} className="text-indigo-500"/> Atividade Recente
-                             </h3>
-                             <div className="h-64">
-                                 <ResponsiveContainer width="100%" height="100%">
-                                     <BarChart data={chartData}>
-                                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
-                                         <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#64748B'}} dy={10} />
-                                         <Tooltip 
-                                             cursor={{fill: 'transparent'}}
-                                             contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}
-                                         />
-                                         <Bar dataKey="chapters" fill="#4F46E5" radius={[4, 4, 0, 0]} barSize={32} />
-                                     </BarChart>
-                                 </ResponsiveContainer>
-                             </div>
-                         </div>
-                         
-                         <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800">
-                             <h3 className="font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-                                 <BarChart3 size={20} className="text-purple-500"/> Distribuição
-                             </h3>
-                             <div className="h-64 flex items-center justify-center">
-                                 <ResponsiveContainer width="100%" height="100%">
-                                     <PieChart>
-                                         <Pie
-                                             data={[
-                                                 { name: 'Antigo Testamento', value: BIBLE_BOOKS.filter(b => b.testament === 'Old').reduce((acc, b) => acc + (readChapters[b.id]?.length || 0), 0) },
-                                                 { name: 'Novo Testamento', value: BIBLE_BOOKS.filter(b => b.testament === 'New').reduce((acc, b) => acc + (readChapters[b.id]?.length || 0), 0) }
-                                             ]}
-                                             cx="50%"
-                                             cy="50%"
-                                             innerRadius={60}
-                                             outerRadius={80}
-                                             paddingAngle={5}
-                                             dataKey="value"
-                                         >
-                                             <Cell key="cell-0" fill="#4F46E5" />
-                                             <Cell key="cell-1" fill="#A855F7" />
-                                         </Pie>
-                                         <Tooltip />
-                                     </PieChart>
-                                 </ResponsiveContainer>
-                             </div>
-                             <div className="flex justify-center gap-4 mt-2 text-sm">
-                                 <div className="flex items-center gap-1">
-                                     <div className="w-3 h-3 rounded-full bg-indigo-600"></div>
-                                     <span className="text-gray-600 dark:text-gray-400">Antigo Testamento</span>
-                                 </div>
-                                 <div className="flex items-center gap-1">
-                                     <div className="w-3 h-3 rounded-full bg-purple-500"></div>
-                                     <span className="text-gray-600 dark:text-gray-400">Novo Testamento</span>
-                                 </div>
-                             </div>
-                         </div>
-                     </div>
-                 </div>
+                    {/* Chart */}
+                    <div className="bg-white dark:bg-slate-900 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-slate-800 h-80">
+                         <h3 className="font-bold text-lg text-gray-900 dark:text-white mb-4">Leitura Semanal</h3>
+                         <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={chartData}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
+                                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#9CA3AF', fontSize: 12}} dy={10} />
+                                <Tooltip 
+                                    cursor={{fill: 'transparent'}}
+                                    contentStyle={{backgroundColor: '#1F2937', color: '#fff', borderRadius: '8px', border: 'none'}}
+                                    itemStyle={{color: '#fff'}}
+                                    labelStyle={{display: 'none'}}
+                                />
+                                <Bar dataKey="chapters" fill="#4F46E5" radius={[4, 4, 0, 0]} barSize={32} />
+                            </BarChart>
+                         </ResponsiveContainer>
+                    </div>
+                </div>
              )}
 
              {activeTab === 'tracker' && renderTracker()}
              
-             {activeTab === 'family' && renderFamily()}
-
              {activeTab === 'achievements' && renderAchievements()}
              
-             {activeTab === 'support' && renderSupport()}
+             {activeTab === 'family' && renderFamily()}
 
              {activeTab === 'history' && (
-                 <div className="max-w-4xl mx-auto animate-fade-in">
-                     <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6 serif">Diário de Leitura</h2>
-                     <div className="space-y-4">
-                         {readingLogs.map(log => {
-                             const book = BIBLE_BOOKS.find(b => b.id === log.bookId);
-                             return (
-                                 <div key={log.id} className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800">
-                                     <div className="flex flex-col md:flex-row justify-between md:items-start gap-4 mb-4">
-                                         <div>
-                                             <div className="flex items-center gap-2 mb-1">
-                                                 <span className="bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 text-xs font-bold px-2 py-1 rounded uppercase">
-                                                     {book?.name}
-                                                 </span>
-                                                 <span className="text-gray-400 text-xs">
-                                                     {new Date(log.timestamp).toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', hour: '2-digit', minute: '2-digit' })}
-                                                 </span>
-                                             </div>
-                                             <h3 className="text-lg font-bold text-gray-800 dark:text-white">
-                                                 Capítulos: {log.chapters.join(', ')}
-                                             </h3>
-                                         </div>
-                                         
-                                         <div className="flex items-center gap-2">
-                                             <button 
-                                                 onClick={() => startEditingNote(log)}
-                                                 className="p-2 text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-lg transition-all"
-                                                 title="Editar nota pessoal"
-                                             >
-                                                 <PenLine size={18} />
-                                             </button>
-                                             <button 
-                                                 onClick={() => handleDeleteLog(log.id)}
-                                                 className="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all"
-                                                 title="Excluir registro"
-                                             >
-                                                 <Trash2 size={18} />
-                                             </button>
-                                         </div>
-                                     </div>
+                <div className="space-y-4 animate-fade-in">
+                    <h2 className="text-2xl font-bold text-gray-900 dark:text-white serif mb-4">Diário de Leitura</h2>
+                    {readingLogs.length > 0 ? (
+                        readingLogs.map(log => (
+                            <div key={log.id} className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800">
+                                <div className="flex justify-between items-start mb-4">
+                                    <div>
+                                        <p className="text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase">{new Date(log.timestamp).toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
+                                        <h3 className="text-xl font-bold text-gray-900 dark:text-white mt-1">
+                                            {BIBLE_BOOKS.find(b=>b.id===log.bookId)?.name} {log.chapters.join(', ')}
+                                        </h3>
+                                    </div>
+                                    <button onClick={() => handleDeleteLog(log.id)} className="text-gray-400 hover:text-red-500 transition-colors"><Trash2 size={18}/></button>
+                                </div>
+                                
+                                {log.aiReflection && (
+                                    <div className="bg-indigo-50 dark:bg-slate-800/50 rounded-lg p-4 mb-4 relative">
+                                        <Sparkles className="absolute top-4 right-4 text-indigo-400 opacity-50" size={16} />
+                                        <p className="text-sm text-gray-700 dark:text-gray-300 italic leading-relaxed">"{log.aiReflection}"</p>
+                                        <p className="text-[10px] text-right mt-2 text-indigo-400 font-bold uppercase tracking-wider">Reflexão IA</p>
+                                    </div>
+                                )}
 
-                                     {log.aiReflection && (
-                                         <div className="mb-4 bg-indigo-50 dark:bg-indigo-900/10 p-4 rounded-lg border-l-4 border-indigo-500">
-                                             <div className="flex items-center gap-2 mb-2 text-indigo-700 dark:text-indigo-400 text-xs font-bold uppercase tracking-wide">
-                                                 <Sparkles size={14} /> Insight Pastoral (IA)
-                                             </div>
-                                             <p className="text-gray-700 dark:text-gray-300 text-sm leading-relaxed italic">
-                                                 "{log.aiReflection}"
-                                             </p>
-                                         </div>
-                                     )}
+                                <div className="mt-4">
+                                    <div className="flex justify-between items-center mb-2">
+                                        <h4 className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-2"><PenLine size={14}/> Minhas Anotações</h4>
+                                        {editingNoteId === log.id ? (
+                                            <div className="flex gap-2">
+                                                <button onClick={() => setEditingNoteId(null)} className="text-xs text-gray-500 hover:text-gray-700">Cancelar</button>
+                                                <button onClick={() => handleSaveNote(log.id)} className="text-xs bg-indigo-600 text-white px-3 py-1 rounded-md font-bold">Salvar</button>
+                                            </div>
+                                        ) : (
+                                            <button onClick={() => startEditingNote(log)} className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline">Editar nota</button>
+                                        )}
+                                    </div>
+                                    
+                                    {editingNoteId === log.id ? (
+                                        <textarea 
+                                            value={tempNoteContent} 
+                                            onChange={e => setTempNoteContent(e.target.value)} 
+                                            className="w-full p-3 text-sm bg-gray-50 dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none" 
+                                            rows={3} 
+                                            placeholder="Escreva o que Deus falou com você..."
+                                        />
+                                    ) : (
+                                        log.userNotes ? (
+                                            <p className="text-sm text-gray-600 dark:text-gray-400 whitespace-pre-wrap">{log.userNotes}</p>
+                                        ) : (
+                                            <p className="text-sm text-gray-400 italic">Nenhuma anotação pessoal.</p>
+                                        )
+                                    )}
+                                </div>
+                            </div>
+                        ))
+                    ) : (
+                        <div className="text-center py-12 text-gray-400 bg-white dark:bg-slate-900 rounded-xl border border-gray-100 dark:border-slate-800">
+                            <History size={48} className="mx-auto mb-4 opacity-20"/>
+                            <p>Seu histórico de leitura aparecerá aqui.</p>
+                        </div>
+                    )}
+                </div>
+             )}
 
-                                     <div className="mt-4 pt-4 border-t border-gray-100 dark:border-slate-800">
-                                         {editingNoteId === log.id ? (
-                                             <div className="space-y-3">
-                                                 <label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">Suas Anotações</label>
-                                                 <textarea
-                                                     className="w-full p-3 rounded-lg border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-                                                     rows={3}
-                                                     placeholder="O que Deus falou com você hoje?"
-                                                     value={tempNoteContent}
-                                                     onChange={(e) => setTempNoteContent(e.target.value)}
-                                                 />
-                                                 <div className="flex justify-end gap-2">
-                                                     <button onClick={() => setEditingNoteId(null)} className="px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400">Cancelar</button>
-                                                     <button onClick={() => handleSaveNote(log.id)} className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">Salvar Nota</button>
-                                                 </div>
-                                             </div>
-                                         ) : (
-                                             <div>
-                                                 <h4 className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-2 flex items-center gap-2">
-                                                     <UserCircle size={14} /> Suas Anotações
-                                                 </h4>
-                                                 {log.userNotes ? (
-                                                     <p className="text-gray-700 dark:text-gray-300 text-sm whitespace-pre-wrap">{log.userNotes}</p>
-                                                 ) : (
-                                                     <p className="text-gray-400 text-sm italic">Nenhuma anotação pessoal.</p>
-                                                 )}
-                                             </div>
-                                         )}
-                                     </div>
-                                 </div>
-                             );
-                         })}
-                         {readingLogs.length === 0 && (
-                             <div className="text-center py-12 text-gray-400">
-                                 <BookOpen size={48} className="mx-auto mb-4 opacity-20" />
-                                 <p>Seu diário está vazio. Comece a ler hoje!</p>
-                             </div>
-                         )}
-                     </div>
-                 </div>
+             {activeTab === 'support' && (
+                <div className="max-w-2xl mx-auto space-y-6 animate-fade-in">
+                    <div className="text-center">
+                        <h2 className="text-2xl font-bold text-gray-900 dark:text-white serif">Central de Ajuda</h2>
+                        <p className="text-gray-500 dark:text-gray-400">Dúvidas, sugestões ou problemas? Fale conosco.</p>
+                    </div>
+                    
+                    <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800">
+                        {supportSuccess ? (
+                            <div className="text-center py-8">
+                                <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-full flex items-center justify-center mx-auto mb-4">
+                                    <CheckCircle2 size={32} />
+                                </div>
+                                <h3 className="font-bold text-gray-900 dark:text-white text-lg">Mensagem Enviada!</h3>
+                                <p className="text-gray-500 dark:text-gray-400 mt-2">Obrigado pelo contato. Responderemos em breve.</p>
+                                <button onClick={() => setSupportSuccess(false)} className="mt-6 text-indigo-600 font-bold text-sm hover:underline">Enviar nova mensagem</button>
+                            </div>
+                        ) : (
+                            <form onSubmit={handleSupportSubmit} className="space-y-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-1">Tipo de mensagem</label>
+                                    <div className="flex gap-4">
+                                        <label className="flex items-center gap-2 cursor-pointer">
+                                            <input type="radio" name="type" checked={supportForm.type === 'question'} onChange={() => setSupportForm({...supportForm, type: 'question'})} className="text-indigo-600 focus:ring-indigo-500" />
+                                            <span className="text-sm text-gray-700 dark:text-gray-300">Dúvida</span>
+                                        </label>
+                                        <label className="flex items-center gap-2 cursor-pointer">
+                                            <input type="radio" name="type" checked={supportForm.type === 'problem'} onChange={() => setSupportForm({...supportForm, type: 'problem'})} className="text-indigo-600 focus:ring-indigo-500" />
+                                            <span className="text-sm text-gray-700 dark:text-gray-300">Problema</span>
+                                        </label>
+                                        <label className="flex items-center gap-2 cursor-pointer">
+                                            <input type="radio" name="type" checked={supportForm.type === 'suggestion'} onChange={() => setSupportForm({...supportForm, type: 'suggestion'})} className="text-indigo-600 focus:ring-indigo-500" />
+                                            <span className="text-sm text-gray-700 dark:text-gray-300">Sugestão</span>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-1">Sua mensagem</label>
+                                    <textarea 
+                                        required
+                                        value={supportForm.message}
+                                        onChange={e => setSupportForm({...supportForm, message: e.target.value})}
+                                        className="w-full p-3 rounded-xl border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 text-sm focus:ring-2 focus:ring-indigo-500 outline-none h-32"
+                                        placeholder="Descreva detalhadamente..."
+                                    ></textarea>
+                                </div>
+                                <button type="submit" disabled={isSubmittingSupport} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold shadow-lg shadow-indigo-200 dark:shadow-none hover:bg-indigo-700 transition-colors flex justify-center items-center gap-2">
+                                    {isSubmittingSupport ? <Loader2 className="animate-spin" /> : <Send size={18} />} Enviar Mensagem
+                                </button>
+                            </form>
+                        )}
+                    </div>
+                </div>
              )}
 
              {activeTab === 'admin' && isAdmin && (
-                 <div className="space-y-6 animate-fade-in">
-                     <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
-                         <h2 className="text-2xl font-bold text-gray-900 dark:text-white serif flex items-center gap-2">
-                             <ShieldAlert className="text-indigo-600" /> Central de Comando
-                         </h2>
-                         <div className="flex flex-wrap bg-white dark:bg-slate-800 rounded-lg p-1 border border-gray-200 dark:border-slate-700 gap-1">
-                             <button 
-                                 onClick={() => setAdminView('overview')}
-                                 className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${adminView === 'overview' ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300' : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'}`}
-                             >
-                                 Visão Geral
-                             </button>
-                             <button 
-                                 onClick={() => setAdminView('ranking')}
-                                 className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${adminView === 'ranking' ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300' : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'}`}
-                             >
-                                 Ranking
-                             </button>
-                             <button 
-                                 onClick={() => setAdminView('users')}
-                                 className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${adminView === 'users' ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300' : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'}`}
-                             >
-                                 Usuários
-                             </button>
-                             <button 
-                                 onClick={() => setAdminView('messages')}
-                                 className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${adminView === 'messages' ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300' : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'}`}
-                             >
-                                 Suporte
-                             </button>
-                             <button 
-                                 onClick={() => setAdminView('news')}
-                                 className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${adminView === 'news' ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300' : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'}`}
-                             >
-                                 Novidades
-                             </button>
-                         </div>
-                     </div>
+                <div className="space-y-6 animate-fade-in">
+                    <div className="flex justify-between items-center">
+                        <h2 className="text-2xl font-bold text-gray-900 dark:text-white serif">Painel Administrativo</h2>
+                        <div className="flex bg-white dark:bg-slate-900 rounded-lg p-1 border border-gray-200 dark:border-slate-800">
+                            <button onClick={() => setAdminView('overview')} className={`px-3 py-1.5 text-xs font-bold rounded-md ${adminView === 'overview' ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-slate-800'}`}>Visão Geral</button>
+                            <button onClick={() => setAdminView('users')} className={`px-3 py-1.5 text-xs font-bold rounded-md ${adminView === 'users' ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-slate-800'}`}>Usuários</button>
+                            <button onClick={() => setAdminView('messages')} className={`px-3 py-1.5 text-xs font-bold rounded-md ${adminView === 'messages' ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-slate-800'}`}>Suporte</button>
+                            <button onClick={() => setAdminView('news')} className={`px-3 py-1.5 text-xs font-bold rounded-md ${adminView === 'news' ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-slate-800'}`}>Notícias</button>
+                        </div>
+                    </div>
 
-                     {adminView === 'overview' && (
-                         <div className="space-y-6">
-                             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                 <StatCard 
-                                     title="Total de Usuários" 
-                                     value={adminUsersData.length} 
-                                     icon={<Users size={24} />} 
-                                     colorClass="bg-blue-600"
-                                 />
-                                 <StatCard 
-                                     title="Capítulos Lidos (Global)" 
-                                     value={adminUsersData.reduce((acc, curr) => acc + curr.totalRead, 0)} 
-                                     icon={<BookOpen size={24} />} 
-                                     colorClass="bg-indigo-600"
-                                 />
-                                 <StatCard 
-                                     title="Medalhas Desbloqueadas" 
-                                     value={adminUsersData.reduce((acc, curr) => acc + curr.achievementsCount, 0)} 
-                                     icon={<Trophy size={24} />} 
-                                     colorClass="bg-yellow-500"
-                                 />
-                             </div>
-                             
-                             <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800">
-                                 <h3 className="font-bold text-gray-900 dark:text-white mb-4">Atividade Recente (Global)</h3>
-                                 <div className="overflow-x-auto">
-                                     <table className="w-full text-sm text-left">
-                                         <thead className="bg-gray-50 dark:bg-slate-950 text-gray-500 dark:text-gray-400 font-medium border-b border-gray-100 dark:border-slate-800">
-                                             <tr>
-                                                 <th className="p-4">Usuário</th>
-                                                 <th className="p-4">Leitura</th>
-                                                 <th className="p-4">Data</th>
-                                             </tr>
-                                         </thead>
-                                         <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
-                                             {adminLogs.slice(0, 5).map((log: any) => (
-                                                 <tr key={log.id} className="hover:bg-gray-50 dark:hover:bg-slate-800/50">
-                                                     <td className="p-4 font-medium">{log.user_name || log.user_email}</td>
-                                                     <td className="p-4 text-indigo-600 dark:text-indigo-400">{log.book_id} <span className="text-gray-400">({log.chapters.length} caps)</span></td>
-                                                     <td className="p-4 text-gray-500">{new Date(log.timestamp).toLocaleDateString()}</td>
-                                                 </tr>
-                                             ))}
-                                         </tbody>
-                                     </table>
-                                 </div>
-                             </div>
-                         </div>
-                     )}
+                    {adminView === 'overview' && (
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <StatCard title="Total Usuários" value={adminUsersData.length} icon={<Users size={20}/>} />
+                            <StatCard title="Leituras Totais" value={adminLogs.length} icon={<BookOpen size={20}/>} />
+                            <StatCard title="Tickets Abertos" value={supportTickets.filter(t => t.status === 'open').length} icon={<LifeBuoy size={20}/>} />
+                        </div>
+                    )}
+                    
+                    {adminView === 'news' && (
+                        <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-gray-200 dark:border-slate-800">
+                            <h3 className="font-bold text-lg mb-4">Gerenciar Notícias do App</h3>
+                            <textarea 
+                                value={editingNews} 
+                                onChange={e => setEditingNews(e.target.value)} 
+                                className="w-full p-4 border rounded-xl dark:bg-slate-800 dark:border-slate-700 h-40 mb-4"
+                                placeholder="Escreva uma mensagem para todos os usuários..."
+                            ></textarea>
+                            <button onClick={handleSaveNews} className="bg-indigo-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-indigo-700">Publicar Notícia</button>
+                        </div>
+                    )}
+                    
+                    {adminView === 'users' && (
+                        <div className="bg-white dark:bg-slate-900 rounded-xl overflow-hidden border border-gray-200 dark:border-slate-800">
+                            <div className="p-4 border-b border-gray-100 dark:border-slate-800">
+                                <input type="text" placeholder="Buscar usuário..." value={adminUserSearch} onChange={e => setAdminUserSearch(e.target.value)} className="w-full p-2 text-sm border rounded-lg dark:bg-slate-800 dark:border-slate-700" />
+                            </div>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm text-left">
+                                    <thead className="bg-gray-50 dark:bg-slate-950 text-gray-500">
+                                        <tr>
+                                            <th className="p-4">Nome</th>
+                                            <th className="p-4">Total Lido</th>
+                                            <th className="p-4">Última Atividade</th>
+                                            <th className="p-4">Ações</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {adminUsersData.filter(u => u.name.toLowerCase().includes(adminUserSearch.toLowerCase()) || u.email.toLowerCase().includes(adminUserSearch.toLowerCase())).map(u => (
+                                            <tr key={u.userId} className="border-b border-gray-100 dark:border-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800/50">
+                                                <td className="p-4">
+                                                    <p className="font-bold text-gray-900 dark:text-white">{u.name}</p>
+                                                    <p className="text-xs text-gray-500">{u.email}</p>
+                                                </td>
+                                                <td className="p-4">{u.totalRead} caps</td>
+                                                <td className="p-4">{u.lastActive !== 'N/A' ? new Date(u.lastActive).toLocaleDateString() : 'Nunca'}</td>
+                                                <td className="p-4">
+                                                    <button onClick={() => handleSendPasswordReset(u.email)} className="text-indigo-600 hover:underline text-xs">Resetar Senha</button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    )}
 
-                     {adminView === 'ranking' && (
-                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                             {/* Ranking de Leitura */}
-                             <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden">
-                                 <div className="p-4 bg-indigo-600 text-white flex justify-between items-center">
-                                     <h3 className="font-bold flex items-center gap-2"><BookOpen size={20}/> Top Leitores</h3>
-                                 </div>
-                                 <div className="p-4">
-                                     {adminUsersData.sort((a,b) => b.totalRead - a.totalRead).slice(0, 10).map((u, i) => (
-                                         <div key={u.userId} className="flex items-center justify-between p-3 border-b border-gray-100 dark:border-slate-800 last:border-0">
-                                             <div className="flex items-center gap-3">
-                                                 <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${i === 0 ? 'bg-yellow-100 text-yellow-700' : i === 1 ? 'bg-gray-100 text-gray-700' : i === 2 ? 'bg-orange-100 text-orange-700' : 'bg-slate-50 text-slate-500'}`}>
-                                                     {i + 1}
-                                                 </div>
-                                                 <div>
-                                                     <p className="font-bold text-gray-900 dark:text-white text-sm">{u.name}</p>
-                                                     <p className="text-xs text-gray-500">{u.streak} dias seguidos</p>
-                                                 </div>
-                                             </div>
-                                             <div className="font-bold text-indigo-600 dark:text-indigo-400 text-sm">
-                                                 {u.totalRead} caps
-                                             </div>
-                                         </div>
-                                     ))}
-                                 </div>
-                             </div>
-
-                             {/* Ranking de Conquistas */}
-                             <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden">
-                                 <div className="p-4 bg-yellow-500 text-white flex justify-between items-center">
-                                     <h3 className="font-bold flex items-center gap-2"><Trophy size={20}/> Top Conquistadores</h3>
-                                 </div>
-                                 <div className="p-4">
-                                     {adminUsersData.sort((a,b) => b.achievementsCount - a.achievementsCount).slice(0, 10).map((u, i) => (
-                                         <div key={u.userId} className="flex items-center justify-between p-3 border-b border-gray-100 dark:border-slate-800 last:border-0">
-                                             <div className="flex items-center gap-3">
-                                                 <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${i === 0 ? 'bg-yellow-100 text-yellow-700' : i === 1 ? 'bg-gray-100 text-gray-700' : i === 2 ? 'bg-orange-100 text-orange-700' : 'bg-slate-50 text-slate-500'}`}>
-                                                     {i + 1}
-                                                 </div>
-                                                 <p className="font-bold text-gray-900 dark:text-white text-sm">{u.name}</p>
-                                             </div>
-                                             <div className="font-bold text-yellow-600 dark:text-yellow-400 text-sm">
-                                                 {u.achievementsCount} medalhas
-                                             </div>
-                                         </div>
-                                     ))}
-                                 </div>
-                             </div>
-                         </div>
-                     )}
-
-                     {adminView === 'users' && (
-                         <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden">
-                             <div className="p-4 border-b border-gray-100 dark:border-slate-800">
-                                 <div className="relative">
-                                     <Search className="absolute left-3 top-2.5 text-gray-400" size={20} />
-                                     <input 
-                                         type="text" 
-                                         placeholder="Buscar usuário por nome ou email..." 
-                                         className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-                                         value={adminUserSearch}
-                                         onChange={e => setAdminUserSearch(e.target.value)}
-                                     />
-                                 </div>
-                             </div>
-                             <div className="overflow-x-auto">
-                                 <table className="w-full text-sm text-left">
-                                     <thead className="bg-gray-50 dark:bg-slate-950 text-gray-500 dark:text-gray-400 font-medium border-b border-gray-100 dark:border-slate-800">
-                                         <tr>
-                                             <th className="p-4">Usuário</th>
-                                             <th className="p-4">Progresso</th>
-                                             <th className="p-4">Última Atividade</th>
-                                             <th className="p-4">Ações</th>
-                                         </tr>
-                                     </thead>
-                                     <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
-                                         {adminUsersData
-                                             .filter(u => u.name.toLowerCase().includes(adminUserSearch.toLowerCase()) || u.email.toLowerCase().includes(adminUserSearch.toLowerCase()))
-                                             .map((u) => (
-                                             <tr key={u.userId} className="hover:bg-gray-50 dark:hover:bg-slate-800/50">
-                                                 <td className="p-4">
-                                                     <div className="font-bold text-gray-900 dark:text-white">{u.name}</div>
-                                                     <div className="text-xs text-gray-500">{u.email}</div>
-                                                 </td>
-                                                 <td className="p-4">
-                                                     <div className="flex items-center gap-4">
-                                                         <div>
-                                                             <span className="block font-bold text-indigo-600 dark:text-indigo-400">{u.totalRead} caps</span>
-                                                             <span className="text-xs text-gray-400">Total Lido</span>
-                                                         </div>
-                                                         <div>
-                                                             <span className="block font-bold text-yellow-600 dark:text-yellow-400">{u.achievementsCount}</span>
-                                                             <span className="text-xs text-gray-400">Medalhas</span>
-                                                         </div>
-                                                     </div>
-                                                 </td>
-                                                 <td className="p-4 text-gray-500 dark:text-gray-400">
-                                                     {u.lastActive !== 'N/A' ? new Date(u.lastActive).toLocaleDateString() : 'Nunca'}
-                                                 </td>
-                                                 <td className="p-4">
-                                                      <div className="flex gap-2">
-                                                          <button 
-                                                              onClick={() => setSelectedUserDetail(u)}
-                                                              className="bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-300 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-indigo-100 dark:hover:bg-indigo-900/50"
-                                                          >
-                                                              Ver Detalhes
-                                                          </button>
-                                                          <button 
-                                                              onClick={() => handleSendPasswordReset(u.email)}
-                                                              className="text-gray-400 hover:text-indigo-600 px-2"
-                                                              title="Resetar Senha"
-                                                          >
-                                                              <KeyRound size={16} />
-                                                          </button>
-                                                      </div>
-                                                 </td>
-                                             </tr>
-                                         ))}
-                                     </tbody>
-                                 </table>
-                             </div>
-                         </div>
-                     )}
-
-                     {adminView === 'messages' && (
-                         <div className="space-y-4">
-                             <div className="flex gap-2 mb-4">
-                                 {['all', 'open', 'resolved'].map(f => (
-                                     <button
-                                         key={f}
-                                         onClick={() => setMessageFilter(f as any)}
-                                         className={`px-3 py-1 rounded-full text-xs font-bold border capitalize ${messageFilter === f ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white dark:bg-slate-900 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-slate-700'}`}
-                                     >
-                                         {f === 'all' ? 'Todos' : f === 'open' ? 'Abertos' : 'Resolvidos'}
-                                     </button>
-                                 ))}
-                             </div>
-                             
-                             <div className="grid gap-4">
-                                 {supportTickets
-                                     .filter(t => messageFilter === 'all' ? true : t.status === messageFilter)
-                                     .map(ticket => (
-                                         <div key={ticket.id} className={`bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-l-4 ${ticket.status === 'open' ? 'border-l-orange-500 border-gray-100 dark:border-slate-800' : 'border-l-green-500 border-gray-100 dark:border-slate-800 opacity-75'}`}>
-                                             <div className="flex justify-between items-start mb-2">
-                                                 <div className="flex items-center gap-2">
-                                                     <span className={`text-xs font-bold px-2 py-0.5 rounded uppercase ${ticket.type === 'problem' ? 'bg-red-100 text-red-700' : ticket.type === 'suggestion' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'}`}>
-                                                         {ticket.type}
-                                                     </span>
-                                                     <span className="text-gray-400 text-xs">
-                                                         {new Date(ticket.created_at).toLocaleDateString()}
-                                                     </span>
-                                                 </div>
-                                                 <button 
-                                                     onClick={() => handleToggleTicketStatus(ticket.id, ticket.status)}
-                                                     disabled={updatingTicketId === ticket.id}
-                                                     className={`text-xs font-bold px-3 py-1 rounded-full transition-colors ${ticket.status === 'open' ? 'bg-orange-100 text-orange-700 hover:bg-orange-200' : 'bg-green-100 text-green-700 hover:bg-green-200'}`}
-                                                 >
-                                                     {updatingTicketId === ticket.id ? '...' : ticket.status === 'open' ? 'Marcar Resolvido' : 'Reabrir'}
-                                                 </button>
-                                             </div>
-                                             <h4 className="font-bold text-gray-900 dark:text-white mb-1">{ticket.user_email}</h4>
-                                             <p className="text-gray-600 dark:text-gray-300 text-sm bg-gray-50 dark:bg-slate-950 p-3 rounded-lg border border-gray-100 dark:border-slate-800">
-                                                 {ticket.message}
-                                             </p>
-                                         </div>
-                                     ))
-                                 }
-                                 {supportTickets.length === 0 && <p className="text-gray-500 text-center py-8">Nenhum ticket encontrado.</p>}
-                             </div>
-                         </div>
-                     )}
-
-                     {adminView === 'news' && (
-                         <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800">
-                             <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-                                 <Megaphone className="text-indigo-600" size={20} /> Gerenciar Novidades no App
-                             </h3>
-                             <div className="space-y-4">
-                                 <div>
-                                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                         Texto da Novidade (aparecerá no topo da Visão Geral)
-                                     </label>
-                                     <textarea
-                                         value={editingNews}
-                                         onChange={(e) => setEditingNews(e.target.value)}
-                                         className="w-full p-4 rounded-lg border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-white h-32 outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
-                                         placeholder="Escreva aqui as novidades do app..."
-                                     />
-                                     <p className="text-xs text-gray-500 mt-1">
-                                         Deixe em branco para remover o banner de novidades.
-                                     </p>
-                                 </div>
-                                 <div className="flex justify-end">
-                                     <button 
-                                         onClick={handleSaveNews}
-                                         className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-bold transition-colors shadow-lg shadow-indigo-200 dark:shadow-none"
-                                     >
-                                         Salvar e Publicar
-                                     </button>
-                                 </div>
-                             </div>
-                         </div>
-                     )}
-                 </div>
+                    {adminView === 'messages' && (
+                        <div className="bg-white dark:bg-slate-900 rounded-xl overflow-hidden border border-gray-200 dark:border-slate-800">
+                            <div className="p-4 flex gap-2 border-b border-gray-100 dark:border-slate-800">
+                                <button onClick={() => setMessageFilter('all')} className={`text-xs px-3 py-1 rounded-full ${messageFilter==='all' ? 'bg-indigo-100 text-indigo-700' : 'text-gray-500'}`}>Todos</button>
+                                <button onClick={() => setMessageFilter('open')} className={`text-xs px-3 py-1 rounded-full ${messageFilter==='open' ? 'bg-yellow-100 text-yellow-700' : 'text-gray-500'}`}>Abertos</button>
+                                <button onClick={() => setMessageFilter('resolved')} className={`text-xs px-3 py-1 rounded-full ${messageFilter==='resolved' ? 'bg-green-100 text-green-700' : 'text-gray-500'}`}>Resolvidos</button>
+                            </div>
+                            <div className="divide-y divide-gray-100 dark:divide-slate-800">
+                                {supportTickets.filter(t => messageFilter === 'all' || t.status === messageFilter).map(ticket => (
+                                    <div key={ticket.id} className="p-4 hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors">
+                                        <div className="flex justify-between items-start mb-2">
+                                            <div>
+                                                <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase mb-1 ${ticket.type==='problem' ? 'bg-red-100 text-red-600' : ticket.type==='suggestion' ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-600'}`}>{ticket.type}</span>
+                                                <p className="text-xs text-gray-400">{ticket.user_email} • {new Date(ticket.created_at).toLocaleDateString()}</p>
+                                            </div>
+                                            <button onClick={() => handleToggleTicketStatus(ticket.id, ticket.status)} className={`text-xs font-bold px-3 py-1 rounded-full border transition-all ${ticket.status === 'open' ? 'border-yellow-200 bg-yellow-50 text-yellow-700 hover:bg-yellow-100' : 'border-green-200 bg-green-50 text-green-700 hover:bg-green-100'}`}>
+                                                {updatingTicketId === ticket.id ? <Loader2 size={12} className="animate-spin" /> : (ticket.status === 'open' ? 'Marcar Resolvido' : 'Reabrir')}
+                                            </button>
+                                        </div>
+                                        <p className="text-sm text-gray-800 dark:text-gray-200">{ticket.message}</p>
+                                    </div>
+                                ))}
+                                {supportTickets.length === 0 && <p className="p-8 text-center text-gray-400 text-sm">Nenhuma mensagem.</p>}
+                            </div>
+                        </div>
+                    )}
+                </div>
              )}
-         </main>
-      </div>
-
-      {/* Admin User Detail Modal */}
-      {selectedUserDetail && (
-          <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
-              <div className="bg-white dark:bg-slate-900 w-full max-w-4xl h-[90vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-gray-200 dark:border-slate-700">
-                  <div className="p-6 border-b border-gray-100 dark:border-slate-800 flex justify-between items-center bg-gray-50 dark:bg-slate-950">
-                      <div>
-                          <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                              <UserCircle className="text-indigo-600" /> {selectedUserDetail.name}
-                          </h2>
-                          <p className="text-sm text-gray-500">{selectedUserDetail.email}</p>
-                      </div>
-                      <button onClick={() => setSelectedUserDetail(null)} className="p-2 hover:bg-gray-200 dark:hover:bg-slate-800 rounded-full">
-                          <X size={20} />
-                      </button>
-                  </div>
-                  
-                  <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                      {/* Stats Row */}
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                          <div className="p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl border border-indigo-100 dark:border-indigo-900/30">
-                              <p className="text-sm text-indigo-600 dark:text-indigo-300 font-bold uppercase">Total Lido</p>
-                              <p className="text-2xl font-bold text-indigo-900 dark:text-indigo-100">{selectedUserDetail.totalRead} caps</p>
-                          </div>
-                          <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-xl border border-yellow-100 dark:border-yellow-900/30">
-                              <p className="text-sm text-yellow-600 dark:text-yellow-300 font-bold uppercase">Medalhas</p>
-                              <p className="text-2xl font-bold text-yellow-900 dark:text-yellow-100">{selectedUserDetail.achievementsCount}</p>
-                          </div>
-                          <div className="p-4 bg-orange-50 dark:bg-orange-900/20 rounded-xl border border-orange-100 dark:border-orange-900/30">
-                              <p className="text-sm text-orange-600 dark:text-orange-300 font-bold uppercase">Sequência Atual</p>
-                              <p className="text-2xl font-bold text-orange-900 dark:text-orange-100">{selectedUserDetail.streak} dias</p>
-                          </div>
-                      </div>
-
-                      {/* User Chart */}
-                      <div className="h-64 bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-100 dark:border-slate-700">
-                          <ResponsiveContainer width="100%" height="100%">
-                              <BarChart data={selectedUserDetail.chartData}>
-                                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
-                                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#64748B'}} />
-                                  <Tooltip cursor={{fill: 'transparent'}} contentStyle={{borderRadius: '8px'}} />
-                                  <Bar dataKey="chapters" fill="#4F46E5" radius={[4, 4, 0, 0]} />
-                              </BarChart>
-                          </ResponsiveContainer>
-                      </div>
-
-                      {/* Achievements List */}
-                      <div>
-                          <h3 className="font-bold text-gray-900 dark:text-white mb-3">Conquistas Desbloqueadas</h3>
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                              {ACHIEVEMENTS.filter(ach => selectedUserDetail.achievements.includes(ach.id)).map(ach => (
-                                  <div key={ach.id} className="flex items-center gap-2 p-2 border border-green-100 dark:border-green-900 bg-green-50 dark:bg-green-900/20 rounded-lg">
-                                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs ${ach.color} text-white`}>
-                                          <Award size={14} />
-                                      </div>
-                                      <p className="text-xs font-bold text-gray-700 dark:text-gray-300">{ach.title}</p>
-                                  </div>
-                              ))}
-                              {selectedUserDetail.achievements.length === 0 && <p className="text-sm text-gray-400">Nenhuma conquista ainda.</p>}
-                          </div>
-                      </div>
-
-                      {/* Recent Activity Log */}
-                      <div>
-                          <h3 className="font-bold text-gray-900 dark:text-white mb-3">Últimas Leituras</h3>
-                          <div className="space-y-2">
-                              {selectedUserDetail.logs.slice(0, 5).map(log => (
-                                  <div key={log.id} className="p-3 bg-gray-50 dark:bg-slate-800 rounded-lg text-sm flex justify-between">
-                                      <span className="font-bold text-gray-700 dark:text-gray-300">{log.bookId} <span className="font-normal text-gray-500">({log.chapters.join(', ')})</span></span>
-                                      <span className="text-gray-400">{new Date(log.timestamp).toLocaleDateString()}</span>
-                                  </div>
-                              ))}
-                          </div>
-                      </div>
-                  </div>
-              </div>
-          </div>
-      )}
-
-      {readingChapter && (
-         <BibleReaderModal 
-            book={readingChapter.book} 
-            chapter={readingChapter.chapter} 
-            onClose={() => setReadingChapter(null)}
-            onNext={() => {
-                const nextChap = readingChapter.chapter + 1;
-                if(nextChap <= readingChapter.book.chapters) {
-                    setReadingChapter({ ...readingChapter, chapter: nextChap });
-                } else {
-                    // Try next book? For now just stay.
-                    alert('Fim do livro!');
-                }
-            }}
-            onPrev={() => {
-                const prevChap = readingChapter.chapter - 1;
-                if(prevChap >= 1) {
-                    setReadingChapter({ ...readingChapter, chapter: prevChap });
-                }
-            }}
-         />
-      )}
-
-      {isChangePasswordOpen && <ChangePasswordModal onClose={() => setIsChangePasswordOpen(false)} />}
-      
-      {isPlanModalOpen && <PlanSelectionModal onClose={() => setIsPlanModalOpen(false)} onSelectPlan={handleSelectPlan} />}
+          </main>
+       </div>
     </div>
   );
 };
