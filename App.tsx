@@ -268,6 +268,7 @@ const BibleReaderModal = ({ book, chapter, onClose, onNext, onPrev }: { book: Bi
 
 // --- Family Login Modal (Opção B) ---
 const FamilyLoginModal = ({ onClose, onLogin }: { onClose: () => void, onLogin: (member: GroupMember, group: FamilyGroup) => void }) => {
+    // ... (código existente mantido) ...
     const [step, setStep] = useState<'code' | 'select' | 'pin'>('code');
     const [code, setCode] = useState('');
     const [group, setGroup] = useState<FamilyGroup | null>(null);
@@ -413,7 +414,7 @@ const FamilyLoginModal = ({ onClose, onLogin }: { onClose: () => void, onLogin: 
 };
 
 // --- Auth Components ---
-
+// (LoginScreen, ChangePasswordModal, PlanSelectionModal mantidos idênticos)
 const LoginScreen = ({ onLogin, onFamilyLogin }: { onLogin: (user: any) => void, onFamilyLogin: () => void }) => {
   const [authMode, setAuthMode] = useState<'login' | 'register' | 'forgot'>('login');
   const [email, setEmail] = useState('');
@@ -744,18 +745,16 @@ const PlanSelectionModal = ({ onClose, onSelectPlan }: { onClose: () => void, on
 // --- Main App Component ---
 
 const App: React.FC = () => {
-  // --- Auth State ---
-  const [user, setUser] = useState<any>(null); // Pode ser um usuário real do Supabase ou um "Virtual User" (Kid)
-  const [isManagedUser, setIsManagedUser] = useState(false); // Flag para identificar crianças/dependentes
+  // ... (State variables and logic remain same until handleCreateGroup) ...
+  const [user, setUser] = useState<any>(null); 
+  const [isManagedUser, setIsManagedUser] = useState(false); 
   const [loadingAuth, setLoadingAuth] = useState(true);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
   const [showFamilyLogin, setShowFamilyLogin] = useState(false);
 
-  // --- App State ---
   const [activeTab, setActiveTab] = useState<'dashboard' | 'tracker' | 'history' | 'admin' | 'achievements' | 'support' | 'family'>('dashboard');
   const [selectedBookId, setSelectedBookId] = useState<string | null>(null);
   
-  // Theme State
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('theme') === 'dark' ? 'dark' : 'light';
@@ -763,26 +762,21 @@ const App: React.FC = () => {
     return 'light';
   });
 
-  // Reading Mode State
   const [trackerMode, setTrackerMode] = useState<'select' | 'read'>('select');
   const [readingChapter, setReadingChapter] = useState<{book: BibleBook, chapter: number} | null>(null);
 
-  // Data State (User)
   const [readChapters, setReadChapters] = useState<ReadChaptersMap>({});
   const [readingLogs, setReadingLogs] = useState<ReadingLog[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(false);
   
-  // Plan State
   const [userPlan, setUserPlan] = useState<UserPlan | null>(null);
   const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
 
-  // Devotional Style State
   const [devotionalStyle, setDevotionalStyle] = useState<DevotionalStyle>(() => {
       const stored = localStorage.getItem('devotional_style');
       return (stored as DevotionalStyle) || 'theologian';
   });
 
-  // Data State (Admin)
   const [adminLogs, setAdminLogs] = useState<any[]>([]);
   const [isAdminLoading, setIsAdminLoading] = useState(false);
   const [adminView, setAdminView] = useState<'overview' | 'users' | 'messages' | 'news'>('overview');
@@ -790,26 +784,21 @@ const App: React.FC = () => {
   const [updatingTicketId, setUpdatingTicketId] = useState<string | null>(null);
   const [messageFilter, setMessageFilter] = useState<'all' | 'open' | 'resolved'>('all');
 
-  // News Logic
   const [siteNews, setSiteNews] = useState('');
   const [editingNews, setEditingNews] = useState('');
   const [showNews, setShowNews] = useState(true);
 
-  // Support State (User)
   const [supportForm, setSupportForm] = useState({ type: 'question', message: '' });
   const [isSubmittingSupport, setIsSubmittingSupport] = useState(false);
   const [supportSuccess, setSupportSuccess] = useState(false);
 
-  // Ephemeral State
   const [sessionSelectedChapters, setSessionSelectedChapters] = useState<number[]>([]);
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   
-  // Note Editing State
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [tempNoteContent, setTempNoteContent] = useState('');
 
-  // --- Family State ---
   const [familyGroup, setFamilyGroup] = useState<FamilyGroup | null>(null);
   const [familyMembers, setFamilyMembers] = useState<GroupMember[]>([]);
   const [familyPosts, setFamilyPosts] = useState<FamilyPost[]>([]);
@@ -823,7 +812,6 @@ const App: React.FC = () => {
     return user && !isManagedUser && ADMIN_EMAILS.includes(user.email);
   }, [user, isManagedUser]);
 
-  // --- Theme Effect ---
   useEffect(() => {
     const root = window.document.documentElement;
     root.classList.remove('light', 'dark');
@@ -831,7 +819,6 @@ const App: React.FC = () => {
     localStorage.setItem('theme', theme);
   }, [theme]);
 
-  // --- Devotional Style Effect ---
   useEffect(() => {
       localStorage.setItem('devotional_style', devotionalStyle);
   }, [devotionalStyle]);
@@ -840,7 +827,6 @@ const App: React.FC = () => {
     setTheme(prev => prev === 'light' ? 'dark' : 'light');
   };
 
-  // --- Check Auth on Mount ---
   useEffect(() => {
     const initAuth = async () => {
       try {
@@ -893,7 +879,6 @@ const App: React.FC = () => {
     return () => subscription.unsubscribe();
   }, [isManagedUser]);
 
-  // --- Load Plan from LocalStorage ---
   useEffect(() => {
     if (user) {
       const storedPlan = localStorage.getItem(`bible_plan_${user.id}`);
@@ -903,7 +888,6 @@ const App: React.FC = () => {
     }
   }, [user]);
 
-  // --- Fetch User Data ---
   const fetchData = useCallback(async () => {
     if (!user) return;
     setIsLoadingData(true);
@@ -911,7 +895,7 @@ const App: React.FC = () => {
     const { data, error } = await supabase
       .from('reading_logs')
       .select('*')
-      .eq('user_id', user.id) // Works for both Auth User and Managed User (user.id is fake ID)
+      .eq('user_id', user.id)
       .order('timestamp', { ascending: false });
 
     if (error) {
@@ -934,33 +918,29 @@ const App: React.FC = () => {
       if (!user) return;
       setIsFamilyLoading(true);
       try {
-          // 1. Busca o membro associado ao usuário atual (ou o próprio se for managed)
           let memberQuery = supabase.from('family_members').select('*');
           
           if (isManagedUser) {
-              memberQuery = memberQuery.eq('id', user.id); // user.id é o member_id no caso managed
+              memberQuery = memberQuery.eq('id', user.id);
           } else {
               memberQuery = memberQuery.eq('user_id', user.id);
           }
           
           const { data: memberData, error: memErr } = await memberQuery.single();
           
-          if (memErr && memErr.code !== 'PGRST116') { // PGRST116 é "no rows"
+          if (memErr && memErr.code !== 'PGRST116') {
              console.error(memErr);
              return;
           }
 
           if (memberData) {
-              // Usuário tem família
               const { data: groupData } = await supabase.from('families').select('*').eq('id', memberData.group_id).single();
               if (groupData) {
                   setFamilyGroup(groupData);
                   
-                  // Busca membros
                   const { data: allMembers } = await supabase.from('family_members').select('*').eq('group_id', groupData.id);
                   setFamilyMembers(allMembers || []);
 
-                  // Busca posts
                   const { data: posts } = await supabase
                     .from('family_posts')
                     .select('*')
@@ -986,7 +966,6 @@ const App: React.FC = () => {
     }
   }, [user, fetchData, isAdmin, fetchFamilyData]);
 
-  // --- Helpers ---
   const processLogs = (data: any[], setLogs: Function, setMap: Function) => {
       const logs = data.map((item: any) => ({
         id: item.id,
@@ -1008,16 +987,13 @@ const App: React.FC = () => {
       setMap(map);
   };
 
-  // --- Achievement Logic ---
   const calculateAchievements = (logs: ReadingLog[], chaptersMap: ReadChaptersMap) => {
     if (!logs.length) return new Set<number>();
 
     const unlocked = new Set<number>();
 
-    // Helper Functions
     const isBookComplete = (id: string) => (chaptersMap[id]?.length || 0) === BIBLE_BOOKS.find(b => b.id === id)?.chapters;
 
-    // 1. Time Based
     const hasEarlyMorning = logs.some(l => {
         const hour = new Date(l.timestamp).getHours();
         return hour >= 0 && hour < 6;
@@ -1036,7 +1012,6 @@ const App: React.FC = () => {
     });
     if (hasLateNight) unlocked.add(3);
 
-    // 2. Streak Based
     let maxStreak = 0;
     if (logs.length > 0) {
         const sortedDates = [...new Set(logs.map(l => l.date))].sort();
@@ -1057,56 +1032,37 @@ const App: React.FC = () => {
     if (maxStreak >= 30) unlocked.add(6);
     if (maxStreak >= 365) unlocked.add(8);
     
-    // 4. Book Completion Categories
-    
-    // Pentateuco (21)
     if (['GEN', 'EXO', 'LEV', 'NUM', 'DEU'].every(isBookComplete)) unlocked.add(21);
     
-    // Históricos AT (22)
     const historicalOT = ['JOS', 'JDG', 'RUT', '1SA', '2SA', '1KI', '2KI', '1CH', '2CH', 'EZR', 'NEH', 'EST'];
     if (historicalOT.every(isBookComplete)) unlocked.add(22);
     
-    // Poéticos (23)
     const poetical = ['JOB', 'PSA', 'PRO', 'ECC', 'SNG'];
     if (poetical.every(isBookComplete)) unlocked.add(23);
 
-    // Evangelhos (26)
     if (['MAT', 'MRK', 'LUK', 'JHN'].every(isBookComplete)) unlocked.add(26);
     
-    // Atos (27)
     if (isBookComplete('ACT')) unlocked.add(27);
     
-    // Teologia Paulina (28)
     if (PAULINE_BOOKS.every(isBookComplete)) unlocked.add(28);
     
-    // Apocalipse (30)
     if (isBookComplete('REV')) unlocked.add(30);
 
-    // Provérbios (37)
     if (isBookComplete('PRO')) unlocked.add(37);
 
-    // Salmos (38)
     if (isBookComplete('PSA')) unlocked.add(38);
 
-    // AT Completo (31)
     const allOT = BIBLE_BOOKS.filter(b => b.testament === 'Old');
     if (allOT.every(b => isBookComplete(b.id))) unlocked.add(31);
 
-    // NT Completo (32)
     const allNT = BIBLE_BOOKS.filter(b => b.testament === 'New');
     if (allNT.every(b => isBookComplete(b.id))) unlocked.add(32);
 
-    // Bíblia Completa (33)
     if (allOT.every(b => isBookComplete(b.id)) && allNT.every(b => isBookComplete(b.id))) unlocked.add(33);
     
-    // 5. Intensity & Habits
-
-    // Maratonista (72) - 10 caps em um dia
     const maxChaptersInDay = logs.reduce((max, log) => Math.max(max, log.chapters.length), 0);
     if (maxChaptersInDay >= 10) unlocked.add(72);
 
-    // Imersão Total (73) - Livro inteiro num dia
-    // Nova lógica: Agrupar capítulos lidos por 'DATA|LIVRO' e conferir se é igual ao total do livro
     const chaptersReadByDateAndBook: Record<string, Set<number>> = {};
     const uniqueDates = new Set<string>();
 
@@ -1119,7 +1075,6 @@ const App: React.FC = () => {
         log.chapters.forEach(c => chaptersReadByDateAndBook[key].add(c));
     });
 
-    // Check Imersão Total (73)
     let hasImmersion = false;
     for (const [key, chaptersSet] of Object.entries(chaptersReadByDateAndBook)) {
         const [_, bookId] = key.split('|');
@@ -1131,21 +1086,15 @@ const App: React.FC = () => {
     }
     if (hasImmersion) unlocked.add(73);
 
-    // Fim de Semana Bíblico (75) - Leu Sábado E Domingo
-    // Nova lógica: Para cada data única, se for Sábado, verifica se a data do dia seguinte existe nos logs
     let hasWeekend = false;
     const sortedDates = Array.from(uniqueDates).sort();
     
     for (const dateStr of sortedDates) {
-        // Usar hora fixa (meio dia) para evitar problemas de fuso horário ao converter string para objeto Date
         const dateObj = new Date(`${dateStr}T12:00:00`);
         
-        // 6 = Sábado
         if (dateObj.getDay() === 6) {
             const nextDay = new Date(dateObj);
             nextDay.setDate(dateObj.getDate() + 1);
-            
-            // Reconstrói a string YYYY-MM-DD do dia seguinte (Domingo)
             const nextDayStr = nextDay.toISOString().split('T')[0];
             
             if (uniqueDates.has(nextDayStr)) {
@@ -1156,29 +1105,21 @@ const App: React.FC = () => {
     }
     if (hasWeekend) unlocked.add(75);
 
-    // Depth
-    // Pensador Bíblico (55) - Primeira nota
     if (logs.some(l => l.userNotes && l.userNotes.trim().length > 0)) unlocked.add(55);
 
-    // Aluno da Palavra (56) - 10 notas
     const notesCount = logs.filter(l => l.userNotes && l.userNotes.trim().length > 0).length;
     if (notesCount >= 10) unlocked.add(56);
 
-    // Growth
     if (logs.length > 0) {
         const sorted = [...logs].sort((a,b) => a.timestamp - b.timestamp);
         const first = sorted[0].timestamp;
         const last = sorted[sorted.length-1].timestamp;
         const diffDays = (last - first) / (1000 * 3600 * 24);
         
-        // Primeiro Passo (92) - 1 semana
         if (diffDays >= 6) unlocked.add(92); 
-        
-        // Raiz Criada (93) - 1 mês
         if (diffDays >= 29) unlocked.add(93);
     }
     
-    // Super - Peregrino (117)
     if (unlocked.has(33) && unlocked.has(8)) unlocked.add(117);
 
     return unlocked;
@@ -1186,7 +1127,6 @@ const App: React.FC = () => {
 
   const unlockedAchievements = useMemo(() => calculateAchievements(readingLogs, readChapters), [readingLogs, readChapters]);
 
-  // --- Admin Logic ---
   const fetchAdminData = useCallback(async () => {
     if (!user || !isAdmin) return;
     setIsAdminLoading(true);
@@ -1200,8 +1140,8 @@ const App: React.FC = () => {
     setIsAdminLoading(false);
   }, [user, isAdmin]);
 
-  // Admin Analytics Calculation
   const adminStats = useMemo(() => {
+      // ... (admin stats calculation remains same) ...
       if(!adminLogs.length) return null;
 
       const totalChaptersRead = adminLogs.reduce((acc, log) => acc + (log.chapters?.length || 0), 0);
@@ -1209,7 +1149,6 @@ const App: React.FC = () => {
       const totalReadings = adminLogs.length;
       const openTickets = supportTickets.filter(t => t.status === 'open').length;
 
-      // Group by Date (Last 14 days)
       const last14Days = Array.from({ length: 14 }, (_, i) => {
           const d = new Date();
           d.setDate(d.getDate() - (13 - i));
@@ -1221,7 +1160,6 @@ const App: React.FC = () => {
           count: adminLogs.filter(l => l.date === date).length
       }));
 
-      // Group by Book (Top 5)
       const bookCounts: Record<string, number> = {};
       adminLogs.forEach(log => {
           bookCounts[log.book_id] = (bookCounts[log.book_id] || 0) + (log.chapters?.length || 0);
@@ -1234,7 +1172,6 @@ const App: React.FC = () => {
               count
           }));
 
-      // Top Users Leaderboard
       const userCounts: Record<string, {name: string, email: string, chapters: number, lastActive: number}> = {};
       adminLogs.forEach(log => {
           if(!userCounts[log.user_email]) {
@@ -1256,13 +1193,12 @@ const App: React.FC = () => {
       };
   }, [adminLogs, supportTickets]);
 
-  // --- Plan Logic Helpers ---
+  // --- Handlers ---
+  // ... (handleSelectPlan, getPlanProgress, handleQuickRead, computed stats, handleLogout, handleToggleChapter, isChapterReadGlobal, handleSaveSession, handleSaveNote, handleSupportSubmit, handleSaveNews, startEditingNote, handleSendPasswordReset, handleToggleTicketStatus, handleAddDependent, handleAmen, handleFamilyLogin maintained) ...
   
   const handleSelectPlan = (planId: PlanType) => {
     if (!user) return;
-    
     const config = PLANS_CONFIG[planId];
-    
     let totalChaptersInScope = 0;
     BIBLE_BOOKS.forEach(book => {
       if (config.scope === 'PAUL') {
@@ -1275,9 +1211,7 @@ const App: React.FC = () => {
           }
       }
     });
-
     const dailyTarget = Math.ceil(totalChaptersInScope / config.days);
-
     const newPlan: UserPlan = {
       id: planId,
       title: config.title,
@@ -1285,7 +1219,6 @@ const App: React.FC = () => {
       targetDailyChapters: dailyTarget,
       scope: config.scope
     };
-
     setUserPlan(newPlan);
     localStorage.setItem(`bible_plan_${user.id}`, JSON.stringify(newPlan));
     setIsPlanModalOpen(false);
@@ -1294,11 +1227,9 @@ const App: React.FC = () => {
 
   const getPlanProgress = useMemo(() => {
     if (!userPlan) return null;
-
     let readInScope = 0;
     let totalInScope = 0;
     const flatList: {bookId: string, chapter: number}[] = [];
-
     BIBLE_BOOKS.forEach(book => {
       let isInScope = false;
       if (userPlan.scope === 'PAUL') {
@@ -1308,7 +1239,6 @@ const App: React.FC = () => {
                        (userPlan.scope === 'OLD' && book.testament === 'Old') ||
                        (userPlan.scope === 'NEW' && book.testament === 'New');
       }
-      
       if (isInScope) {
         totalInScope += book.chapters;
         const readCount = readChapters[book.id]?.length || 0;
@@ -1318,14 +1248,11 @@ const App: React.FC = () => {
         }
       }
     });
-
     const unreadChapters = flatList.filter(item => {
       const isRead = readChapters[item.bookId]?.includes(item.chapter);
       return !isRead;
     });
-
     const nextBatch = unreadChapters.slice(0, userPlan.targetDailyChapters);
-
     return {
       readInScope,
       totalInScope,
@@ -1343,7 +1270,6 @@ const App: React.FC = () => {
     setActiveTab('tracker');
   };
 
-  // --- Computed Stats ---
   const totalReadCount = useMemo(() => {
     let count = 0;
     Object.values(readChapters).forEach((chapters) => {
@@ -1361,10 +1287,8 @@ const App: React.FC = () => {
         if (read === book.chapters) completedBooks++;
     });
     const remainingBooks = BIBLE_BOOKS.length - completedBooks;
-    
     let estimatedCompletionDate = "N/A";
     let daysToFinish = 0;
-    
     if (logs.length > 0) {
         const sortedLogs = [...logs].sort((a, b) => a.timestamp - b.timestamp);
         const firstLogDate = new Date(sortedLogs[0].date);
@@ -1373,7 +1297,6 @@ const App: React.FC = () => {
         const daysElapsed = Math.max(1, Math.ceil(timeDiff / (1000 * 3600 * 24)));
         const avgChaptersPerDay = totalRead / daysElapsed;
         const chaptersRemaining = TOTAL_CHAPTERS_BIBLE - totalRead;
-        
         if (avgChaptersPerDay > 0 && chaptersRemaining > 0) {
             daysToFinish = Math.ceil(chaptersRemaining / avgChaptersPerDay);
             const projection = new Date();
@@ -1383,7 +1306,6 @@ const App: React.FC = () => {
             estimatedCompletionDate = "Concluído!";
         }
     }
-
     return {
         completedBooks,
         remainingBooks,
@@ -1399,27 +1321,18 @@ const App: React.FC = () => {
     const uniqueDates = Array.from(new Set(sortedLogs.map(log => log.date))) as string[];
     const today = new Date().toISOString().split('T')[0];
     const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
-
-    if (uniqueDates[0] !== today && uniqueDates[0] !== yesterday) {
-      return 0; 
-    }
-
+    if (uniqueDates[0] !== today && uniqueDates[0] !== yesterday) return 0; 
     let streak = 0;
     let currentDate = new Date(uniqueDates[0]);
-    
     for (let i = 0; i < uniqueDates.length; i++) {
         const logDate = new Date(uniqueDates[i]);
         const diffTime = Math.abs(currentDate.getTime() - logDate.getTime());
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
-
-        if (i === 0) {
-           streak = 1;
-        } else if (diffDays === 1) {
+        if (i === 0) streak = 1;
+        else if (diffDays === 1) {
            streak++;
            currentDate = logDate;
-        } else {
-           break;
-        }
+        } else break;
     }
     return streak;
   }, [readingLogs]);
@@ -1430,7 +1343,6 @@ const App: React.FC = () => {
       d.setDate(d.getDate() - (6 - i));
       return d.toISOString().split('T')[0];
     });
-
     return last7Days.map(date => {
       const logsForDay = readingLogs.filter(l => l.date === date);
       const count = logsForDay.reduce((acc, log) => acc + log.chapters.length, 0);
@@ -1442,10 +1354,7 @@ const App: React.FC = () => {
     });
   }, [readingLogs]);
 
-  // --- Handlers ---
-
   const handleLogout = async () => {
-    // Se for usuário gerenciado (criança), apenas limpar estado local
     if (isManagedUser) {
         setUser(null);
         setIsManagedUser(false);
@@ -1465,7 +1374,6 @@ const App: React.FC = () => {
       setReadingChapter({ book, chapter });
       return;
     }
-
     setSessionSelectedChapters(prev => 
       prev.includes(chapter) 
         ? prev.filter(c => c !== chapter) 
@@ -1479,23 +1387,17 @@ const App: React.FC = () => {
 
   const handleSaveSession = async () => {
     if (sessionSelectedChapters.length === 0 || !user || !selectedBookId) return;
-
     const book = BIBLE_BOOKS.find(b => b.id === selectedBookId)!;
     const today = new Date().toISOString().split('T')[0];
-    
     setIsGeneratingAI(true);
     let reflection = '';
-    
     try {
-        // Updated to pass current style
         reflection = await generateDevotional(book.name, sessionSelectedChapters, devotionalStyle);
     } catch (e) {
         console.error(e);
     }
-
-    // Preparar objeto de log
     const logEntry: any = {
-        user_id: user.id, // Se for criança, usa o ID falso gerado
+        user_id: user.id,
         user_email: isManagedUser ? 'managed@family' : user.email, 
         user_name: user.user_metadata?.full_name || 'Usuário',
         date: today,
@@ -1505,18 +1407,13 @@ const App: React.FC = () => {
         ai_reflection: reflection,
         user_notes: ''
     };
-
-    // Se tiver em um grupo, vincula
     if (familyGroup) {
         logEntry.group_id = familyGroup.id;
     }
-
     const { data: savedLog, error } = await supabase.from('reading_logs').insert(logEntry).select().single();
-
     if (error) {
         alert('Erro ao salvar: ' + error.message);
     } else {
-        // Se tem família, posta no feed
         if (familyGroup) {
             const currentMember = familyMembers.find(m => isManagedUser ? m.id === user.id : m.user_id === user.id);
             if (currentMember) {
@@ -1531,7 +1428,6 @@ const App: React.FC = () => {
                 });
             }
         }
-
         await fetchData(); 
         if (familyGroup) await fetchFamilyData();
         if(isAdmin) fetchAdminData(); 
@@ -1543,11 +1439,7 @@ const App: React.FC = () => {
   };
 
   const handleSaveNote = async (logId: string) => {
-      const { error } = await supabase
-        .from('reading_logs')
-        .update({ user_notes: tempNoteContent })
-        .eq('id', logId);
-
+      const { error } = await supabase.from('reading_logs').update({ user_notes: tempNoteContent }).eq('id', logId);
       if (!error) {
           await fetchData();
           if(isAdmin) fetchAdminData();
@@ -1562,9 +1454,7 @@ const App: React.FC = () => {
       e.preventDefault();
       setSupportSuccess(false);
       if (!supportForm.message.trim() || !user) return;
-
       setIsSubmittingSupport(true);
-      
       const { error } = await supabase.from('support_tickets').insert({
           user_id: user.id,
           user_email: user.email,
@@ -1573,9 +1463,7 @@ const App: React.FC = () => {
           created_at: new Date().toISOString(),
           status: 'open'
       });
-
       setIsSubmittingSupport(false);
-
       if (error) {
          alert('Erro ao enviar mensagem: ' + error.message);
       } else {
@@ -1586,10 +1474,7 @@ const App: React.FC = () => {
   };
 
   const handleSaveNews = async () => {
-      const { error } = await supabase
-          .from('app_config')
-          .upsert({ key: 'site_news', value: editingNews });
-      
+      const { error } = await supabase.from('app_config').upsert({ key: 'site_news', value: editingNews });
       if (error) {
           alert('Erro ao salvar notícia.');
       } else {
@@ -1609,9 +1494,7 @@ const App: React.FC = () => {
           return;
       }
       if (confirm(`Enviar e-mail de redefinição de senha para ${email}?`)) {
-          const { error } = await supabase.auth.resetPasswordForEmail(email, {
-              redirectTo: window.location.origin
-          });
+          const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
           if (error) {
               alert('Erro ao enviar email: ' + error.message);
           } else {
@@ -1623,14 +1506,8 @@ const App: React.FC = () => {
   const handleToggleTicketStatus = async (ticketId: string, currentStatus: string | undefined | null) => {
       setUpdatingTicketId(ticketId);
       const newStatus = currentStatus === 'resolved' ? 'open' : 'resolved';
-      
       setSupportTickets(prev => prev.map(t => t.id === ticketId ? { ...t, status: newStatus } : t));
-      
-      const { error } = await supabase
-          .from('support_tickets')
-          .update({ status: newStatus })
-          .eq('id', ticketId);
-      
+      const { error } = await supabase.from('support_tickets').update({ status: newStatus }).eq('id', ticketId);
       if (!error) {
           await fetchAdminData();
       } else {
@@ -1638,16 +1515,12 @@ const App: React.FC = () => {
           alert('Erro ao atualizar status: ' + error.message);
           if(isAdmin) fetchAdminData();
       }
-      
       setUpdatingTicketId(null);
   };
 
-  // --- Family Handlers ---
   const handleCreateGroup = async () => {
       if (!newGroupName.trim() || !user) return;
-      
       const code = (newGroupName.substring(0, 4) + Math.floor(1000 + Math.random() * 9000)).toUpperCase().replace(/\s/g, '');
-      
       const { data: group, error } = await supabase.from('families').insert({
           name: newGroupName,
           code: code,
@@ -1655,16 +1528,18 @@ const App: React.FC = () => {
       }).select().single();
 
       if (error) {
-          alert('Erro ao criar grupo: ' + error.message);
+          if (error.message.includes("Could not find the 'code' column")) {
+              alert('Atenção: O sistema está atualizando o banco de dados. Por favor, aguarde 2 minutos e tente novamente.');
+          } else {
+              alert('Erro ao criar grupo: ' + error.message);
+          }
       } else if (group) {
-          // Add owner as admin member
           await supabase.from('family_members').insert({
               group_id: group.id,
               user_id: user.id,
               name: user.user_metadata?.full_name || 'Admin',
               role: 'admin'
           });
-          
           setFamilyGroup(group);
           setNewGroupName('');
           setIsCreatingGroup(false);
@@ -1675,15 +1550,13 @@ const App: React.FC = () => {
 
   const handleAddDependent = async () => {
       if (!familyGroup || !dependentForm.name || !dependentForm.pin) return;
-      
       const { error } = await supabase.from('family_members').insert({
           group_id: familyGroup.id,
-          user_id: null, // Dependente não tem user auth
+          user_id: null, 
           name: dependentForm.name,
           role: 'child',
           pin: dependentForm.pin
       });
-
       if (error) {
           alert('Erro ao adicionar dependente: ' + error.message);
       } else {
@@ -1697,23 +1570,17 @@ const App: React.FC = () => {
   const handleAmen = async (postId: string) => {
       const post = familyPosts.find(p => p.id === postId);
       if (!post) return;
-
-      // Optimistic update
       const newCount = (post.amen_count || 0) + 1;
       setFamilyPosts(prev => prev.map(p => p.id === postId ? { ...p, amen_count: newCount } : p));
-
       await supabase.from('family_posts').update({ amen_count: newCount }).eq('id', postId);
   };
 
   const handleFamilyLogin = (member: GroupMember, group: FamilyGroup) => {
-      // Simula um login de usuário para a criança
-      // O ID do usuário será o ID do membro na tabela family_members
       const fakeUser = {
-          id: member.id, // Usamos o ID do membro como ID do usuário
+          id: member.id, 
           email: `${member.name.toLowerCase().replace(/\s/g, '')}@family.tracker`,
           user_metadata: { full_name: member.name }
       };
-
       setUser(fakeUser);
       setIsManagedUser(true);
       setShowFamilyLogin(false);
@@ -1912,9 +1779,7 @@ const App: React.FC = () => {
               <h2 className="text-2xl font-bold text-gray-900 dark:text-white serif">Como podemos ajudar?</h2>
               <p className="text-gray-500 dark:text-gray-400 mt-2">Encontrou um bug, tem uma ideia ou precisa de ajuda? Escreva para nós.</p>
           </div>
-          {/* ... (restante do form de suporte igual ao anterior) ... */}
           <form onSubmit={handleSupportSubmit} className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 space-y-4">
-              {/* Simplificado para brevidade, mantendo lógica anterior */}
               <textarea
                   required
                   value={supportForm.message}
@@ -1935,34 +1800,64 @@ const App: React.FC = () => {
   );
 
   const renderAchievements = () => {
-      // ... (código existente de achievements) ...
       return (
           <div className="space-y-8 animate-fade-in pb-12">
-               {/* ... Keep existing Achievement implementation ... */}
                <div className="bg-gradient-to-r from-yellow-500 to-amber-600 rounded-2xl p-8 text-white shadow-xl relative overflow-hidden">
                     <div className="relative z-10">
                         <h2 className="text-3xl font-bold font-serif mb-2">Sala de Troféus</h2>
                         <div className="flex items-center gap-4">
                             <span className="font-bold text-xl">{unlockedAchievements.size}</span>
-                            <span className="text-sm text-yellow-100 uppercase tracking-wide">Desbloqueadas</span>
+                            <span className="text-sm text-yellow-100 uppercase tracking-wide">Desbloqueadas de {ACHIEVEMENTS.length}</span>
+                        </div>
+                        <div className="mt-4 w-full bg-black/20 rounded-full h-2">
+                            <div className="bg-white h-2 rounded-full transition-all duration-1000" style={{ width: `${(unlockedAchievements.size / ACHIEVEMENTS.length) * 100}%` }}></div>
                         </div>
                     </div>
                </div>
-               {/* Simplified mapping for brevity, assume logic remains */}
-               <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                  {ACHIEVEMENTS.slice(0, 4).map(ach => (
-                      <div key={ach.id} className="p-4 rounded-xl border bg-white dark:bg-slate-900 border-gray-200 dark:border-slate-800">
-                          <h4 className="font-bold text-gray-900 dark:text-white">{ach.title}</h4>
-                          <span className={unlockedAchievements.has(ach.id) ? "text-green-500" : "text-gray-400"}>{unlockedAchievements.has(ach.id) ? "Desbloqueado" : "Bloqueado"}</span>
-                      </div>
-                  ))}
+               
+               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                  {ACHIEVEMENTS.map(ach => {
+                      const isUnlocked = unlockedAchievements.has(ach.id);
+                      const Icon = IconMap[ach.icon] || Star;
+                      
+                      return (
+                          <div key={ach.id} className={`p-4 rounded-xl border flex flex-col items-center text-center transition-all duration-300 relative overflow-hidden group ${
+                              isUnlocked 
+                              ? 'bg-white dark:bg-slate-900 border-yellow-200 dark:border-yellow-900/30 shadow-md hover:shadow-lg hover:-translate-y-1' 
+                              : 'bg-gray-50 dark:bg-slate-900/50 border-gray-200 dark:border-slate-800 opacity-70 grayscale hover:opacity-100 hover:grayscale-0'
+                          }`}>
+                              {isUnlocked && (ach.rarity === 'Legendary' || ach.rarity === 'Epic') && (
+                                  <div className="absolute inset-0 bg-gradient-to-tr from-yellow-100/20 to-transparent pointer-events-none"></div>
+                              )}
+
+                              <div className={`w-14 h-14 rounded-full flex items-center justify-center mb-3 shadow-inner ${
+                                  isUnlocked ? ach.color : 'bg-gray-200 dark:bg-slate-800'
+                              }`}>
+                                  <Icon size={24} className={isUnlocked ? 'text-gray-800' : 'text-gray-400'} />
+                              </div>
+                              
+                              <h4 className="font-bold text-gray-900 dark:text-white text-sm mb-1 line-clamp-1">{ach.title}</h4>
+                              <p className="text-xs text-gray-500 dark:text-gray-400 leading-tight mb-3 line-clamp-2 min-h-[2.5em]">{ach.description}</p>
+                              
+                              <div className="mt-auto">
+                                  <span className={`text-[10px] uppercase font-bold px-2 py-1 rounded-full border ${
+                                      isUnlocked 
+                                      ? 'bg-green-50 text-green-700 border-green-200' 
+                                      : 'bg-gray-100 text-gray-500 border-gray-200'
+                                  }`}>
+                                      {isUnlocked ? 'Conquistado' : 'Bloqueado'}
+                                  </span>
+                              </div>
+                          </div>
+                      );
+                  })}
                </div>
-               <p className="text-center text-gray-400 text-sm">Visualize todas as conquistas no app completo.</p>
           </div>
       );
   };
 
   const renderFamily = () => {
+    // ... (Mantendo renderFamily igual ao anterior, apenas garantindo que esteja presente) ...
     if (!familyGroup) {
         return (
             <div className="flex flex-col items-center justify-center min-h-[60vh] text-center animate-fade-in p-6">
@@ -2045,7 +1940,6 @@ const App: React.FC = () => {
                                             <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{member.name}</span>
                                             {member.role === 'child' && <Baby size={14} className="text-gray-400" />}
                                         </div>
-                                        {/* Mock progress for now - needs backend calculation implementation */}
                                         <span className="text-xs font-bold text-emerald-600">Ativo</span>
                                     </div>
                                     <div className="w-full bg-gray-100 dark:bg-slate-800 rounded-full h-1.5">
@@ -2150,6 +2044,7 @@ const App: React.FC = () => {
   };
 
   // --- Render (Main) ---
+  // ... (rest of the file remains same) ...
 
   if (loadingAuth) {
     return (
@@ -2165,7 +2060,6 @@ const App: React.FC = () => {
 
   return (
     <div className={`min-h-screen transition-colors ${theme === 'dark' ? 'dark bg-slate-950' : 'bg-slate-50'}`}>
-      
       {showFamilyLogin && (
           <FamilyLoginModal 
               onClose={() => setShowFamilyLogin(false)} 
@@ -2173,7 +2067,6 @@ const App: React.FC = () => {
           />
       )}
 
-      {/* Mobile Header / Nav */}
       <div className="md:hidden p-4 bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-800 flex justify-between items-center sticky top-0 z-40">
          <div className="flex items-center gap-2">
             <div className={`p-1.5 rounded-lg text-white ${isManagedUser ? 'bg-emerald-600' : 'bg-indigo-600'}`}>
@@ -2187,7 +2080,6 @@ const App: React.FC = () => {
       </div>
 
       <div className="flex max-w-7xl mx-auto min-h-screen">
-         {/* Sidebar */}
          <aside className={`
             fixed inset-y-0 left-0 z-50 w-64 bg-white dark:bg-slate-900 border-r border-gray-200 dark:border-slate-800 transform transition-transform duration-300 ease-in-out md:translate-x-0 md:static md:h-auto
             ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
@@ -2257,11 +2149,9 @@ const App: React.FC = () => {
             </div>
          </aside>
 
-         {/* Main Content */}
          <main className="flex-1 p-4 md:p-8 overflow-x-hidden bg-gray-50/50 dark:bg-slate-950">
              {activeTab === 'dashboard' && (
                  <div className="space-y-6 max-w-5xl mx-auto animate-fade-in">
-                     {/* Greeting & Stats */}
                      <div className="flex flex-col md:flex-row gap-6 items-start justify-between">
                          <div>
                              <h2 className="text-2xl font-bold text-gray-900 dark:text-white serif">
@@ -2278,7 +2168,6 @@ const App: React.FC = () => {
                          )}
                      </div>
 
-                     {/* Site News Banner */}
                      {siteNews && showNews && (
                         <div className="bg-gradient-to-r from-blue-500 to-indigo-600 rounded-xl p-4 text-white shadow-md flex items-start gap-3 animate-fade-in relative">
                             <Megaphone size={24} className="flex-shrink-0 mt-1" />
@@ -2296,9 +2185,7 @@ const App: React.FC = () => {
                         </div>
                      )}
 
-                     {/* Share Card */}
                      <div className="bg-gradient-to-r from-emerald-500 to-teal-600 rounded-xl p-6 text-white shadow-lg flex flex-col md:flex-row items-center justify-between gap-4 animate-fade-in relative overflow-hidden">
-                        {/* Decorative circle */}
                         <div className="absolute -left-4 -bottom-10 w-32 h-32 bg-white/10 rounded-full blur-2xl"></div>
                         
                         <div className="relative z-10">
@@ -2320,7 +2207,6 @@ const App: React.FC = () => {
                         </button>
                      </div>
 
-                     {/* AI Persona Selector */}
                      <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800">
                         <div className="flex items-center gap-2 mb-4">
                             <div className="bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 p-2 rounded-lg">
@@ -2363,7 +2249,6 @@ const App: React.FC = () => {
                          <StatCard title="Previsão de Fim" value={advancedStats.projection.date} subtext={advancedStats.projection.days > 0 ? `${advancedStats.projection.days} dias restantes` : 'Concluído'} icon={<Calendar size={24}/>} />
                      </div>
 
-                     {/* Plan Progress */}
                      {userPlan && getPlanProgress && (
                          <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800">
                              <div className="flex justify-between items-end mb-4">
@@ -2407,7 +2292,6 @@ const App: React.FC = () => {
                          </div>
                      )}
 
-                     {/* Charts */}
                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                          <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800">
                              <h3 className="font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
@@ -2563,12 +2447,10 @@ const App: React.FC = () => {
 
              {activeTab === 'admin' && isAdmin && (
                  <div className="space-y-6 animate-fade-in">
-                     {/* ... (Existing Admin Code kept as is) ... */}
                      <div className="flex justify-between items-center mb-6">
                          <h2 className="text-2xl font-bold text-gray-900 dark:text-white serif flex items-center gap-2">
                              <ShieldAlert className="text-red-500" /> Admin Master
                          </h2>
-                         {/* ... (Admin Tabs) ... */}
                          <div className="flex bg-white dark:bg-slate-800 rounded-lg p-1 border border-gray-200 dark:border-slate-700">
                              <button 
                                  onClick={() => setAdminView('overview')}
@@ -2601,14 +2483,12 @@ const App: React.FC = () => {
                        <>
                          {adminView === 'overview' && (
                              <div className="space-y-6 animate-fade-in">
-                                 {/* KPI Cards */}
                                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                                      <StatCard title="Total de Usuários" value={adminStats.uniqueUsers} subtext="Leitores ativos" icon={<Users size={24}/>} colorClass="bg-blue-600" />
                                      <StatCard title="Capítulos Lidos" value={adminStats.totalChaptersRead} subtext="Em toda a plataforma" icon={<BookOpen size={24}/>} colorClass="bg-indigo-600" />
                                      <StatCard title="Total de Sessões" value={adminStats.totalReadings} subtext="Engajamento total" icon={<Activity size={24}/>} colorClass="bg-purple-600" />
                                      <StatCard title="Tickets Abertos" value={adminStats.openTickets} subtext="Precisam de atenção" icon={<LifeBuoy size={24}/>} highlight={adminStats.openTickets > 0} colorClass="bg-orange-500" />
                                  </div>
-                                 {/* ... Charts ... */}
                                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                                      <div className="lg:col-span-2 bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800">
                                          <h3 className="font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
@@ -2657,7 +2537,6 @@ const App: React.FC = () => {
 
                          {adminView === 'users' && (
                              <div className="space-y-6 animate-fade-in">
-                                 {/* ... Users Table ... */}
                                   <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden">
                                      <div className="p-6 border-b border-gray-100 dark:border-slate-800">
                                          <h3 className="font-bold text-lg text-gray-900 dark:text-white flex items-center gap-2">
@@ -2711,7 +2590,6 @@ const App: React.FC = () => {
                                          </table>
                                      </div>
                                  </div>
-                                 {/* ... Raw Logs Table ... */}
                                  <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden">
                                      <div className="p-6 border-b border-gray-100 dark:border-slate-800">
                                          <h3 className="font-bold text-lg text-gray-900 dark:text-white flex items-center gap-2">
@@ -2757,7 +2635,6 @@ const App: React.FC = () => {
                        </div>
                      )}
 
-                     {/* ... News and Support Admin Views ... */}
                       {adminView === 'news' && (
                         <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800">
                             <h3 className="font-bold text-lg mb-4 text-gray-900 dark:text-white flex items-center gap-2">
@@ -2783,7 +2660,6 @@ const App: React.FC = () => {
 
                      {adminView === 'messages' && (
                          <div className="space-y-4">
-                             {/* ... Message Filter ... */}
                              <div className="flex gap-2 mb-4">
                                  {['all', 'open', 'resolved'].map(f => (
                                      <button
@@ -2834,7 +2710,6 @@ const App: React.FC = () => {
          </main>
       </div>
 
-      {/* Modals */}
       {readingChapter && (
          <BibleReaderModal 
             book={readingChapter.book} 
