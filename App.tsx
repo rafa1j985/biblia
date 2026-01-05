@@ -80,7 +80,7 @@ import {
   BarChart, 
   Bar, 
   XAxis, 
-  YAxis,
+  YAxis, 
   CartesianGrid, 
   Tooltip, 
   ResponsiveContainer,
@@ -93,7 +93,7 @@ import {
   Area
 } from 'recharts';
 import { BIBLE_BOOKS, TOTAL_CHAPTERS_BIBLE, ADMIN_EMAILS, PLANS_CONFIG, ACHIEVEMENTS, DEVOTIONAL_STYLES } from './constants';
-import { BibleBook, ReadChaptersMap, ReadingLog, UserPlan, PlanType, SupportTicket, DevotionalStyle, FamilyGroup, GroupMember, FamilyPost } from './types';
+import { BibleBook, ReadChaptersMap, ReadingLog, UserPlan, PlanType, SupportTicket, DevotionalStyle } from './types';
 import { generateDevotional } from './services/geminiService';
 import { supabase } from './services/supabase';
 
@@ -266,156 +266,9 @@ const BibleReaderModal = ({ book, chapter, onClose, onNext, onPrev }: { book: Bi
   );
 };
 
-// --- Family Login Modal (Opção B) ---
-const FamilyLoginModal = ({ onClose, onLogin }: { onClose: () => void, onLogin: (member: GroupMember, group: FamilyGroup) => void }) => {
-    // ... (código existente mantido) ...
-    const [step, setStep] = useState<'code' | 'select' | 'pin'>('code');
-    const [code, setCode] = useState('');
-    const [group, setGroup] = useState<FamilyGroup | null>(null);
-    const [members, setMembers] = useState<GroupMember[]>([]);
-    const [selectedMember, setSelectedMember] = useState<GroupMember | null>(null);
-    const [pin, setPin] = useState('');
-    const [error, setError] = useState('');
-    const [loading, setLoading] = useState(false);
-
-    const handleCheckCode = async () => {
-        setLoading(true);
-        setError('');
-        try {
-            // Busca o grupo
-            const { data: groups, error: groupErr } = await supabase
-                .from('families')
-                .select('*')
-                .eq('code', code.toUpperCase().trim())
-                .single();
-
-            if (groupErr || !groups) throw new Error('Código de família não encontrado.');
-            setGroup(groups);
-
-            // Busca membros do tipo 'child' ou 'dependent'
-            const { data: mems, error: memErr } = await supabase
-                .from('family_members')
-                .select('*')
-                .eq('group_id', groups.id)
-                .is('user_id', null); // Apenas membros sem user_id (dependentes)
-
-            if (memErr) throw new Error('Erro ao buscar membros.');
-            if (!mems || mems.length === 0) throw new Error('Nenhum perfil de dependente encontrado neste grupo.');
-
-            setMembers(mems);
-            setStep('select');
-        } catch (err: any) {
-            setError(err.message);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const handlePinSubmit = () => {
-        if (!selectedMember) return;
-        if (selectedMember.pin === pin) {
-            onLogin(selectedMember, group!);
-        } else {
-            setError('PIN incorreto.');
-        }
-    };
-
-    return (
-        <div className="fixed inset-0 bg-black/60 z-[80] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
-            <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl overflow-hidden flex flex-col p-6">
-                <div className="flex justify-between items-center mb-6">
-                    <h3 className="font-bold text-xl text-emerald-600 dark:text-emerald-400 flex items-center gap-2">
-                        <Users size={24} /> Acesso Família
-                    </h3>
-                    <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
-                        <X size={24} />
-                    </button>
-                </div>
-
-                {step === 'code' && (
-                    <div className="space-y-4">
-                        <p className="text-sm text-gray-500">Digite o código de convite da sua família.</p>
-                        <div className="relative">
-                            <Hash className="absolute left-3 top-3.5 text-gray-400" size={18} />
-                            <input 
-                                type="text" 
-                                value={code}
-                                onChange={e => setCode(e.target.value.toUpperCase())}
-                                className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-white uppercase tracking-widest font-bold text-center"
-                                placeholder="EX: SILVA24"
-                            />
-                        </div>
-                        {error && <p className="text-red-500 text-sm">{error}</p>}
-                        <button 
-                            onClick={handleCheckCode}
-                            disabled={loading || code.length < 3}
-                            className="w-full bg-emerald-600 text-white py-3 rounded-xl font-bold hover:bg-emerald-700 flex justify-center"
-                        >
-                            {loading ? <Loader2 className="animate-spin" /> : 'Buscar Família'}
-                        </button>
-                    </div>
-                )}
-
-                {step === 'select' && group && (
-                    <div className="space-y-4">
-                        <p className="text-center font-medium text-gray-900 dark:text-white">Família: {group.name}</p>
-                        <p className="text-sm text-gray-500 text-center mb-4">Quem é você?</p>
-                        <div className="grid grid-cols-2 gap-3">
-                            {members.map(m => (
-                                <button
-                                    key={m.id}
-                                    onClick={() => { setSelectedMember(m); setStep('pin'); setError(''); }}
-                                    className="p-4 rounded-xl border border-gray-200 dark:border-slate-700 hover:border-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-all flex flex-col items-center gap-2"
-                                >
-                                    <div className="w-12 h-12 rounded-full bg-emerald-100 dark:bg-emerald-800 flex items-center justify-center text-emerald-700 dark:text-emerald-200 font-bold text-lg">
-                                        {m.name.charAt(0)}
-                                    </div>
-                                    <span className="font-bold text-gray-800 dark:text-white">{m.name}</span>
-                                </button>
-                            ))}
-                        </div>
-                        <button onClick={() => setStep('code')} className="w-full mt-2 text-sm text-gray-400">Voltar</button>
-                    </div>
-                )}
-
-                {step === 'pin' && selectedMember && (
-                    <div className="space-y-4 text-center">
-                        <div className="w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-800 flex items-center justify-center text-emerald-700 dark:text-emerald-200 font-bold text-2xl mx-auto mb-2">
-                            {selectedMember.name.charAt(0)}
-                        </div>
-                        <p className="text-gray-900 dark:text-white font-bold text-lg">Olá, {selectedMember.name}!</p>
-                        <p className="text-sm text-gray-500">Digite seu PIN secreto (peça ao papai/mamãe)</p>
-                        
-                        <div className="flex justify-center gap-2 my-4">
-                            <input 
-                                type="password" 
-                                maxLength={4}
-                                value={pin}
-                                onChange={e => setPin(e.target.value)}
-                                className="w-32 text-center text-2xl tracking-widest py-2 border-b-2 border-emerald-500 bg-transparent outline-none dark:text-white"
-                                placeholder="****"
-                            />
-                        </div>
-
-                        {error && <p className="text-red-500 text-sm">{error}</p>}
-                        
-                        <button 
-                            onClick={handlePinSubmit}
-                            className="w-full bg-emerald-600 text-white py-3 rounded-xl font-bold hover:bg-emerald-700"
-                        >
-                            Entrar
-                        </button>
-                         <button onClick={() => {setStep('select'); setPin('');}} className="w-full mt-2 text-sm text-gray-400">Voltar</button>
-                    </div>
-                )}
-            </div>
-        </div>
-    );
-};
-
 // --- Auth Components ---
 // (LoginScreen, ChangePasswordModal, PlanSelectionModal mantidos idênticos)
-const LoginScreen = ({ onLogin, onFamilyLogin }: { onLogin: (user: any) => void, onFamilyLogin: () => void }) => {
+const LoginScreen = ({ onLogin }: { onLogin: (user: any) => void }) => {
   const [authMode, setAuthMode] = useState<'login' | 'register' | 'forgot'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -501,16 +354,6 @@ const LoginScreen = ({ onLogin, onFamilyLogin }: { onLogin: (user: any) => void,
             {authMode === 'forgot' && 'Recupere seu acesso'}
           </p>
         </div>
-
-        {/* Family Login Button (Option B) */}
-        {authMode === 'login' && (
-            <button
-                onClick={onFamilyLogin}
-                className="w-full mb-6 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 py-3 rounded-xl font-bold border border-emerald-200 dark:border-emerald-800 flex items-center justify-center gap-2 hover:bg-emerald-100 transition-colors"
-            >
-                <Users size={18} /> Entrar com Código da Família
-            </button>
-        )}
 
         {authMode !== 'forgot' && (
           <div className="flex bg-gray-100 dark:bg-slate-800 p-1 rounded-xl mb-6">
@@ -747,12 +590,10 @@ const PlanSelectionModal = ({ onClose, onSelectPlan }: { onClose: () => void, on
 const App: React.FC = () => {
   // ... (State variables and logic remain same until handleCreateGroup) ...
   const [user, setUser] = useState<any>(null); 
-  const [isManagedUser, setIsManagedUser] = useState(false); 
   const [loadingAuth, setLoadingAuth] = useState(true);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
-  const [showFamilyLogin, setShowFamilyLogin] = useState(false);
 
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'tracker' | 'history' | 'admin' | 'achievements' | 'support' | 'family'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'tracker' | 'history' | 'admin' | 'achievements' | 'support'>('dashboard');
   const [selectedBookId, setSelectedBookId] = useState<string | null>(null);
   
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
@@ -799,18 +640,9 @@ const App: React.FC = () => {
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [tempNoteContent, setTempNoteContent] = useState('');
 
-  const [familyGroup, setFamilyGroup] = useState<FamilyGroup | null>(null);
-  const [familyMembers, setFamilyMembers] = useState<GroupMember[]>([]);
-  const [familyPosts, setFamilyPosts] = useState<FamilyPost[]>([]);
-  const [isCreatingGroup, setIsCreatingGroup] = useState(false);
-  const [newGroupName, setNewGroupName] = useState('');
-  const [isAddingDependent, setIsAddingDependent] = useState(false);
-  const [dependentForm, setDependentForm] = useState({ name: '', pin: '' });
-  const [isFamilyLoading, setIsFamilyLoading] = useState(false);
-
   const isAdmin = useMemo(() => {
-    return user && !isManagedUser && ADMIN_EMAILS.includes(user.email);
-  }, [user, isManagedUser]);
+    return user && ADMIN_EMAILS.includes(user.email);
+  }, [user]);
 
   useEffect(() => {
     const root = window.document.documentElement;
@@ -861,23 +693,19 @@ const App: React.FC = () => {
       const e = event as string;
       if (e === 'SIGNED_OUT' || e === 'USER_DELETED') {
         setUser(null);
-        setIsManagedUser(false);
       } else if (e === 'TOKEN_REFRESH_REVOKED') {
         Object.keys(localStorage).forEach(key => {
              if (key.startsWith('sb-')) localStorage.removeItem(key);
         });
         await supabase.auth.signOut().catch(() => {});
         setUser(null);
-        setIsManagedUser(false);
       } else {
-        if (!isManagedUser) {
-            setUser(session?.user ?? null);
-        }
+        setUser(session?.user ?? null);
       }
     });
 
     return () => subscription.unsubscribe();
-  }, [isManagedUser]);
+  }, []);
 
   useEffect(() => {
     if (user) {
@@ -914,57 +742,13 @@ const App: React.FC = () => {
       }
   };
 
-  const fetchFamilyData = useCallback(async () => {
-      if (!user) return;
-      setIsFamilyLoading(true);
-      try {
-          let memberQuery = supabase.from('family_members').select('*');
-          
-          if (isManagedUser) {
-              memberQuery = memberQuery.eq('id', user.id);
-          } else {
-              memberQuery = memberQuery.eq('user_id', user.id);
-          }
-          
-          const { data: memberData, error: memErr } = await memberQuery.single();
-          
-          if (memErr && memErr.code !== 'PGRST116') {
-             console.error(memErr);
-             return;
-          }
-
-          if (memberData) {
-              const { data: groupData } = await supabase.from('families').select('*').eq('id', memberData.group_id).single();
-              if (groupData) {
-                  setFamilyGroup(groupData);
-                  
-                  const { data: allMembers } = await supabase.from('family_members').select('*').eq('group_id', groupData.id);
-                  setFamilyMembers(allMembers || []);
-
-                  const { data: posts } = await supabase
-                    .from('family_posts')
-                    .select('*')
-                    .eq('group_id', groupData.id)
-                    .order('created_at', { ascending: false })
-                    .limit(20);
-                  setFamilyPosts(posts || []);
-              }
-          }
-      } catch (e) {
-          console.error("Family fetch error", e);
-      } finally {
-          setIsFamilyLoading(false);
-      }
-  }, [user, isManagedUser]);
-
   useEffect(() => {
     if (user) {
       fetchData();
       fetchNews();
-      fetchFamilyData();
       if (isAdmin) fetchAdminData();
     }
-  }, [user, fetchData, isAdmin, fetchFamilyData]);
+  }, [user, fetchData, isAdmin]);
 
   const processLogs = (data: any[], setLogs: Function, setMap: Function) => {
       const logs = data.map((item: any) => ({
@@ -1194,7 +978,7 @@ const App: React.FC = () => {
   }, [adminLogs, supportTickets]);
 
   // --- Handlers ---
-  // ... (handleSelectPlan, getPlanProgress, handleQuickRead, computed stats, handleLogout, handleToggleChapter, isChapterReadGlobal, handleSaveSession, handleSaveNote, handleSupportSubmit, handleSaveNews, startEditingNote, handleSendPasswordReset, handleToggleTicketStatus, handleAddDependent, handleAmen, handleFamilyLogin maintained) ...
+  // ... (handleSelectPlan, getPlanProgress, handleQuickRead, computed stats, handleLogout, handleToggleChapter, isChapterReadGlobal, handleSaveSession, handleSaveNote, handleSupportSubmit, handleSaveNews, startEditingNote, handleSendPasswordReset, handleToggleTicketStatus, maintained) ...
   
   const handleSelectPlan = (planId: PlanType) => {
     if (!user) return;
@@ -1355,17 +1139,10 @@ const App: React.FC = () => {
   }, [readingLogs]);
 
   const handleLogout = async () => {
-    if (isManagedUser) {
-        setUser(null);
-        setIsManagedUser(false);
-        setMobileMenuOpen(false);
-        setActiveTab('dashboard');
-    } else {
-        await supabase.auth.signOut();
-        setUser(null); 
-        setMobileMenuOpen(false);
-        setActiveTab('dashboard');
-    }
+    await supabase.auth.signOut();
+    setUser(null); 
+    setMobileMenuOpen(false);
+    setActiveTab('dashboard');
   };
 
   const handleToggleChapter = (chapter: number) => {
@@ -1398,7 +1175,7 @@ const App: React.FC = () => {
     }
     const logEntry: any = {
         user_id: user.id,
-        user_email: isManagedUser ? 'managed@family' : user.email, 
+        user_email: user.email, 
         user_name: user.user_metadata?.full_name || 'Usuário',
         date: today,
         timestamp: Date.now(),
@@ -1407,29 +1184,12 @@ const App: React.FC = () => {
         ai_reflection: reflection,
         user_notes: ''
     };
-    if (familyGroup) {
-        logEntry.group_id = familyGroup.id;
-    }
+    
     const { data: savedLog, error } = await supabase.from('reading_logs').insert(logEntry).select().single();
     if (error) {
         alert('Erro ao salvar: ' + error.message);
     } else {
-        if (familyGroup) {
-            const currentMember = familyMembers.find(m => isManagedUser ? m.id === user.id : m.user_id === user.id);
-            if (currentMember) {
-                await supabase.from('family_posts').insert({
-                    group_id: familyGroup.id,
-                    member_id: currentMember.id,
-                    member_name: currentMember.name,
-                    type: 'reading',
-                    content: `Leu ${book.name} capítulos ${logEntry.chapters.join(', ')}`,
-                    book_id: book.id,
-                    chapters: logEntry.chapters
-                });
-            }
-        }
         await fetchData(); 
-        if (familyGroup) await fetchFamilyData();
         if(isAdmin) fetchAdminData(); 
         setSessionSelectedChapters([]);
         alert("Leitura registrada e salva na nuvem!");
@@ -1516,75 +1276,6 @@ const App: React.FC = () => {
           if(isAdmin) fetchAdminData();
       }
       setUpdatingTicketId(null);
-  };
-
-  const handleCreateGroup = async () => {
-      if (!newGroupName.trim() || !user) return;
-      const code = (newGroupName.substring(0, 4) + Math.floor(1000 + Math.random() * 9000)).toUpperCase().replace(/\s/g, '');
-      const { data: group, error } = await supabase.from('families').insert({
-          name: newGroupName,
-          code: code,
-          owner_id: user.id
-      }).select().single();
-
-      if (error) {
-          if (error.message.includes("Could not find the 'code' column")) {
-              alert('Atenção: O sistema está atualizando o banco de dados. Por favor, aguarde 2 minutos e tente novamente.');
-          } else {
-              alert('Erro ao criar grupo: ' + error.message);
-          }
-      } else if (group) {
-          await supabase.from('family_members').insert({
-              group_id: group.id,
-              user_id: user.id,
-              name: user.user_metadata?.full_name || 'Admin',
-              role: 'admin'
-          });
-          setFamilyGroup(group);
-          setNewGroupName('');
-          setIsCreatingGroup(false);
-          fetchFamilyData();
-          alert(`Família criada! Código de convite: ${code}`);
-      }
-  };
-
-  const handleAddDependent = async () => {
-      if (!familyGroup || !dependentForm.name || !dependentForm.pin) return;
-      const { error } = await supabase.from('family_members').insert({
-          group_id: familyGroup.id,
-          user_id: null, 
-          name: dependentForm.name,
-          role: 'child',
-          pin: dependentForm.pin
-      });
-      if (error) {
-          alert('Erro ao adicionar dependente: ' + error.message);
-      } else {
-          setDependentForm({ name: '', pin: '' });
-          setIsAddingDependent(false);
-          fetchFamilyData();
-          alert('Dependente adicionado com sucesso!');
-      }
-  };
-
-  const handleAmen = async (postId: string) => {
-      const post = familyPosts.find(p => p.id === postId);
-      if (!post) return;
-      const newCount = (post.amen_count || 0) + 1;
-      setFamilyPosts(prev => prev.map(p => p.id === postId ? { ...p, amen_count: newCount } : p));
-      await supabase.from('family_posts').update({ amen_count: newCount }).eq('id', postId);
-  };
-
-  const handleFamilyLogin = (member: GroupMember, group: FamilyGroup) => {
-      const fakeUser = {
-          id: member.id, 
-          email: `${member.name.toLowerCase().replace(/\s/g, '')}@family.tracker`,
-          user_metadata: { full_name: member.name }
-      };
-      setUser(fakeUser);
-      setIsManagedUser(true);
-      setShowFamilyLogin(false);
-      alert(`Bem-vindo, ${member.name}! Você está logado no modo Família.`);
   };
 
   // --- Render Functions ---
@@ -1856,885 +1547,370 @@ const App: React.FC = () => {
       );
   };
 
-  const renderFamily = () => {
-    // ... (Mantendo renderFamily igual ao anterior, apenas garantindo que esteja presente) ...
-    if (!familyGroup) {
-        return (
-            <div className="flex flex-col items-center justify-center min-h-[60vh] text-center animate-fade-in p-6">
-                <div className="bg-emerald-100 dark:bg-emerald-900/30 p-6 rounded-full text-emerald-600 dark:text-emerald-400 mb-6">
-                    <Users size={64} />
-                </div>
-                <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-2 serif">Família & Célula</h2>
-                <p className="text-gray-500 dark:text-gray-400 max-w-md mb-8">
-                    Crie um grupo para sua família ou célula, acompanhe o progresso de todos e incentivem-se mutuamente na leitura da Palavra.
-                </p>
-                
-                {isCreatingGroup ? (
-                    <div className="w-full max-w-xs space-y-3 animate-fade-in">
-                        <input 
-                            type="text" 
-                            placeholder="Nome da Família (ex: Família Silva)"
-                            value={newGroupName}
-                            onChange={e => setNewGroupName(e.target.value)}
-                            className="w-full p-3 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white"
-                        />
-                        <div className="flex gap-2">
-                            <button onClick={() => setIsCreatingGroup(false)} className="flex-1 py-2 text-gray-500">Cancelar</button>
-                            <button onClick={handleCreateGroup} className="flex-1 bg-emerald-600 text-white py-2 rounded-lg font-bold">Criar</button>
-                        </div>
-                    </div>
-                ) : (
-                    <button 
-                        onClick={() => setIsCreatingGroup(true)}
-                        className="bg-emerald-600 text-white px-8 py-4 rounded-xl font-bold shadow-lg hover:bg-emerald-700 transition-all flex items-center gap-2"
-                    >
-                        <Plus size={20} /> Criar Minha Tribo
-                    </button>
-                )}
-            </div>
-        );
-    }
-
-    return (
-        <div className="space-y-6 max-w-5xl mx-auto animate-fade-in pb-20">
-            {/* Header */}
-            <div className="bg-gradient-to-r from-emerald-600 to-teal-600 rounded-2xl p-6 text-white shadow-lg relative overflow-hidden">
-                <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                    <div>
-                        <h2 className="text-2xl font-bold serif flex items-center gap-2">
-                            <Users /> {familyGroup.name}
-                        </h2>
-                        <div className="flex items-center gap-2 mt-2 bg-white/20 px-3 py-1 rounded-lg w-fit">
-                            <Hash size={14} /> 
-                            <span className="font-mono font-bold tracking-widest">{familyGroup.code}</span>
-                            <span className="text-xs opacity-75 ml-2">(Código de Convite)</span>
-                        </div>
-                    </div>
-                    
-                    {!isManagedUser && (
-                        <button 
-                            onClick={() => setIsAddingDependent(true)}
-                            className="bg-white text-emerald-700 px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 hover:bg-emerald-50 transition-colors shadow-md"
-                        >
-                            <Baby size={18} /> Adicionar Dependente
-                        </button>
-                    )}
-                </div>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Left Column: Members & Progress */}
-                <div className="space-y-6">
-                    <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800">
-                        <h3 className="font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-                            <TrendingUp size={20} className="text-emerald-500"/> Progresso Familiar
-                        </h3>
-                        <div className="space-y-4">
-                            {familyMembers.map(member => (
-                                <div key={member.id}>
-                                    <div className="flex justify-between items-center mb-1">
-                                        <div className="flex items-center gap-2">
-                                            <div className="w-6 h-6 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-xs font-bold text-emerald-700 dark:text-emerald-400">
-                                                {member.name.charAt(0)}
-                                            </div>
-                                            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{member.name}</span>
-                                            {member.role === 'child' && <Baby size={14} className="text-gray-400" />}
-                                        </div>
-                                        <span className="text-xs font-bold text-emerald-600">Ativo</span>
-                                    </div>
-                                    <div className="w-full bg-gray-100 dark:bg-slate-800 rounded-full h-1.5">
-                                        <div className="bg-emerald-500 h-1.5 rounded-full" style={{ width: `${Math.random() * 60 + 10}%` }}></div>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-
-                    {isAddingDependent && (
-                        <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-lg border border-emerald-200 dark:border-emerald-800 animate-fade-in">
-                            <h3 className="font-bold text-gray-900 dark:text-white mb-4">Novo Dependente</h3>
-                            <div className="space-y-3">
-                                <div>
-                                    <label className="text-xs font-bold text-gray-500 uppercase">Nome</label>
-                                    <input 
-                                        type="text" 
-                                        value={dependentForm.name} 
-                                        onChange={e => setDependentForm({...dependentForm, name: e.target.value})}
-                                        className="w-full p-2 border rounded-lg dark:bg-slate-800 dark:border-slate-700 dark:text-white"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="text-xs font-bold text-gray-500 uppercase">PIN de Acesso (4 dígitos)</label>
-                                    <input 
-                                        type="text" 
-                                        maxLength={4}
-                                        value={dependentForm.pin} 
-                                        onChange={e => setDependentForm({...dependentForm, pin: e.target.value})}
-                                        className="w-full p-2 border rounded-lg dark:bg-slate-800 dark:border-slate-700 dark:text-white tracking-widest"
-                                    />
-                                </div>
-                                <div className="flex gap-2 pt-2">
-                                    <button onClick={() => setIsAddingDependent(false)} className="flex-1 py-2 text-sm text-gray-500">Cancelar</button>
-                                    <button onClick={handleAddDependent} className="flex-1 bg-emerald-600 text-white py-2 rounded-lg font-bold text-sm">Salvar</button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-                </div>
-
-                {/* Right Column: Feed */}
-                <div className="lg:col-span-2">
-                    <h3 className="font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-                        <MessageCircle size={20} className="text-emerald-500"/> Mural da Edificação
-                    </h3>
-                    
-                    <div className="space-y-4">
-                        {familyPosts.length === 0 ? (
-                            <div className="bg-white dark:bg-slate-900 p-8 rounded-xl border border-gray-100 dark:border-slate-800 text-center text-gray-500">
-                                <p>O mural está vazio. Façam a primeira leitura juntos! 📖</p>
-                            </div>
-                        ) : (
-                            familyPosts.map(post => (
-                                <div key={post.id} className="bg-white dark:bg-slate-900 p-5 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 animate-fade-in">
-                                    <div className="flex items-start gap-3">
-                                        <div className="w-10 h-10 rounded-full bg-indigo-100 dark:bg-slate-800 flex items-center justify-center text-indigo-600 dark:text-indigo-400 font-bold">
-                                            {post.member_name.charAt(0)}
-                                        </div>
-                                        <div className="flex-1">
-                                            <div className="flex justify-between items-start">
-                                                <div>
-                                                    <span className="font-bold text-gray-900 dark:text-white">{post.member_name}</span>
-                                                    <span className="text-gray-500 dark:text-gray-400 text-xs ml-2">
-                                                        {new Date(post.created_at).toLocaleDateString()} às {new Date(post.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                            
-                                            <p className="text-gray-800 dark:text-gray-200 mt-2 text-sm">{post.content}</p>
-                                            
-                                            {post.type === 'reading' && (
-                                                <div className="mt-3 flex gap-2">
-                                                    {post.chapters?.slice(0, 5).map(c => (
-                                                        <span key={c} className="bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 px-2 py-1 rounded text-xs font-bold">
-                                                            Cap {c}
-                                                        </span>
-                                                    ))}
-                                                </div>
-                                            )}
-
-                                            <div className="mt-4 pt-3 border-t border-gray-100 dark:border-slate-800 flex items-center gap-4">
-                                                <button 
-                                                    onClick={() => handleAmen(post.id)}
-                                                    className="flex items-center gap-1.5 text-gray-500 dark:text-gray-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors text-sm font-medium"
-                                                >
-                                                    <Heart size={16} className={post.amen_count > 0 ? "fill-emerald-500 text-emerald-500" : ""} />
-                                                    {post.amen_count > 0 ? `${post.amen_count} Amém` : 'Amém'}
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            ))
-                        )}
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-  };
-
-  // --- Render (Main) ---
-  // ... (rest of the file remains same) ...
-
-  if (loadingAuth) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
-        <Loader2 className="animate-spin text-indigo-600" size={40} />
-      </div>
-    );
-  }
-
-  if (!user && !showFamilyLogin) {
-    return <LoginScreen onLogin={setUser} onFamilyLogin={() => setShowFamilyLogin(true)} />;
-  }
-
   return (
     <div className={`min-h-screen transition-colors ${theme === 'dark' ? 'dark bg-slate-950' : 'bg-slate-50'}`}>
-      {showFamilyLogin && (
-          <FamilyLoginModal 
-              onClose={() => setShowFamilyLogin(false)} 
-              onLogin={handleFamilyLogin} 
-          />
-      )}
-
-      <div className="md:hidden p-4 bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-800 flex justify-between items-center sticky top-0 z-40">
-         <div className="flex items-center gap-2">
-            <div className={`p-1.5 rounded-lg text-white ${isManagedUser ? 'bg-emerald-600' : 'bg-indigo-600'}`}>
-               {isManagedUser ? <Baby size={20} /> : <Book size={20} />}
-            </div>
-            <span className="font-bold text-gray-900 dark:text-white serif">Bible Tracker {isManagedUser ? '(Kids)' : ''}</span>
-         </div>
-         <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="p-2 text-gray-600 dark:text-gray-300">
-            {mobileMenuOpen ? <X size={24}/> : <Menu size={24}/>}
-         </button>
-      </div>
-
-      <div className="flex max-w-7xl mx-auto min-h-screen">
-         <aside className={`
-            fixed inset-y-0 left-0 z-50 w-64 bg-white dark:bg-slate-900 border-r border-gray-200 dark:border-slate-800 transform transition-transform duration-300 ease-in-out md:translate-x-0 md:static md:h-auto
-            ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
-         `}>
-            <div className="p-6 h-full flex flex-col">
-               <div className="flex items-center gap-3 mb-8 px-2">
-                  <div className={`p-2 rounded-xl text-white shadow-lg dark:shadow-none ${isManagedUser ? 'bg-emerald-600 shadow-emerald-200' : 'bg-indigo-600 shadow-indigo-200'}`}>
-                     {isManagedUser ? <Baby size={24} /> : <Book size={24} />}
-                  </div>
-                  <div>
-                     <h1 className="font-bold text-lg text-gray-900 dark:text-white serif">Bible Tracker</h1>
-                     <p className="text-xs text-gray-500 dark:text-gray-400">{isManagedUser ? 'Modo Família' : 'Jornada Diária'}</p>
-                  </div>
-               </div>
-
-               <nav className="space-y-1 flex-1">
-                  {[
-                     { id: 'dashboard', label: 'Visão Geral', icon: LayoutDashboard },
-                     { id: 'tracker', label: 'Leitura Livre', icon: BookOpen },
-                     { id: 'family', label: 'Família & Célula', icon: Users, highlight: true },
-                     { id: 'history', label: 'Histórico', icon: History },
-                     { id: 'achievements', label: 'Conquistas', icon: Trophy },
-                     { id: 'support', label: 'Suporte', icon: LifeBuoy },
-                     ...(isAdmin ? [{ id: 'admin', label: 'Administração', icon: ShieldAlert }] : [])
-                  ].map(item => (
-                     <button
-                        key={item.id}
-                        onClick={() => { setActiveTab(item.id as any); setMobileMenuOpen(false); }}
-                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium transition-all ${
-                           activeTab === item.id 
-                           ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-300' 
-                           : item.highlight ? 'text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-900/10' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-800'
-                        }`}
-                     >
-                        <item.icon size={20} />
-                        {item.label}
-                     </button>
-                  ))}
-               </nav>
-
-               <div className="mt-auto pt-6 border-t border-gray-100 dark:border-slate-800 space-y-2">
-                  <div className="px-3 py-2 flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-indigo-100 dark:bg-slate-800 flex items-center justify-center text-indigo-600 dark:text-indigo-400 font-bold text-xs">
-                          {user.email?.substring(0, 2).toUpperCase()}
+      
+      {loadingAuth ? (
+          <div className="flex h-screen items-center justify-center">
+              <Loader2 className="animate-spin text-indigo-600" size={48} />
+          </div>
+      ) : !user ? (
+          <LoginScreen onLogin={setUser} />
+      ) : (
+          <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-slate-950 text-gray-900 dark:text-white">
+              {/* Sidebar Desktop */}
+              <aside className="hidden md:flex flex-col w-64 bg-white dark:bg-slate-900 border-r border-gray-200 dark:border-slate-800 z-20 transition-colors">
+                  <div className="p-6 flex items-center gap-3">
+                      <div className="bg-indigo-600 p-2 rounded-lg text-white shadow-lg shadow-indigo-200 dark:shadow-none">
+                          <Book size={24} />
                       </div>
-                      <div className="flex-1 overflow-hidden">
-                          <p className="text-sm font-bold text-gray-900 dark:text-white truncate">{user.user_metadata?.full_name || 'Usuário'}</p>
-                          <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{user.email}</p>
-                      </div>
+                      <span className="font-bold text-xl tracking-tight serif">Bíblia Tracker</span>
                   </div>
                   
-                  <button onClick={toggleTheme} className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors">
-                     {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
-                     {theme === 'light' ? 'Modo Escuro' : 'Modo Claro'}
-                  </button>
-                  
-                  {!isManagedUser && (
-                      <button onClick={() => setIsChangePasswordOpen(true)} className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors">
-                         <KeyRound size={18} /> Alterar Senha
+                  <nav className="flex-1 px-4 space-y-2 overflow-y-auto py-4">
+                      {[
+                        { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+                        { id: 'tracker', label: 'Leitura', icon: BookOpen },
+                        { id: 'history', label: 'Histórico', icon: History },
+                        { id: 'achievements', label: 'Conquistas', icon: Trophy },
+                        { id: 'support', label: 'Suporte', icon: LifeBuoy },
+                      ].map(item => (
+                          <button 
+                            key={item.id}
+                            onClick={() => setActiveTab(item.id as any)} 
+                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium ${
+                                activeTab === item.id 
+                                ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400' 
+                                : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-800'
+                            }`}
+                          >
+                              <item.icon size={20} /> {item.label}
+                          </button>
+                      ))}
+                      
+                      {isAdmin && (
+                          <button 
+                            onClick={() => setActiveTab('admin')} 
+                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium ${
+                                activeTab === 'admin' 
+                                ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400' 
+                                : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-800'
+                            }`}
+                          >
+                              <ShieldAlert size={20} /> Admin
+                          </button>
+                      )}
+                  </nav>
+
+                  <div className="p-4 border-t border-gray-200 dark:border-slate-800">
+                      <button onClick={toggleTheme} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors mb-2">
+                          {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
+                          <span>{theme === 'dark' ? 'Tema Claro' : 'Tema Escuro'}</span>
                       </button>
+                      <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                          <LogOut size={20} /> Sair
+                      </button>
+                  </div>
+              </aside>
+
+              {/* Mobile Header & Content */}
+              <main className="flex-1 flex flex-col h-full overflow-hidden relative transition-colors">
+                  <header className="md:hidden h-16 bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-800 flex items-center justify-between px-4 z-20 shrink-0">
+                      <div className="flex items-center gap-2">
+                          <div className="bg-indigo-600 p-1.5 rounded-lg text-white">
+                              <Book size={20} />
+                          </div>
+                          <span className="font-bold text-lg serif">Bíblia Tracker</span>
+                      </div>
+                      <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="p-2 text-gray-600 dark:text-gray-300">
+                          {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+                      </button>
+                  </header>
+
+                  {/* Mobile Menu */}
+                  {mobileMenuOpen && (
+                    <div className="absolute inset-0 z-50 bg-white dark:bg-slate-900 p-4 animate-fade-in md:hidden flex flex-col">
+                        <div className="flex justify-end mb-4">
+                            <button onClick={() => setMobileMenuOpen(false)} className="p-2 text-gray-500"><X size={24} /></button>
+                        </div>
+                        <nav className="space-y-2 flex-1 overflow-y-auto">
+                             {[
+                                { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+                                { id: 'tracker', label: 'Leitura', icon: BookOpen },
+                                { id: 'history', label: 'Histórico', icon: History },
+                                { id: 'achievements', label: 'Conquistas', icon: Trophy },
+                                { id: 'support', label: 'Suporte', icon: LifeBuoy },
+                             ].map(item => (
+                                <button 
+                                    key={item.id}
+                                    onClick={() => { setActiveTab(item.id as any); setMobileMenuOpen(false); }} 
+                                    className="w-full p-4 rounded-xl bg-gray-50 dark:bg-slate-800 flex items-center gap-3 font-bold text-gray-800 dark:text-gray-200"
+                                >
+                                    <item.icon /> {item.label}
+                                </button>
+                             ))}
+                             {isAdmin && <button onClick={() => { setActiveTab('admin'); setMobileMenuOpen(false); }} className="w-full p-4 rounded-xl bg-gray-50 dark:bg-slate-800 flex items-center gap-3 font-bold text-indigo-600"><ShieldAlert /> Admin</button>}
+                        </nav>
+                        <div className="mt-4 space-y-3 shrink-0">
+                             <button onClick={toggleTheme} className="w-full p-4 rounded-xl border border-gray-200 dark:border-slate-700 flex items-center justify-center gap-2 text-gray-600 dark:text-gray-300">
+                                {theme === 'dark' ? <Sun /> : <Moon />} {theme === 'dark' ? 'Modo Claro' : 'Modo Escuro'}
+                             </button>
+                             <button onClick={handleLogout} className="w-full p-4 rounded-xl bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 font-bold flex items-center justify-center gap-2"><LogOut /> Sair</button>
+                        </div>
+                    </div>
                   )}
 
-                  <button onClick={handleLogout} className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
-                     <LogOut size={18} /> Sair
-                  </button>
-               </div>
-            </div>
-         </aside>
+                  {/* Main Scrollable Content */}
+                  <div className="flex-1 overflow-y-auto p-4 md:p-8 relative scroll-smooth">
+                      {/* Top Bar Desktop */}
+                      <div className="hidden md:flex justify-between items-center mb-8">
+                          <div>
+                              <h1 className="text-2xl font-bold text-gray-900 dark:text-white transition-colors">
+                                  {activeTab === 'dashboard' && 'Visão Geral'}
+                                  {activeTab === 'tracker' && 'Leitura Bíblica'}
+                                  {activeTab === 'history' && 'Histórico de Leitura'}
+                                  {activeTab === 'achievements' && 'Conquistas'}
+                                  {activeTab === 'admin' && 'Painel Administrativo'}
+                                  {activeTab === 'support' && 'Suporte'}
+                              </h1>
+                              <p className="text-gray-500 dark:text-gray-400 text-sm">
+                                  Olá, {user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Visitante'}
+                              </p>
+                          </div>
+                          <div className="flex items-center gap-3">
+                              {siteNews && showNews && (
+                                <div className="bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 animate-pulse">
+                                  <Megaphone size={16} /> {siteNews}
+                                  <button onClick={() => setShowNews(false)} className="ml-2 hover:text-indigo-900"><X size={14} /></button>
+                                </div>
+                              )}
+                              <button onClick={() => setIsChangePasswordOpen(true)} className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-slate-800 text-gray-500 dark:text-gray-400 transition-colors" title="Alterar Senha">
+                                  <KeyRound size={20} />
+                              </button>
+                              <div className="w-10 h-10 rounded-full bg-indigo-100 dark:bg-indigo-900/50 flex items-center justify-center text-indigo-700 dark:text-indigo-300 font-bold shadow-sm">
+                                  {user?.user_metadata?.full_name?.charAt(0) || user?.email?.charAt(0) || 'U'}
+                              </div>
+                          </div>
+                      </div>
 
-         <main className="flex-1 p-4 md:p-8 overflow-x-hidden bg-gray-50/50 dark:bg-slate-950">
-             {activeTab === 'dashboard' && (
-                 <div className="space-y-6 max-w-5xl mx-auto animate-fade-in">
-                     <div className="flex flex-col md:flex-row gap-6 items-start justify-between">
-                         <div>
-                             <h2 className="text-2xl font-bold text-gray-900 dark:text-white serif">
-                                 Olá, {user.user_metadata?.full_name?.split(' ')[0] || 'Peregrino'}!
-                             </h2>
-                             <p className="text-gray-500 dark:text-gray-400">
-                                 {userPlan ? `Seguindo o plano: ${userPlan.title}` : 'Que tal começar um plano de leitura hoje?'}
-                             </p>
-                         </div>
-                         {!userPlan && !isManagedUser && (
-                             <button onClick={() => setIsPlanModalOpen(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-lg shadow-indigo-200 dark:shadow-none">
-                                 <Target size={16} /> Planos de Leitura
-                             </button>
-                         )}
-                     </div>
-
-                     {siteNews && showNews && (
-                        <div className="bg-gradient-to-r from-blue-500 to-indigo-600 rounded-xl p-4 text-white shadow-md flex items-start gap-3 animate-fade-in relative">
-                            <Megaphone size={24} className="flex-shrink-0 mt-1" />
-                            <div className="flex-1 pr-6">
-                                <h3 className="font-bold text-sm mb-1 uppercase tracking-wide opacity-90">Mural de Novidades</h3>
-                                <p className="text-sm font-medium whitespace-pre-line leading-relaxed">{siteNews}</p>
-                            </div>
-                            <button 
-                                onClick={() => setShowNews(false)}
-                                className="absolute top-2 right-2 text-white/70 hover:text-white hover:bg-white/20 p-1 rounded-full transition-colors"
-                                title="Ocultar novidades"
-                            >
-                                <X size={16} />
-                            </button>
-                        </div>
-                     )}
-
-                     <div className="bg-gradient-to-r from-emerald-500 to-teal-600 rounded-xl p-6 text-white shadow-lg flex flex-col md:flex-row items-center justify-between gap-4 animate-fade-in relative overflow-hidden">
-                        <div className="absolute -left-4 -bottom-10 w-32 h-32 bg-white/10 rounded-full blur-2xl"></div>
-                        
-                        <div className="relative z-10">
-                            <h3 className="font-bold text-xl mb-1 flex items-center gap-2">
-                                <Share2 size={24} /> Espalhe a Palavra
-                            </h3>
-                            <p className="text-emerald-50 text-sm max-w-md">
-                                Ajude outros a se conectarem com as Escrituras. Convide amigos para o desafio de leitura!
-                            </p>
-                        </div>
-                        <button 
-                            onClick={() => {
-                                const text = encodeURIComponent("Estou usando o Bible Tracker para acompanhar minha leitura bíblica e receber devocionais com IA. É incrível para manter a constância! Comece também: https://biblia-xi-eight.vercel.app/");
-                                window.open(`https://wa.me/?text=${text}`, '_blank');
-                            }}
-                            className="relative z-10 bg-white text-emerald-600 px-6 py-3 rounded-xl font-bold text-sm hover:bg-emerald-50 transition-colors shadow-md flex items-center gap-2 whitespace-nowrap"
-                        >
-                            Compartilhar no WhatsApp
-                        </button>
-                     </div>
-
-                     <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800">
-                        <div className="flex items-center gap-2 mb-4">
-                            <div className="bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 p-2 rounded-lg">
-                                <Sparkles size={20} />
-                            </div>
-                            <div>
-                                <h3 className="font-bold text-gray-900 dark:text-white text-lg">Personalize seus Insights</h3>
-                                <p className="text-xs text-gray-500 dark:text-gray-400">Escolha o estilo de reflexão da Inteligência Artificial</p>
-                            </div>
-                        </div>
-                        
-                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-                            {Object.entries(DEVOTIONAL_STYLES).map(([key, style]) => {
-                                const StyleIcon = IconMap[style.icon] || Sparkles;
-                                const isSelected = devotionalStyle === key;
-                                return (
-                                    <button 
-                                        key={key}
-                                        onClick={() => setDevotionalStyle(key as DevotionalStyle)}
-                                        className={`flex flex-col items-center justify-center p-4 rounded-xl border transition-all duration-200 group text-center h-full
-                                            ${isSelected 
-                                                ? 'bg-indigo-600 text-white border-indigo-600 shadow-md transform scale-[1.02]' 
-                                                : 'bg-gray-50 dark:bg-slate-800 border-transparent text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700 hover:border-gray-200 dark:hover:border-slate-600'
-                                            }
-                                        `}
-                                    >
-                                        <StyleIcon size={24} className={`mb-2 ${isSelected ? 'text-white' : 'text-indigo-500 dark:text-indigo-400 opacity-70 group-hover:opacity-100'}`} />
-                                        <h4 className={`font-bold text-xs mb-1 ${isSelected ? 'text-white' : 'text-gray-700 dark:text-gray-300'}`}>{style.title}</h4>
-                                        <p className={`text-[10px] leading-tight ${isSelected ? 'text-indigo-100' : 'text-gray-400'}`}>{style.description}</p>
-                                    </button>
-                                );
-                            })}
-                        </div>
-                     </div>
-
-                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                         <StatCard title="Capítulos Lidos" value={totalReadCount} subtext={`${completionPercentage.toFixed(1)}% da Bíblia`} icon={<BookOpen size={24}/>} />
-                         <StatCard title="Sequência Atual" value={`${currentStreak} dias`} subtext="Mantenha o ritmo!" icon={<Flame size={24}/>} highlight colorClass="bg-orange-500" />
-                         <StatCard title="Conquistas" value={unlockedAchievements.size} subtext={`${ACHIEVEMENTS.length} disponíveis`} icon={<Trophy size={24}/>} />
-                         <StatCard title="Previsão de Fim" value={advancedStats.projection.date} subtext={advancedStats.projection.days > 0 ? `${advancedStats.projection.days} dias restantes` : 'Concluído'} icon={<Calendar size={24}/>} />
-                     </div>
-
-                     {userPlan && getPlanProgress && (
-                         <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800">
-                             <div className="flex justify-between items-end mb-4">
-                                 <div>
-                                     <h3 className="font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                                         <Map size={20} className="text-indigo-500" /> Progresso do Plano
-                                     </h3>
-                                     <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                                         {getPlanProgress.readInScope} de {getPlanProgress.totalInScope} capítulos
-                                     </p>
-                                 </div>
-                                 <div className="text-right">
-                                     <span className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">{getPlanProgress.percent.toFixed(1)}%</span>
-                                 </div>
-                             </div>
-                             <ProgressBar current={getPlanProgress.readInScope} total={getPlanProgress.totalInScope} />
-                             
-                             {getPlanProgress.nextBatch.length > 0 ? (
-                                 <div className="mt-6 p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg border border-indigo-100 dark:border-indigo-900/30">
-                                     <h4 className="text-sm font-bold text-indigo-900 dark:text-indigo-200 mb-2">Leitura de Hoje (Meta: {userPlan.targetDailyChapters} caps)</h4>
-                                     <div className="flex flex-wrap gap-2">
-                                         {getPlanProgress.nextBatch.slice(0, userPlan.targetDailyChapters).map((item, idx) => (
-                                             <span key={idx} className="bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-300 px-3 py-1 rounded-md text-xs font-bold border border-indigo-100 dark:border-indigo-800 shadow-sm">
-                                                 {item.bookId} {item.chapter}
-                                             </span>
-                                         ))}
-                                     </div>
-                                     <button 
-                                         onClick={() => handleQuickRead(getPlanProgress.nextBatch.slice(0, userPlan.targetDailyChapters))}
-                                         className="mt-4 w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-lg text-sm font-bold transition-colors"
-                                     >
-                                         Ir para Leitura
-                                     </button>
-                                 </div>
-                             ) : (
-                                 <div className="mt-6 text-center py-4 text-green-600 dark:text-green-400 font-medium bg-green-50 dark:bg-green-900/20 rounded-lg">
-                                     <CheckCircle2 className="inline-block mr-2" size={20} />
-                                     Você está em dia com seu plano!
-                                 </div>
-                             )}
-                         </div>
-                     )}
-
-                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                         <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800">
-                             <h3 className="font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-                                 <Activity size={20} className="text-indigo-500"/> Atividade Recente
-                             </h3>
-                             <div className="h-64">
-                                 <ResponsiveContainer width="100%" height="100%">
-                                     <BarChart data={chartData}>
-                                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
-                                         <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#64748B'}} dy={10} />
-                                         <Tooltip 
-                                             cursor={{fill: 'transparent'}}
-                                             contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}
-                                         />
-                                         <Bar dataKey="chapters" fill="#4F46E5" radius={[4, 4, 0, 0]} barSize={32} />
-                                     </BarChart>
-                                 </ResponsiveContainer>
-                             </div>
-                         </div>
-                         
-                         <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800">
-                             <h3 className="font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-                                 <BarChart3 size={20} className="text-purple-500"/> Distribuição
-                             </h3>
-                             <div className="h-64 flex items-center justify-center">
-                                 <ResponsiveContainer width="100%" height="100%">
-                                     <PieChart>
-                                         <Pie
-                                             data={[
-                                                 { name: 'Antigo Testamento', value: BIBLE_BOOKS.filter(b => b.testament === 'Old').reduce((acc, b) => acc + (readChapters[b.id]?.length || 0), 0) },
-                                                 { name: 'Novo Testamento', value: BIBLE_BOOKS.filter(b => b.testament === 'New').reduce((acc, b) => acc + (readChapters[b.id]?.length || 0), 0) }
-                                             ]}
-                                             cx="50%"
-                                             cy="50%"
-                                             innerRadius={60}
-                                             outerRadius={80}
-                                             paddingAngle={5}
-                                             dataKey="value"
-                                         >
-                                             <Cell key="cell-0" fill="#4F46E5" />
-                                             <Cell key="cell-1" fill="#A855F7" />
-                                         </Pie>
-                                         <Tooltip />
-                                     </PieChart>
-                                 </ResponsiveContainer>
-                             </div>
-                             <div className="flex justify-center gap-4 mt-2 text-sm">
-                                 <div className="flex items-center gap-1">
-                                     <div className="w-3 h-3 rounded-full bg-indigo-600"></div>
-                                     <span className="text-gray-600 dark:text-gray-400">Antigo Testamento</span>
-                                 </div>
-                                 <div className="flex items-center gap-1">
-                                     <div className="w-3 h-3 rounded-full bg-purple-500"></div>
-                                     <span className="text-gray-600 dark:text-gray-400">Novo Testamento</span>
-                                 </div>
-                             </div>
-                         </div>
-                     </div>
-                 </div>
-             )}
-
-             {activeTab === 'tracker' && renderTracker()}
-             
-             {activeTab === 'achievements' && renderAchievements()}
-             
-             {activeTab === 'support' && renderSupport()}
-
-             {activeTab === 'family' && renderFamily()}
-
-             {activeTab === 'history' && (
-                 <div className="max-w-4xl mx-auto animate-fade-in">
-                     <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6 serif">Diário de Leitura</h2>
-                     <div className="space-y-4">
-                         {readingLogs.map(log => {
-                             const book = BIBLE_BOOKS.find(b => b.id === log.bookId);
-                             return (
-                                 <div key={log.id} className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800">
-                                     <div className="flex flex-col md:flex-row justify-between md:items-start gap-4 mb-4">
-                                         <div>
-                                             <div className="flex items-center gap-2 mb-1">
-                                                 <span className="bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 text-xs font-bold px-2 py-1 rounded uppercase">
-                                                     {book?.name}
-                                                 </span>
-                                                 <span className="text-gray-400 text-xs">
-                                                     {new Date(log.timestamp).toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', hour: '2-digit', minute: '2-digit' })}
-                                                 </span>
-                                             </div>
-                                             <h3 className="text-lg font-bold text-gray-800 dark:text-white">
-                                                 Capítulos: {log.chapters.join(', ')}
-                                             </h3>
-                                         </div>
-                                         <button 
-                                             onClick={() => startEditingNote(log)}
-                                             className="text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
-                                             title="Editar nota pessoal"
-                                         >
-                                             <PenLine size={18} />
-                                         </button>
-                                     </div>
-
-                                     {log.aiReflection && (
-                                         <div className="mb-4 bg-indigo-50 dark:bg-indigo-900/10 p-4 rounded-lg border-l-4 border-indigo-500">
-                                             <div className="flex items-center gap-2 mb-2 text-indigo-700 dark:text-indigo-400 text-xs font-bold uppercase tracking-wide">
-                                                 <Sparkles size={14} /> Insight Pastoral (IA)
-                                             </div>
-                                             <p className="text-gray-700 dark:text-gray-300 text-sm leading-relaxed italic">
-                                                 "{log.aiReflection}"
-                                             </p>
-                                         </div>
+                      {/* Tab Content */}
+                      
+                      {activeTab === 'dashboard' && (
+                        <div className="space-y-6 animate-fade-in">
+                          {/* Welcome / Plan Widget */}
+                          <div className="bg-indigo-600 rounded-2xl p-8 text-white relative overflow-hidden shadow-xl">
+                             <div className="absolute right-0 top-0 h-full w-1/3 bg-gradient-to-l from-white/10 to-transparent pointer-events-none"></div>
+                             <div className="relative z-10 max-w-2xl">
+                                <h2 className="text-3xl font-bold font-serif mb-2">Continue sua jornada</h2>
+                                {userPlan ? (
+                                   <div>
+                                     <p className="text-indigo-100 mb-4">Plano Ativo: <strong>{userPlan.title}</strong></p>
+                                     {getPlanProgress && (
+                                        <div className="bg-black/20 rounded-xl p-4 mb-4 backdrop-blur-sm">
+                                           <div className="flex justify-between text-sm mb-2 font-medium">
+                                              <span>Progresso do Plano</span>
+                                              <span>{Math.round(getPlanProgress.percent)}%</span>
+                                           </div>
+                                           <div className="w-full bg-black/20 rounded-full h-2 mb-4">
+                                              <div className="bg-white h-2 rounded-full transition-all" style={{ width: `${getPlanProgress.percent}%` }}></div>
+                                           </div>
+                                           <div className="flex flex-wrap gap-2 items-center">
+                                              <span className="text-sm text-indigo-100 mr-2">Próximos:</span>
+                                              {getPlanProgress.nextBatch.length > 0 ? getPlanProgress.nextBatch.slice(0, 5).map((item, idx) => (
+                                                  <span key={idx} className="bg-white/20 px-2 py-1 rounded text-xs font-bold">{item.bookId} {item.chapter}</span>
+                                              )) : <span className="text-sm font-bold">Meta diária cumprida! 🎉</span>}
+                                           </div>
+                                           {getPlanProgress.nextBatch.length > 0 && (
+                                              <button onClick={() => handleQuickRead(getPlanProgress.nextBatch)} className="mt-4 bg-white text-indigo-600 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-indigo-50 transition-colors">
+                                                 Ler Agora <ArrowRight size={16} />
+                                              </button>
+                                           )}
+                                        </div>
                                      )}
-
-                                     <div className="mt-4 pt-4 border-t border-gray-100 dark:border-slate-800">
-                                         {editingNoteId === log.id ? (
-                                             <div className="space-y-3">
-                                                 <label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">Suas Anotações</label>
-                                                 <textarea
-                                                     className="w-full p-3 rounded-lg border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-                                                     rows={3}
-                                                     placeholder="O que Deus falou com você hoje?"
-                                                     value={tempNoteContent}
-                                                     onChange={(e) => setTempNoteContent(e.target.value)}
-                                                 />
-                                                 <div className="flex justify-end gap-2">
-                                                     <button onClick={() => setEditingNoteId(null)} className="px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400">Cancelar</button>
-                                                     <button onClick={() => handleSaveNote(log.id)} className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">Salvar Nota</button>
-                                                 </div>
-                                             </div>
-                                         ) : (
-                                             <div>
-                                                 <h4 className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-2 flex items-center gap-2">
-                                                     <UserCircle size={14} /> Suas Anotações
-                                                 </h4>
-                                                 {log.userNotes ? (
-                                                     <p className="text-gray-700 dark:text-gray-300 text-sm whitespace-pre-wrap">{log.userNotes}</p>
-                                                 ) : (
-                                                     <p className="text-gray-400 text-sm italic">Nenhuma anotação pessoal.</p>
-                                                 )}
-                                             </div>
-                                         )}
-                                     </div>
-                                 </div>
-                             );
-                         })}
-                         {readingLogs.length === 0 && (
-                             <div className="text-center py-12 text-gray-400">
-                                 <BookOpen size={48} className="mx-auto mb-4 opacity-20" />
-                                 <p>Seu diário está vazio. Comece a ler hoje!</p>
-                             </div>
-                         )}
-                     </div>
-                 </div>
-             )}
-
-             {activeTab === 'admin' && isAdmin && (
-                 <div className="space-y-6 animate-fade-in">
-                     <div className="flex justify-between items-center mb-6">
-                         <h2 className="text-2xl font-bold text-gray-900 dark:text-white serif flex items-center gap-2">
-                             <ShieldAlert className="text-red-500" /> Admin Master
-                         </h2>
-                         <div className="flex bg-white dark:bg-slate-800 rounded-lg p-1 border border-gray-200 dark:border-slate-700">
-                             <button 
-                                 onClick={() => setAdminView('overview')}
-                                 className={`px-4 py-2 rounded-md text-sm font-medium transition-all flex items-center gap-2 ${adminView === 'overview' ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300' : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'}`}
-                             >
-                                 <BarChart3 size={16} /> Analytics
-                             </button>
-                             <button 
-                                 onClick={() => setAdminView('users')}
-                                 className={`px-4 py-2 rounded-md text-sm font-medium transition-all flex items-center gap-2 ${adminView === 'users' ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300' : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'}`}
-                             >
-                                 <Users size={16} /> Usuários
-                             </button>
-                             <button 
-                                 onClick={() => setAdminView('messages')}
-                                 className={`px-4 py-2 rounded-md text-sm font-medium transition-all flex items-center gap-2 ${adminView === 'messages' ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300' : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'}`}
-                             >
-                                 <MessageCircle size={16} /> Suporte {supportTickets.filter(t => t.status === 'open').length > 0 && <span className="w-2 h-2 bg-red-500 rounded-full"></span>}
-                             </button>
-                             <button 
-                                 onClick={() => setAdminView('news')}
-                                 className={`px-4 py-2 rounded-md text-sm font-medium transition-all flex items-center gap-2 ${adminView === 'news' ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300' : 'text-gray-500 hover:text-gray-900 dark:hover:text-white'}`}
-                             >
-                                 <Megaphone size={16} /> Notícias
-                             </button>
-                         </div>
-                     </div>
-
-                     {adminStats ? (
-                       <>
-                         {adminView === 'overview' && (
-                             <div className="space-y-6 animate-fade-in">
-                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                                     <StatCard title="Total de Usuários" value={adminStats.uniqueUsers} subtext="Leitores ativos" icon={<Users size={24}/>} colorClass="bg-blue-600" />
-                                     <StatCard title="Capítulos Lidos" value={adminStats.totalChaptersRead} subtext="Em toda a plataforma" icon={<BookOpen size={24}/>} colorClass="bg-indigo-600" />
-                                     <StatCard title="Total de Sessões" value={adminStats.totalReadings} subtext="Engajamento total" icon={<Activity size={24}/>} colorClass="bg-purple-600" />
-                                     <StatCard title="Tickets Abertos" value={adminStats.openTickets} subtext="Precisam de atenção" icon={<LifeBuoy size={24}/>} highlight={adminStats.openTickets > 0} colorClass="bg-orange-500" />
-                                 </div>
-                                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                                     <div className="lg:col-span-2 bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800">
-                                         <h3 className="font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-                                             <TrendingUp size={20} className="text-indigo-500"/> Crescimento de Leituras (14 Dias)
-                                         </h3>
-                                         <div className="h-72">
-                                             <ResponsiveContainer width="100%" height="100%">
-                                                 <AreaChart data={adminStats.readingsByDate}>
-                                                     <defs>
-                                                         <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
-                                                             <stop offset="5%" stopColor="#4F46E5" stopOpacity={0.8}/>
-                                                             <stop offset="95%" stopColor="#4F46E5" stopOpacity={0}/>
-                                                         </linearGradient>
-                                                     </defs>
-                                                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
-                                                     <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#64748B'}} />
-                                                     <YAxis axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#64748B'}} />
-                                                     <Tooltip 
-                                                         contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}
-                                                     />
-                                                     <Area type="monotone" dataKey="count" stroke="#4F46E5" fillOpacity={1} fill="url(#colorCount)" />
-                                                 </AreaChart>
-                                             </ResponsiveContainer>
-                                         </div>
-                                     </div>
-
-                                     <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800">
-                                         <h3 className="font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-                                             <Book size={20} className="text-purple-500"/> Top 5 Livros
-                                         </h3>
-                                         <div className="h-72">
-                                             <ResponsiveContainer width="100%" height="100%">
-                                                 <BarChart data={adminStats.topBooks} layout="vertical">
-                                                     <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#E2E8F0" />
-                                                     <XAxis type="number" hide />
-                                                     <YAxis dataKey="name" type="category" width={80} axisLine={false} tickLine={false} tick={{fontSize: 11, fill: '#64748B'}} />
-                                                     <Tooltip cursor={{fill: 'transparent'}} />
-                                                     <Bar dataKey="count" fill="#A855F7" radius={[0, 4, 4, 0]} barSize={24} />
-                                                 </BarChart>
-                                             </ResponsiveContainer>
-                                         </div>
-                                     </div>
-                                 </div>
-                             </div>
-                         )}
-
-                         {adminView === 'users' && (
-                             <div className="space-y-6 animate-fade-in">
-                                  <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden">
-                                     <div className="p-6 border-b border-gray-100 dark:border-slate-800">
-                                         <h3 className="font-bold text-lg text-gray-900 dark:text-white flex items-center gap-2">
-                                             <Trophy size={20} className="text-yellow-500"/> Top Leitores (Ranking)
-                                         </h3>
-                                         <p className="text-sm text-gray-500 mt-1">Usuários mais engajados na plataforma.</p>
-                                     </div>
-                                     <div className="overflow-x-auto">
-                                         <table className="w-full text-sm text-left">
-                                             <thead className="bg-gray-50 dark:bg-slate-950 text-gray-500 dark:text-gray-400 font-medium border-b border-gray-100 dark:border-slate-800">
-                                                 <tr>
-                                                     <th className="p-4 w-16 text-center">#</th>
-                                                     <th className="p-4">Usuário</th>
-                                                     <th className="p-4 text-center">Capítulos Lidos</th>
-                                                     <th className="p-4 text-right">Última Atividade</th>
-                                                     <th className="p-4 text-center">Ações</th>
-                                                 </tr>
-                                             </thead>
-                                             <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
-                                                 {adminStats.topUsers.map((u, idx) => (
-                                                     <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-slate-800/50">
-                                                         <td className="p-4 text-center">
-                                                             {idx === 0 ? <Crown size={20} className="text-yellow-500 mx-auto"/> : 
-                                                              idx === 1 ? <div className="w-6 h-6 rounded-full bg-gray-300 text-gray-700 flex items-center justify-center font-bold text-xs mx-auto">2</div> :
-                                                              idx === 2 ? <div className="w-6 h-6 rounded-full bg-orange-300 text-orange-800 flex items-center justify-center font-bold text-xs mx-auto">3</div> :
-                                                              <span className="text-gray-400 font-bold">{idx + 1}</span>
-                                                             }
-                                                         </td>
-                                                         <td className="p-4">
-                                                             <div className="font-bold text-gray-900 dark:text-white">{u.name}</div>
-                                                             <div className="text-xs text-gray-500">{u.email}</div>
-                                                         </td>
-                                                         <td className="p-4 text-center font-medium text-indigo-600 dark:text-indigo-400">
-                                                             {u.chapters}
-                                                         </td>
-                                                         <td className="p-4 text-right text-gray-500 dark:text-gray-400 text-xs">
-                                                             {new Date(u.lastActive).toLocaleDateString()}
-                                                         </td>
-                                                         <td className="p-4 text-center">
-                                                             <button 
-                                                                 onClick={() => handleSendPasswordReset(u.email)}
-                                                                 className="text-gray-400 hover:text-indigo-600 p-2 rounded-full hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors"
-                                                                 title="Resetar Senha"
-                                                             >
-                                                                 <KeyRound size={16} />
-                                                             </button>
-                                                         </td>
-                                                     </tr>
-                                                 ))}
-                                             </tbody>
-                                         </table>
-                                     </div>
-                                 </div>
-                                 <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden">
-                                     <div className="p-6 border-b border-gray-100 dark:border-slate-800">
-                                         <h3 className="font-bold text-lg text-gray-900 dark:text-white flex items-center gap-2">
-                                             <List size={20} className="text-gray-400"/> Atividade Recente (Logs Brutos)
-                                         </h3>
-                                     </div>
-                                     <div className="overflow-x-auto max-h-96 overflow-y-auto">
-                                         <table className="w-full text-sm text-left">
-                                             <thead className="bg-gray-50 dark:bg-slate-950 text-gray-500 dark:text-gray-400 font-medium sticky top-0 z-10">
-                                                 <tr>
-                                                     <th className="p-4">Usuário</th>
-                                                     <th className="p-4">Leitura</th>
-                                                     <th className="p-4 text-right">Data/Hora</th>
-                                                 </tr>
-                                             </thead>
-                                             <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
-                                                 {adminLogs.slice(0, 50).map((log: any) => (
-                                                     <tr key={log.id} className="hover:bg-gray-50 dark:hover:bg-slate-800/50">
-                                                         <td className="p-4">
-                                                             <div className="font-medium text-gray-900 dark:text-white">{log.user_name || log.user_email}</div>
-                                                         </td>
-                                                         <td className="p-4">
-                                                             <span className="bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 px-2 py-1 rounded text-xs font-bold mr-2">
-                                                                 {log.book_id}
-                                                             </span>
-                                                             <span className="text-gray-500 dark:text-gray-400 text-xs">Caps: {log.chapters?.join(', ')}</span>
-                                                         </td>
-                                                         <td className="p-4 text-right text-gray-500 dark:text-gray-400 text-xs">
-                                                             {new Date(log.timestamp).toLocaleString()}
-                                                         </td>
-                                                     </tr>
-                                                 ))}
-                                             </tbody>
-                                         </table>
-                                     </div>
-                                 </div>
-                             </div>
-                         )}
-                       </>
-                     ) : (
-                       <div className="flex justify-center items-center h-64">
-                           <Loader2 size={32} className="animate-spin text-indigo-600" />
-                       </div>
-                     )}
-
-                      {adminView === 'news' && (
-                        <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800">
-                            <h3 className="font-bold text-lg mb-4 text-gray-900 dark:text-white flex items-center gap-2">
-                                <Megaphone size={20} className="text-indigo-500"/>
-                                Gerenciar Mural de Novidades
-                            </h3>
-                            <p className="text-sm text-gray-500 mb-4">Esta mensagem aparecerá no topo do Dashboard de todos os usuários. Deixe em branco para remover.</p>
-                            
-                            <textarea 
-                                value={editingNews} 
-                                onChange={e => setEditingNews(e.target.value)} 
-                                className="w-full p-4 border rounded-xl dark:bg-slate-800 dark:border-slate-700 dark:text-white h-40 mb-4 focus:ring-2 focus:ring-indigo-500 outline-none"
-                                placeholder="Ex: Nova atualização disponível! Agora temos conquistas..."
-                            ></textarea>
-                            
-                            <div className="flex justify-end">
-                                <button onClick={handleSaveNews} className="bg-indigo-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-indigo-700 shadow-md">
-                                    Publicar Notícia
-                                </button>
-                            </div>
-                        </div>
-                     )}
-
-                     {adminView === 'messages' && (
-                         <div className="space-y-4">
-                             <div className="flex gap-2 mb-4">
-                                 {['all', 'open', 'resolved'].map(f => (
-                                     <button
-                                         key={f}
-                                         onClick={() => setMessageFilter(f as any)}
-                                         className={`px-3 py-1 rounded-full text-xs font-bold border capitalize ${messageFilter === f ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white dark:bg-slate-900 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-slate-700'}`}
-                                     >
-                                         {f === 'all' ? 'Todos' : f === 'open' ? 'Abertos' : 'Resolvidos'}
+                                   </div>
+                                ) : (
+                                   <div>
+                                     <p className="text-indigo-100 mb-6">Você ainda não selecionou um plano de leitura guiado. Escolha um para manter a constância ou siga com a leitura livre.</p>
+                                     <button onClick={() => setIsPlanModalOpen(true)} className="bg-white text-indigo-600 px-6 py-3 rounded-xl font-bold hover:bg-indigo-50 transition-colors shadow-lg">
+                                        Escolher Plano
                                      </button>
-                                 ))}
+                                   </div>
+                                )}
                              </div>
-                             
-                             <div className="grid gap-4">
-                                 {supportTickets
-                                     .filter(t => messageFilter === 'all' ? true : t.status === messageFilter)
-                                     .map(ticket => (
-                                         <div key={ticket.id} className={`bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-l-4 ${ticket.status === 'open' ? 'border-l-orange-500 border-gray-100 dark:border-slate-800' : 'border-l-green-500 border-gray-100 dark:border-slate-800 opacity-75'}`}>
-                                             <div className="flex justify-between items-start mb-2">
-                                                 <div className="flex items-center gap-2">
-                                                     <span className={`text-xs font-bold px-2 py-0.5 rounded uppercase ${ticket.type === 'problem' ? 'bg-red-100 text-red-700' : ticket.type === 'suggestion' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'}`}>
-                                                         {ticket.type}
-                                                     </span>
-                                                     <span className="text-gray-400 text-xs">
-                                                         {new Date(ticket.created_at).toLocaleDateString()}
-                                                     </span>
-                                                 </div>
-                                                 <button 
-                                                     onClick={() => handleToggleTicketStatus(ticket.id, ticket.status)}
-                                                     disabled={updatingTicketId === ticket.id}
-                                                     className={`text-xs font-bold px-3 py-1 rounded-full transition-colors ${ticket.status === 'open' ? 'bg-orange-100 text-orange-700 hover:bg-orange-200' : 'bg-green-100 text-green-700 hover:bg-green-200'}`}
-                                                 >
-                                                     {updatingTicketId === ticket.id ? '...' : ticket.status === 'open' ? 'Marcar Resolvido' : 'Reabrir'}
-                                                 </button>
-                                             </div>
-                                             <h4 className="font-bold text-gray-900 dark:text-white mb-1">{ticket.user_email}</h4>
-                                             <p className="text-gray-600 dark:text-gray-300 text-sm bg-gray-50 dark:bg-slate-950 p-3 rounded-lg border border-gray-100 dark:border-slate-800">
-                                                 {ticket.message}
-                                             </p>
-                                         </div>
-                                     ))
-                                 }
-                                 {supportTickets.length === 0 && <p className="text-gray-500 text-center py-8">Nenhum ticket encontrado.</p>}
-                             </div>
-                         </div>
-                     )}
-                 </div>
-             )}
-         </main>
-      </div>
+                          </div>
 
-      {readingChapter && (
-         <BibleReaderModal 
-            book={readingChapter.book} 
-            chapter={readingChapter.chapter} 
-            onClose={() => setReadingChapter(null)}
-            onNext={() => {
-                const nextChap = readingChapter.chapter + 1;
-                if(nextChap <= readingChapter.book.chapters) {
-                    setReadingChapter({ ...readingChapter, chapter: nextChap });
-                } else {
-                    alert('Fim do livro!');
-                }
-            }}
-            onPrev={() => {
-                const prevChap = readingChapter.chapter - 1;
-                if(prevChap >= 1) {
-                    setReadingChapter({ ...readingChapter, chapter: prevChap });
-                }
-            }}
-         />
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                              <StatCard title="Total Lido" value={totalReadCount} subtext={`${completionPercentage.toFixed(1)}% da Bíblia`} icon={<BookOpen size={24} />} highlight={true} />
+                              <StatCard title="Sequência" value={`${currentStreak} dias`} subtext="Mantenha o fogo aceso!" icon={<Flame size={24} />} colorClass="bg-orange-500" />
+                              <StatCard title="Livros Completos" value={advancedStats.completedBooks} subtext={`Faltam ${advancedStats.remainingBooks}`} icon={<CheckCircle2 size={24} />} />
+                              <StatCard title="Conquistas" value={unlockedAchievements.size} subtext={`de ${ACHIEVEMENTS.length}`} icon={<Trophy size={24} />} />
+                          </div>
+
+                          <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm">
+                             <h3 className="font-bold text-lg mb-6 flex items-center gap-2 text-gray-900 dark:text-white"><Activity size={20} className="text-indigo-500"/> Atividade Recente</h3>
+                             <div className="h-64 w-full">
+                                <ResponsiveContainer width="100%" height="100%">
+                                   <AreaChart data={chartData}>
+                                      <defs>
+                                        <linearGradient id="colorChapters" x1="0" y1="0" x2="0" y2="1">
+                                          <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/>
+                                          <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                                        </linearGradient>
+                                      </defs>
+                                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme === 'dark' ? '#334155' : '#e2e8f0'} />
+                                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: theme === 'dark' ? '#94a3b8' : '#64748b', fontSize: 12}} dy={10} />
+                                      <YAxis axisLine={false} tickLine={false} tick={{fill: theme === 'dark' ? '#94a3b8' : '#64748b', fontSize: 12}} />
+                                      <Tooltip 
+                                        contentStyle={{backgroundColor: theme === 'dark' ? '#1e293b' : '#fff', borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}
+                                        itemStyle={{color: theme === 'dark' ? '#fff' : '#1e293b'}}
+                                      />
+                                      <Area type="monotone" dataKey="chapters" stroke="#6366f1" strokeWidth={3} fillOpacity={1} fill="url(#colorChapters)" />
+                                   </AreaChart>
+                                </ResponsiveContainer>
+                             </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {activeTab === 'tracker' && renderTracker()}
+                      
+                      {activeTab === 'achievements' && renderAchievements()}
+                      
+                      {activeTab === 'support' && renderSupport()}
+
+                      {activeTab === 'history' && (
+                          <div className="space-y-4 animate-fade-in max-w-4xl mx-auto">
+                              {readingLogs.length === 0 ? (
+                                  <div className="text-center py-12 text-gray-500">
+                                      <History size={48} className="mx-auto mb-4 opacity-20" />
+                                      <p>Nenhum registro de leitura encontrado.</p>
+                                  </div>
+                              ) : (
+                                  readingLogs.map(log => {
+                                      const book = BIBLE_BOOKS.find(b => b.id === log.bookId);
+                                      return (
+                                          <div key={log.id} className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-gray-100 dark:border-slate-800 shadow-sm relative">
+                                              <div className="flex justify-between items-start mb-4">
+                                                  <div>
+                                                      <h3 className="font-bold text-lg text-gray-900 dark:text-white serif">{book?.name} <span className="text-indigo-600 dark:text-indigo-400">{log.chapters.join(', ')}</span></h3>
+                                                      <p className="text-xs text-gray-500 dark:text-gray-400">{new Date(log.timestamp).toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                                                  </div>
+                                                  {log.userNotes && (
+                                                      <div className="bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1">
+                                                          <PenTool size={12} /> Com Nota
+                                                      </div>
+                                                  )}
+                                              </div>
+                                              
+                                              {log.aiReflection && (
+                                                  <div className="bg-indigo-50 dark:bg-indigo-900/10 p-4 rounded-lg text-sm text-gray-700 dark:text-gray-300 italic mb-4 border-l-4 border-indigo-300 dark:border-indigo-700">
+                                                      "{log.aiReflection}"
+                                                  </div>
+                                              )}
+
+                                              {editingNoteId === log.id ? (
+                                                  <div className="mt-4 animate-fade-in">
+                                                      <textarea 
+                                                          className="w-full p-3 rounded-lg border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                                          rows={3}
+                                                          value={tempNoteContent}
+                                                          onChange={e => setTempNoteContent(e.target.value)}
+                                                          placeholder="Escreva suas anotações aqui..."
+                                                      />
+                                                      <div className="flex justify-end gap-2 mt-2">
+                                                          <button onClick={() => setEditingNoteId(null)} className="text-xs text-gray-500 hover:text-gray-700 px-3 py-2">Cancelar</button>
+                                                          <button onClick={() => handleSaveNote(log.id)} className="bg-indigo-600 text-white text-xs px-4 py-2 rounded-lg font-bold hover:bg-indigo-700">Salvar Nota</button>
+                                                      </div>
+                                                  </div>
+                                              ) : (
+                                                  <div className="mt-4">
+                                                      {log.userNotes ? (
+                                                          <div className="bg-gray-50 dark:bg-slate-800 p-4 rounded-lg text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
+                                                              {log.userNotes}
+                                                          </div>
+                                                      ) : (
+                                                          <p className="text-sm text-gray-400 italic">Nenhuma anotação pessoal.</p>
+                                                      )}
+                                                      <button onClick={() => startEditingNote(log)} className="mt-2 text-indigo-600 dark:text-indigo-400 text-xs font-bold hover:underline flex items-center gap-1">
+                                                          <PenLine size={12} /> {log.userNotes ? 'Editar Nota' : 'Adicionar Nota'}
+                                                      </button>
+                                                  </div>
+                                              )}
+                                          </div>
+                                      );
+                                  })
+                              )}
+                          </div>
+                      )}
+
+                      {activeTab === 'admin' && isAdmin && (
+                          <div className="space-y-6 animate-fade-in">
+                              <div className="bg-slate-800 text-white p-6 rounded-2xl">
+                                  <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><ShieldAlert /> Painel Master</h2>
+                                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                                      <div className="bg-slate-700 p-4 rounded-xl">
+                                          <p className="text-slate-400 text-xs uppercase">Leituras Totais</p>
+                                          <p className="text-2xl font-bold">{adminStats?.totalReadings || 0}</p>
+                                      </div>
+                                      <div className="bg-slate-700 p-4 rounded-xl">
+                                          <p className="text-slate-400 text-xs uppercase">Usuários</p>
+                                          <p className="text-2xl font-bold">{adminStats?.uniqueUsers || 0}</p>
+                                      </div>
+                                  </div>
+                                  
+                                  <div className="space-y-4">
+                                      <h3 className="font-bold text-sm uppercase text-slate-400">Gerenciar Notícia do Site</h3>
+                                      <textarea 
+                                          value={editingNews} 
+                                          onChange={e => setEditingNews(e.target.value)} 
+                                          className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm" 
+                                          placeholder="Escreva um aviso..."
+                                      />
+                                      <button onClick={handleSaveNews} className="bg-indigo-600 px-4 py-2 rounded-lg font-bold text-sm">Publicar Notícia</button>
+                                  </div>
+                              </div>
+                              
+                              <div className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-800 p-6">
+                                  <h3 className="font-bold mb-4">Tickets de Suporte ({supportTickets.filter(t => t.status === 'open').length} abertos)</h3>
+                                  <div className="space-y-2">
+                                      {supportTickets.slice(0, 5).map(t => (
+                                          <div key={t.id} className="flex justify-between items-center p-3 border-b border-gray-100 dark:border-slate-800">
+                                              <div>
+                                                  <p className="font-bold text-sm">{t.type.toUpperCase()}</p>
+                                                  <p className="text-xs text-gray-500 truncate max-w-xs">{t.message}</p>
+                                              </div>
+                                              <button onClick={() => handleToggleTicketStatus(t.id, t.status)} className={`text-xs px-2 py-1 rounded ${t.status === 'open' ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`}>
+                                                  {t.status}
+                                              </button>
+                                          </div>
+                                      ))}
+                                  </div>
+                              </div>
+                          </div>
+                      )}
+                  </div>
+              </main>
+
+              {/* Modals Global */}
+              {isPlanModalOpen && <PlanSelectionModal onClose={() => setIsPlanModalOpen(false)} onSelectPlan={handleSelectPlan} />}
+              {readingChapter && (
+                <BibleReaderModal 
+                    book={readingChapter.book} 
+                    chapter={readingChapter.chapter} 
+                    onClose={() => setReadingChapter(null)} 
+                    onNext={() => {
+                        const nextChap = readingChapter.chapter + 1;
+                        if (nextChap <= readingChapter.book.chapters) setReadingChapter({ ...readingChapter, chapter: nextChap });
+                    }}
+                    onPrev={() => {
+                        const prevChap = readingChapter.chapter - 1;
+                        if (prevChap >= 1) setReadingChapter({ ...readingChapter, chapter: prevChap });
+                    }}
+                />
+              )}
+              {isChangePasswordOpen && <ChangePasswordModal onClose={() => setIsChangePasswordOpen(false)} />}
+          </div>
       )}
-
-      {isChangePasswordOpen && <ChangePasswordModal onClose={() => setIsChangePasswordOpen(false)} />}
-      
-      {isPlanModalOpen && <PlanSelectionModal onClose={() => setIsPlanModalOpen(false)} onSelectPlan={handleSelectPlan} />}
     </div>
   );
 };
