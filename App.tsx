@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   Book, 
@@ -1118,14 +1117,31 @@ const App: React.FC = () => {
     const remainingBooks = BIBLE_BOOKS.length - completedBooks;
     let estimatedCompletionDate = "N/A";
     let daysToFinish = 0;
+    
     if (logs.length > 0) {
+        // Ordena do mais antigo para o mais novo para pegar o "Início da Jornada"
         const sortedLogs = [...logs].sort((a, b) => a.timestamp - b.timestamp);
-        const firstLogDate = new Date(sortedLogs[sortedLogs.length - 1].date);
+        
+        // Pega a data do primeiro registro de leitura (Start Date)
+        const firstLogTimestamp = sortedLogs[0].timestamp; 
+        
+        const startDate = new Date(firstLogTimestamp);
+        startDate.setHours(0,0,0,0); // Normaliza para meia-noite
+        
         const today = new Date();
-        const timeDiff = Math.abs(today.getTime() - firstLogDate.getTime());
-        const daysElapsed = Math.max(1, Math.ceil(timeDiff / (1000 * 3600 * 24)));
+        today.setHours(0,0,0,0); // Normaliza para meia-noite
+        
+        // Diferença em milissegundos
+        const diffTime = Math.abs(today.getTime() - startDate.getTime());
+        
+        // Converte para dias e soma 1 (para contar o dia de início como dia 1, estilo inclusivo)
+        const daysElapsed = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+        
+        // Média = Total Lido / Dias Corridos
         const avgChaptersPerDay = totalRead / daysElapsed;
+        
         const chaptersRemaining = TOTAL_CHAPTERS_BIBLE - totalRead;
+
         if (avgChaptersPerDay > 0 && chaptersRemaining > 0) {
             daysToFinish = Math.ceil(chaptersRemaining / avgChaptersPerDay);
             const projection = new Date();
