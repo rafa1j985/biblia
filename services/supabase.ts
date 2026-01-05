@@ -1,5 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 
+declare const process: any;
+
 // ATENÇÃO: Substitua as strings abaixo pelas suas chaves do Supabase (Project Settings -> API)
 // Se estiver usando Vite/CreateReactApp, use process.env ou import.meta.env
 const supabaseUrl = process.env.SUPABASE_URL || 'https://ktctqqtfgoghrihxhorn.supabase.co';

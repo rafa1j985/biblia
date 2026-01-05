@@ -710,184 +710,6 @@ const App: React.FC = () => {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Fetch Main Profile and Dependents
-  useEffect(() => {
-    if (user) {
-        const fetchProfiles = async () => {
-            // 1. Fetch Main Profile (Parent)
-            const { data: mainProfile, error: mainError } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-            
-            let loadedMainProfile = mainProfile;
-
-            if (!mainProfile && !mainError) { 
-                  // Create if not exists
-                  const { data: newProfile } = await supabase.from('profiles').upsert({
-                    id: user.id,
-                    email: user.email,
-                    full_name: user.user_metadata?.full_name || user.email.split('@')[0],
-                    avatar_url: ''
-                }).select().single();
-                loadedMainProfile = newProfile;
-            }
-
-            // 3. Set Current Profile (Default to Main if not set)
-            if (loadedMainProfile) {
-                // Keep userProfile as the main user profile to allow correct family management
-                setUserProfile(loadedMainProfile);
-                setCurrentProfile(loadedMainProfile);
-            }
-        };
-        fetchProfiles();
-        fetchNews();
-    }
-  }, [user, familyData]); // Refresh when family joined
-
-  // Fetch Data when Current Profile Changes
-  useEffect(() => {
-    if (currentProfile) {
-      const storedPlan = localStorage.getItem(`bible_plan_${currentProfile.id}`);
-      if (storedPlan) {
-        setUserPlan(JSON.parse(storedPlan));
-      } else {
-          setUserPlan(null); 
-      }
-      const storedProfile = localStorage.getItem(`insight_profile_${currentProfile.id}`);
-      if(storedProfile) {
-          setInsightProfile(storedProfile as InsightProfileType);
-      } else {
-          // Default profile based on role
-          setInsightProfile('DISCIPLE');
-      }
-      fetchData(currentProfile.id);
-    }
-  }, [currentProfile]);
-
-  const fetchData = useCallback(async (profileId?: string) => {
-    const targetId = profileId || currentProfile?.id;
-    if (!targetId) return;
-    setIsLoadingData(true);
-    const { data, error } = await supabase.from('reading_logs').select('*').eq('user_id', targetId).order('timestamp', { ascending: false });
-    if (data) processLogs(data, setReadingLogs, setReadChapters);
-    setIsLoadingData(false);
-  }, [currentProfile]);
-
-  const fetchNews = async () => {
-      const { data } = await supabase.from('app_config').select('value').eq('key', 'site_news').single();
-      if (data) {
-          setSiteNews(data.value);
-          setEditingNews(data.value);
-      }
-  };
-
-  useEffect(() => {
-    if (user && isAdmin) fetchAdminData();
-  }, [user, isAdmin]);
-
-  useEffect(() => {
-      if (userProfile?.family_id) fetchFamilyData();
-  }, [userProfile]);
-
-  const fetchFamilyData = async () => {
-      if (!userProfile?.family_id) return;
-      const { data: family } = await supabase.from('families').select('*').eq('id', userProfile.family_id).single();
-      if (family) {
-          setFamilyData(family);
-          const { data: profiles } = await supabase.from('profiles').select('*').eq('family_id', family.id);
-          if (profiles) {
-              const membersStats: FamilyMemberStats[] = [];
-              const today = new Date().toISOString().split('T')[0];
-              const memberIds = profiles.map(p => p.id);
-              const { data: feedLogs } = await supabase.from('reading_logs').select('*').in('user_id', memberIds).order('timestamp', { ascending: false }).limit(20);
-              if (feedLogs) {
-                  const processedFeed = feedLogs.map((log: any) => ({ ...log, likes: log.likes || [] }));
-                  setFamilyFeed(processedFeed);
-              }
-              for (const p of profiles) {
-                  const { data: logs } = await supabase.from('reading_logs').select('*').eq('user_id', p.id);
-                  const userLogs = (logs || []) as ReadingLog[];
-                  const totalRead = userLogs.reduce((acc, l) => acc + (l.chapters?.length || 0), 0);
-                  const readToday = userLogs.filter(l => l.date === today).reduce((acc, l) => acc + (l.chapters?.length || 0), 0);
-                  let streak = 0;
-                  if(userLogs.length > 0) {
-                      const dates = [...new Set(userLogs.map(l => l.date))].sort().reverse();
-                      if(dates[0] === today || dates[0] === new Date(Date.now() - 86400000).toISOString().split('T')[0]) {
-                          streak = 1;
-                          for(let i=0; i<dates.length-1; i++){
-                              const d1 = new Date(dates[i]);
-                              const d2 = new Date(dates[i+1]);
-                              const diff = (d1.getTime() - d2.getTime()) / (1000 * 3600 * 24);
-                              if(Math.round(diff) === 1) streak++; else break;
-                          }
-                      }
-                  }
-                  membersStats.push({
-                      userId: p.id,
-                      name: p.full_name,
-                      email: p.email || 'Usuário',
-                      streak,
-                      chaptersReadToday: readToday,
-                      totalChaptersRead: totalRead,
-                      lastActive: userLogs.length > 0 ? userLogs[0].date : 'N/A'
-                  });
-              }
-              setFamilyMembers(membersStats.sort((a, b) => b.chaptersReadToday - a.chaptersReadToday));
-          }
-      }
-  };
-
-  const handleToggleLike = async (logId: string, currentLikes: string[] = []) => {
-      if (!currentProfile) return;
-      const userId = currentProfile.id;
-      const isLiked = currentLikes.includes(userId);
-      let newLikes: string[] = isLiked ? currentLikes.filter(id => id !== userId) : [...currentLikes, userId];
-      setFamilyFeed(prev => prev.map(log => log.id === logId ? { ...log, likes: newLikes } : log));
-      const { error } = await supabase.from('reading_logs').update({ likes: newLikes }).eq('id', logId);
-      if (error) fetchFamilyData(); 
-  };
-
-  const handleCreateFamily = async () => {
-      if (!newFamilyName.trim() || !user) return;
-      const code = Math.random().toString(36).substring(2, 8).toUpperCase();
-      const { data, error } = await supabase.from('families').insert({ name: newFamilyName, invite_code: code }).select().single();
-      if (error) { alert('Erro ao criar família.'); return; }
-      if (data) {
-          // Update Current Profile only
-          await supabase.from('profiles').update({ family_id: data.id }).eq('id', currentProfile?.id);
-          // Also update dependents if they exist? Typically whole family joins.
-          // For simplicity, just update current for now.
-          setUserProfile({ ...userProfile!, family_id: data.id });
-          alert('Família criada!');
-          setIsCreatingFamily(false);
-      }
-  };
-
-  const handleJoinFamily = async () => {
-      if (!joinCode.trim() || !user) return;
-      const { data: family } = await supabase.from('families').select('*').eq('invite_code', joinCode.toUpperCase()).single();
-      if (!family) { alert('Código inválido.'); return; }
-      
-      // Update Current Profile
-      await supabase.from('profiles').update({ family_id: family.id }).eq('id', currentProfile?.id);
-      
-      // If parent joins, maybe ask to move dependents too? 
-      // For now, let's assume manual joining or auto-join later.
-      
-      setUserProfile({ ...userProfile!, family_id: family.id });
-      alert(`Bem-vindo à família ${family.name}!`);
-  };
-
-  const handleSaveNews = async () => {
-      if (!editingNews.trim()) return;
-      await supabase.from('app_config').upsert({ key: 'site_news', value: editingNews });
-      setSiteNews(editingNews);
-      alert('Novidades atualizadas!');
-  };
-
-  const handleProfileChange = (newProfile: InsightProfileType) => {
-      setInsightProfile(newProfile);
-      if(currentProfile) localStorage.setItem(`insight_profile_${currentProfile.id}`, newProfile);
-  };
-
   const processLogs = (data: any[], setLogs: Function, setMap: Function) => {
       const logs = data.map((item: any) => ({
         id: item.id,
@@ -897,7 +719,10 @@ const App: React.FC = () => {
         chapters: item.chapters,
         aiReflection: item.ai_reflection,
         userNotes: item.user_notes,
-        likes: item.likes || []
+        likes: item.likes || [],
+        user_id: item.user_id,
+        user_email: item.user_email,
+        user_name: item.user_name
       })) as ReadingLog[];
       setLogs(logs);
       const map: ReadChaptersMap = {};
@@ -946,13 +771,16 @@ const App: React.FC = () => {
             timestamp: item.timestamp,
             bookId: item.book_id,
             chapters: item.chapters,
-            likes: item.likes || []
+            likes: item.likes || [],
+            user_id: item.user_id,
+            user_email: item.user_email,
+            user_name: item.user_name
           })) as ReadingLog[];
           const totalRead = Object.values(map).reduce((acc, chaps) => acc + chaps.length, 0);
           return {
               userId: profile.id,
               name: profile.full_name,
-              email: profile.email || profile.username || 'N/A',
+              email: profile.email || 'N/A',
               totalRead,
               achievementsCount: 0,
               achievements: [],

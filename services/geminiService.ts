@@ -2,6 +2,8 @@ import { GoogleGenAI } from "@google/genai";
 import { InsightProfileType, InsightProfileConfig } from "../types";
 import { INSIGHT_PROFILES } from "../constants";
 
+declare const process: any;
+
 // Always use named parameter for initialization and rely on process.env.API_KEY directly.
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
