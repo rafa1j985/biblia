@@ -77,7 +77,8 @@ import {
   ArrowRight,
   Heart,
   HandHeart,
-  Copy
+  Copy,
+  Flag
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -128,7 +129,7 @@ const BIBLE_API_MAPPING: Record<string, string> = {
 const PAULINE_BOOKS = ['ROM', '1CO', '2CO', 'GAL', 'EPH', 'PHP', 'COL', '1TH', '2TH', '1TI', '2TI', 'TIT', 'PHM'];
 
 // --- Helper Components ---
-
+// ... (ProgressBar, StatCard, BibleReaderModal, Auth Components remain same) ...
 const ProgressBar = ({ current, total, color = "bg-indigo-600" }: { current: number; total: number; color?: string }) => {
   const percentage = Math.min(100, Math.max(0, (current / total) * 100));
   return (
@@ -154,8 +155,6 @@ const StatCard = ({ title, value, subtext, icon, highlight = false, colorClass =
   </div>
 );
 
-// --- Bible Reader Modal ---
-// (Mantido igual)
 const BibleReaderModal = ({ book, chapter, onClose, onNext, onPrev }: { book: BibleBook, chapter: number, onClose: () => void, onNext?: () => void, onPrev?: () => void }) => {
   const [text, setText] = useState<string>('');
   const [verses, setVerses] = useState<{number: number, text: string}[]>([]);
@@ -270,8 +269,6 @@ const BibleReaderModal = ({ book, chapter, onClose, onNext, onPrev }: { book: Bi
   );
 };
 
-// --- Auth Components ---
-// (LoginScreen, ChangePasswordModal, PlanSelectionModal mantidos idênticos)
 const LoginScreen = ({ onLogin }: { onLogin: (user: any) => void }) => {
   const [authMode, setAuthMode] = useState<'login' | 'register' | 'forgot'>('login');
   const [email, setEmail] = useState('');
@@ -1275,15 +1272,11 @@ const App: React.FC = () => {
             }
 
             // 3. Check for New Achievements
-            // We need to re-run calculation on the UPDATED data (which we just fetched)
-            // Ideally we'd pass the new state to calculateAchievements, but since fetchData sets state async, 
-            // we can try a manual fetch or just optimistically check locally. 
-            // Simpler approach: Manual check for specific major achievements to post to feed
-            
             // Re-fetching logs locally to calc achievements immediately
             const { data: newLogs } = await supabase.from('reading_logs').select('*').eq('user_id', user.id);
+            let tempMap: ReadChaptersMap = {};
+            
             if(newLogs) {
-                const tempMap: ReadChaptersMap = {};
                 const tempLogs = newLogs.map((item: any) => ({ ...item, bookId: item.book_id } as ReadingLog));
                 tempLogs.forEach(l => {
                     if (!tempMap[l.bookId]) tempMap[l.bookId] = [];
@@ -1301,6 +1294,32 @@ const App: React.FC = () => {
                             achievementTitle: ach.title
                         });
                     }
+                }
+            }
+
+            // 4. Check for Plan Completion
+            if (userPlan) {
+                let totalInScope = 0;
+                let readInScope = 0;
+                let prevReadCount = 0;
+
+                BIBLE_BOOKS.forEach(book => {
+                    let isInScope = false;
+                    if (userPlan.scope === 'PAUL') isInScope = PAULINE_BOOKS.includes(book.id);
+                    else isInScope = userPlan.scope === 'ALL' || (userPlan.scope === 'OLD' && book.testament === 'Old') || (userPlan.scope === 'NEW' && book.testament === 'New');
+                    
+                    if (isInScope) {
+                        totalInScope += book.chapters;
+                        readInScope += (tempMap[book.id]?.length || 0);
+                        prevReadCount += (readChapters[book.id]?.length || 0);
+                    }
+                });
+
+                // Se completou agora E antes estava incompleto
+                if (totalInScope > 0 && readInScope >= totalInScope && prevReadCount < totalInScope) {
+                    await logGroupActivity(userGroup.id, 'PLAN_COMPLETE', {
+                        planName: userPlan.title
+                    });
                 }
             }
             
@@ -1788,11 +1807,12 @@ const App: React.FC = () => {
                           <div key={activity.id} className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm relative overflow-hidden group hover:shadow-md transition-all">
                                {activity.type === 'BOOK_COMPLETE' && <div className="absolute top-0 left-0 w-1 h-full bg-yellow-400"></div>}
                                {activity.type === 'ACHIEVEMENT' && <div className="absolute top-0 left-0 w-1 h-full bg-purple-500"></div>}
+                               {activity.type === 'PLAN_COMPLETE' && <div className="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>}
                                {activity.type === 'READING' && <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500"></div>}
 
                                <div className="flex items-start gap-4">
                                    <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-white shadow-sm shrink-0
-                                       ${activity.type === 'ACHIEVEMENT' ? 'bg-purple-500' : activity.type === 'BOOK_COMPLETE' ? 'bg-yellow-500' : 'bg-indigo-500'}
+                                       ${activity.type === 'ACHIEVEMENT' ? 'bg-purple-500' : activity.type === 'BOOK_COMPLETE' ? 'bg-yellow-500' : activity.type === 'PLAN_COMPLETE' ? 'bg-blue-500' : 'bg-indigo-500'}
                                    `}>
                                        {activity.user_name.charAt(0)}
                                    </div>
@@ -1803,6 +1823,7 @@ const App: React.FC = () => {
                                                <span className="text-gray-600 dark:text-gray-400 text-sm">
                                                    {activity.type === 'READING' && 'registrou uma leitura'}
                                                    {activity.type === 'BOOK_COMPLETE' && 'completou um livro! 🎉'}
+                                                   {activity.type === 'PLAN_COMPLETE' && 'finalizou um Plano de Leitura! 🏁'}
                                                    {activity.type === 'ACHIEVEMENT' && 'desbloqueou uma conquista! 🏆'}
                                                </span>
                                            </div>
@@ -1825,6 +1846,15 @@ const App: React.FC = () => {
                                                <p className="font-bold text-yellow-800 dark:text-yellow-200 flex items-center gap-2">
                                                    <CheckCircle2 size={18} /> 
                                                    Livro de {BIBLE_BOOKS.find(b => b.id === activity.data.bookId)?.name} Finalizado!
+                                               </p>
+                                           </div>
+                                       )}
+
+                                       {activity.type === 'PLAN_COMPLETE' && (
+                                           <div className="mt-2 bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg border border-blue-100 dark:border-blue-900/30">
+                                               <p className="font-bold text-blue-800 dark:text-blue-200 flex items-center gap-2">
+                                                   <Flag size={18} /> 
+                                                   Plano Concluído: {activity.data.planName}
                                                </p>
                                            </div>
                                        )}
