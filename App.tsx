@@ -1781,6 +1781,42 @@ const App: React.FC = () => {
                               <StatCard title="Conquistas" value={unlockedAchievements.size} subtext={`de ${ACHIEVEMENTS.length}`} icon={<Trophy size={24} />} />
                           </div>
 
+                          <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm animate-fade-in">
+                              <div className="flex items-center justify-between mb-4">
+                                  <h3 className="font-bold text-lg text-gray-900 dark:text-white flex items-center gap-2">
+                                      <Sparkles size={20} className="text-indigo-500" /> Personalidade do Devocional
+                                  </h3>
+                                  <span className="text-xs font-medium px-3 py-1 rounded-full bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400">
+                                      {DEVOTIONAL_STYLES[devotionalStyle].title}
+                                  </span>
+                              </div>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                                  {Object.entries(DEVOTIONAL_STYLES).map(([key, style]) => {
+                                      const Icon = IconMap[style.icon] || Star;
+                                      const isSelected = devotionalStyle === key;
+                                      return (
+                                          <button
+                                              key={key}
+                                              onClick={() => setDevotionalStyle(key as DevotionalStyle)}
+                                              className={`p-3 rounded-xl border text-left transition-all relative overflow-hidden group ${
+                                                  isSelected 
+                                                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-md transform scale-105 ring-2 ring-offset-2 ring-indigo-500 dark:ring-offset-slate-900' 
+                                                  : 'bg-gray-50 dark:bg-slate-800 border-gray-200 dark:border-slate-700 text-gray-600 dark:text-gray-400 hover:bg-white dark:hover:bg-slate-700'
+                                              }`}
+                                          >
+                                              <div className="flex items-center gap-2 mb-2">
+                                                  <Icon size={18} className={isSelected ? 'text-indigo-200' : 'text-gray-400'} />
+                                                  <span className="font-bold text-sm truncate">{style.title}</span>
+                                              </div>
+                                              <p className={`text-xs leading-tight line-clamp-2 ${isSelected ? 'text-indigo-100' : 'text-gray-500 dark:text-gray-500'}`}>
+                                                  {style.description}
+                                              </p>
+                                          </button>
+                                      )
+                                  })}
+                              </div>
+                          </div>
+
                           <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm">
                              <h3 className="font-bold text-lg mb-6 flex items-center gap-2 text-gray-900 dark:text-white"><Activity size={20} className="text-indigo-500"/> Atividade Recente</h3>
                              <div className="h-64 w-full">
