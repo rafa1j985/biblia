@@ -62,14 +62,10 @@ export interface SupportTicket {
 
 export interface UserProfile {
   id: string; // Unique UUID for the profile
-  email?: string; // Optional for dependents
-  username?: string; // Unique login for dependents
-  dob?: string; // Date of Birth YYYY-MM-DD
+  email: string; // Required for main users
   full_name: string;
   avatar_url?: string;
   family_id?: string; // Link to family table
-  manager_id?: string; // If set, this is a dependent profile managed by this ID
-  pin?: string; // Optional 4-digit PIN for switching
   created_at?: string;
 }
 

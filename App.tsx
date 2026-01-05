@@ -756,7 +756,7 @@ const App: React.FC = () => {
           setInsightProfile(storedProfile as InsightProfileType);
       } else {
           // Default profile based on role
-          setInsightProfile(currentProfile.manager_id ? 'CHILD' : 'DISCIPLE');
+          setInsightProfile('DISCIPLE');
       }
       fetchData(currentProfile.id);
     }
@@ -823,7 +823,7 @@ const App: React.FC = () => {
                   membersStats.push({
                       userId: p.id,
                       name: p.full_name,
-                      email: p.email || (p.manager_id ? 'Dependente' : 'Usuário'),
+                      email: p.email || 'Usuário',
                       streak,
                       chaptersReadToday: readToday,
                       totalChaptersRead: totalRead,
@@ -1114,7 +1114,7 @@ const App: React.FC = () => {
     // IMPORTANT: Saves logs to the CURRENT PROFILE ID, not just the auth user ID
     await supabase.from('reading_logs').insert({
         user_id: currentProfile.id,
-        user_email: currentProfile.email || currentProfile.username, 
+        user_email: currentProfile.email,
         user_name: currentProfile.full_name,
         date: new Date().toISOString().split('T')[0],
         timestamp: Date.now(),
