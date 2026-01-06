@@ -79,10 +79,7 @@ import {
   Copy,
   Flag,
   Hourglass,
-  Check,
-  Trash2,
-  Calculator,
-  Gem
+  Check
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -104,20 +101,6 @@ import { BIBLE_BOOKS, TOTAL_CHAPTERS_BIBLE, ADMIN_EMAILS, PLANS_CONFIG, ACHIEVEM
 import { BibleBook, ReadChaptersMap, ReadingLog, UserPlan, PlanType, SupportTicket, DevotionalStyle, Group, GroupMember, GroupActivity, ActivityType } from './types';
 import { generateDevotional } from './services/geminiService';
 import { supabase } from './services/supabase';
-
-// --- Versículos Diários ---
-const DAILY_VERSES = [
-  { text: "Lâmpada para os meus pés é tua palavra, e luz para o meu caminho.", ref: "Salmos 119:105" },
-  { text: "Busquem, pois, em primeiro lugar o Reino de Deus e a sua justiça, e todas essas coisas lhes serão acrescentadas.", ref: "Mateus 6:33" },
-  { text: "O Senhor é o meu pastor; de nada terei falta.", ref: "Salmos 23:1" },
-  { text: "Tudo posso naquele que me fortalece.", ref: "Filipenses 4:13" },
-  { text: "Porque sou eu que conheço os planos que tenho para vocês', diz o Senhor, 'planos de fazê-los prosperar e não de causar dano, planos de dar a vocês esperança e um futuro.", ref: "Jeremias 29:11" },
-  { text: "Não fui eu que ordenei a você? Seja forte e corajoso! Não se apavore nem desanime, pois o Senhor, o seu Deus, estará com você por onde você andar.", ref: "Josué 1:9" },
-  { text: "Venham a mim, todos os que estão cansados e sobrecarregados, e eu darei descanso a vocês.", ref: "Mateus 11:28" },
-  { text: "Mas os que esperam no Senhor renovarão as suas forças. Voarão alto como águias; correrão e não ficarão exaustos, andarão e não se cansarão.", ref: "Isaías 40:31" },
-  { text: "Deem graças em todas as circunstâncias, pois esta é a vontade de Deus para vocês em Cristo Jesus.", ref: "1 Tessalonicenses 5:18" },
-  { text: "Confie no Senhor de todo o seu coração e não se apoie em seu próprio entendimento.", ref: "Provérbios 3:5" },
-];
 
 // --- Icon Mapping Helper ---
 const IconMap: Record<string, React.ElementType> = {
@@ -151,7 +134,7 @@ const NotificationToast = ({ message, type, onClose }: { message: string, type: 
   useEffect(() => {
     const timer = setTimeout(() => {
       onClose();
-    }, 6000);
+    }, 4000);
     return () => clearTimeout(timer);
   }, [onClose]);
 
@@ -705,11 +688,6 @@ const App: React.FC = () => {
   const [joinCode, setJoinCode] = useState('');
   const [newGroupName, setNewGroupName] = useState('');
 
-  // --- New States for Features ---
-  const [dailyVerse, setDailyVerse] = useState<{text: string, ref: string} | null>(null);
-  const [simulatedPace, setSimulatedPace] = useState<number>(3); // Capítulos por dia default para simulação
-  const [isGoldenTheme, setIsGoldenTheme] = useState(false);
-
   const showNotification = useCallback((message: string, type: 'success' | 'error' = 'success') => {
       setNotification({ message, type });
   }, []);
@@ -720,39 +698,18 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const root = window.document.documentElement;
-    root.classList.remove('light', 'dark', 'golden');
-    if (isGoldenTheme) {
-        root.classList.add('golden', 'dark'); // Golden implies dark mode base
-        localStorage.setItem('theme', 'golden');
-    } else {
-        root.classList.add(theme);
-        localStorage.setItem('theme', theme);
-    }
-  }, [theme, isGoldenTheme]);
+    root.classList.remove('light', 'dark');
+    root.classList.add(theme);
+    localStorage.setItem('theme', theme);
+  }, [theme]);
 
-  useEffect(() => {
-      // Load Daily Verse on Mount
-      const randomVerse = DAILY_VERSES[Math.floor(Math.random() * DAILY_VERSES.length)];
-      setDailyVerse(randomVerse);
-      
-      // Check local storage for golden theme preference (if saved as 'golden' in theme)
-      if (localStorage.getItem('theme') === 'golden') {
-          setIsGoldenTheme(true);
-      }
-  }, []);
+  // Remover o useEffect automático do localStorage para o devotionalStyle 
+  // para permitir que o usuário precise "Salvar" explicitamente se desejar
+  // Mas para manter a consistência, vamos carregar no mount, e salvar apenas no botão.
+  // ... (o useState inicial já carrega).
 
   const toggleTheme = () => {
-    if (isGoldenTheme) {
-        setIsGoldenTheme(false);
-        setTheme('dark');
-    } else {
-        setTheme(prev => prev === 'light' ? 'dark' : 'light');
-    }
-  };
-
-  const activateGoldenTheme = () => {
-      setIsGoldenTheme(true);
-      showNotification("Tema Peregrino Ativado! Parabéns pela jornada completa!", "success");
+    setTheme(prev => prev === 'light' ? 'dark' : 'light');
   };
 
   useEffect(() => {
@@ -1134,14 +1091,6 @@ const App: React.FC = () => {
     showNotification(`Plano "${config.title}" ativado com sucesso!`, 'success');
   };
 
-  const handleAbandonPlan = () => {
-      if(window.confirm("Tem certeza que deseja abandonar o plano atual? Seu histórico de leitura será mantido, mas o progresso do plano será resetado.")) {
-          setUserPlan(null);
-          localStorage.removeItem(`bible_plan_${user.id}`);
-          showNotification("Plano removido. Você está livre para escolher outro.", "success");
-      }
-  };
-
   const getPlanProgress = useMemo(() => {
     if (!userPlan) return null;
     let readInScope = 0;
@@ -1206,7 +1155,6 @@ const App: React.FC = () => {
     const remainingBooks = BIBLE_BOOKS.length - completedBooks;
     let estimatedCompletionDate = "N/A";
     let daysToFinish = 0;
-    let avgChaptersPerDay = 0;
     
     if (logs.length > 0) {
         // Ordena do mais antigo para o mais novo para pegar o "Início da Jornada"
@@ -1228,7 +1176,7 @@ const App: React.FC = () => {
         const daysElapsed = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
         
         // Média = Total Lido / Dias Corridos
-        avgChaptersPerDay = totalRead / daysElapsed;
+        const avgChaptersPerDay = totalRead / daysElapsed;
         
         const chaptersRemaining = TOTAL_CHAPTERS_BIBLE - totalRead;
 
@@ -1244,8 +1192,7 @@ const App: React.FC = () => {
     return {
         completedBooks,
         remainingBooks,
-        projection: { date: estimatedCompletionDate, days: daysToFinish },
-        avgChaptersPerDay
+        projection: { date: estimatedCompletionDate, days: daysToFinish }
     };
   };
 
@@ -1272,24 +1219,6 @@ const App: React.FC = () => {
     }
     return streak;
   }, [readingLogs]);
-
-  const getStreakMessage = (streak: number) => {
-      if (streak >= 365) return "Lenda da Fé! Mais de um ano!";
-      if (streak >= 30) return "Hábito de ferro! Sua constância inspira.";
-      if (streak >= 10) return "Parabéns!! São 10 dias de comprometimento com a Palavra!";
-      if (streak >= 7) return "Uma semana perfeita! Continue assim.";
-      if (streak >= 3) return "O fogo acendeu! Mantenha o ritmo.";
-      return "Todo dia conta. Não desista!";
-  };
-
-  const calculateSimulationDate = (dailyChapters: number) => {
-      const remaining = TOTAL_CHAPTERS_BIBLE - totalReadCount;
-      if (remaining <= 0) return "Hoje!";
-      const days = Math.ceil(remaining / dailyChapters);
-      const date = new Date();
-      date.setDate(date.getDate() + days);
-      return date.toLocaleDateString('pt-BR');
-  };
 
   const chartData = useMemo(() => {
     const last7Days = Array.from({ length: 7 }, (_, i) => {
@@ -1362,10 +1291,6 @@ const App: React.FC = () => {
     let reflection = '';
     try {
         reflection = await generateDevotional(book.name, sessionSelectedChapters, devotionalStyle);
-        // Check for specific error message returned by service
-        if (reflection && (reflection.includes("Serviço de IA indisponível") || reflection.includes("Chave de API não detectada"))) {
-             showNotification("Alerta: Chave de API da IA não encontrada. Leia o README para configurar o arquivo .env", "error");
-        }
     } catch (e) {
         console.error(e);
     }
@@ -1456,7 +1381,6 @@ const App: React.FC = () => {
                     await logGroupActivity(userGroup.id, 'PLAN_COMPLETE', {
                         planName: userPlan.title
                     });
-                    showNotification("Parabéns!! Você completou o plano " + userPlan.title + "! 🎉", "success");
                 }
             }
             
@@ -2333,7 +2257,7 @@ const App: React.FC = () => {
                   <nav className="flex-1 px-4 space-y-2 overflow-y-auto py-4">
                       {[
                         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-                        { id: 'tracker', label: 'Leitura Livre', icon: BookOpen },
+                        { id: 'tracker', label: 'Leitura', icon: BookOpen },
                         { id: 'devotional', label: 'Devocional', icon: Sparkles },
                         { id: 'community', label: 'Comunidade', icon: Users },
                         { id: 'history', label: 'Histórico', icon: History },
@@ -2401,7 +2325,7 @@ const App: React.FC = () => {
                         <nav className="space-y-2 flex-1 overflow-y-auto">
                              {[
                                 { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-                                { id: 'tracker', label: 'Leitura Livre', icon: BookOpen },
+                                { id: 'tracker', label: 'Leitura', icon: BookOpen },
                                 { id: 'devotional', label: 'Devocional', icon: Sparkles },
                                 { id: 'community', label: 'Comunidade', icon: Users },
                                 { id: 'history', label: 'Histórico', icon: History },
@@ -2442,27 +2366,15 @@ const App: React.FC = () => {
                                   {activeTab === 'admin' && 'Painel Administrativo'}
                                   {activeTab === 'support' && 'Suporte'}
                               </h1>
-                              <div className="flex items-center gap-2 mt-1">
-                                <p className="text-gray-500 dark:text-gray-400 text-sm">
-                                    Olá, {user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Visitante'}
-                                </p>
-                                {unlockedAchievements.has(117) && (
-                                    <div className="flex items-center gap-1 bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-400 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border border-yellow-200 dark:border-yellow-700">
-                                        <CheckCircle2 size={10} /> Peregrino
-                                    </div>
-                                )}
-                              </div>
-                              {dailyVerse && (
-                                <div className="mt-2 text-xs text-indigo-600 dark:text-indigo-400 italic">
-                                    "{dailyVerse.text}" <span className="font-bold not-italic ml-1">- {dailyVerse.ref}</span>
-                                </div>
-                              )}
+                              <p className="text-gray-500 dark:text-gray-400 text-sm">
+                                  Olá, {user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Visitante'}
+                              </p>
                           </div>
                           <div className="flex items-center gap-3">
                               <button onClick={() => setIsChangePasswordOpen(true)} className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-slate-800 text-gray-500 dark:text-gray-400 transition-colors" title="Alterar Senha">
                                   <KeyRound size={20} />
                               </button>
-                              <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold shadow-sm ${isGoldenTheme ? 'bg-gradient-to-br from-yellow-400 to-amber-600' : 'bg-indigo-600'}`}>
+                              <div className="w-10 h-10 rounded-full bg-indigo-100 dark:bg-indigo-900/50 flex items-center justify-center text-indigo-700 dark:text-indigo-300 font-bold shadow-sm">
                                   {user?.user_metadata?.full_name?.charAt(0) || user?.email?.charAt(0) || 'U'}
                               </div>
                           </div>
@@ -2473,22 +2385,13 @@ const App: React.FC = () => {
                       {activeTab === 'dashboard' && (
                         <div className="space-y-6 animate-fade-in">
                           {/* Welcome / Plan Widget */}
-                          <div className={`rounded-2xl p-8 text-white relative overflow-hidden shadow-xl ${isGoldenTheme ? 'bg-gradient-to-br from-gray-900 to-black border border-yellow-500/30' : 'bg-indigo-600'}`}>
+                          <div className="bg-indigo-600 rounded-2xl p-8 text-white relative overflow-hidden shadow-xl">
                              <div className="absolute right-0 top-0 h-full w-1/3 bg-gradient-to-l from-white/10 to-transparent pointer-events-none"></div>
                              <div className="relative z-10 max-w-2xl">
-                                <h2 className={`text-3xl font-bold font-serif mb-2 ${isGoldenTheme ? 'text-yellow-400' : 'text-white'}`}>Continue sua jornada</h2>
+                                <h2 className="text-3xl font-bold font-serif mb-2">Continue sua jornada</h2>
                                 {userPlan ? (
                                    <div>
-                                     <div className="flex justify-between items-center mb-4">
-                                        <p className="text-indigo-100">Plano Ativo: <strong>{userPlan.title}</strong></p>
-                                        <button 
-                                            onClick={handleAbandonPlan}
-                                            className="text-indigo-200 hover:text-white hover:bg-red-500/20 p-2 rounded-full transition-colors"
-                                            title="Abandonar Plano"
-                                        >
-                                            <Trash2 size={16} />
-                                        </button>
-                                     </div>
+                                     <p className="text-indigo-100 mb-4">Plano Ativo: <strong>{userPlan.title}</strong></p>
                                      {getPlanProgress && (
                                         <div className="bg-black/20 rounded-xl p-4 mb-4 backdrop-blur-sm">
                                            <div className="flex justify-between text-sm mb-2 font-medium">
@@ -2496,7 +2399,7 @@ const App: React.FC = () => {
                                               <span>{Math.round(getPlanProgress.percent)}%</span>
                                            </div>
                                            <div className="w-full bg-black/20 rounded-full h-2 mb-4">
-                                              <div className={`h-2 rounded-full transition-all ${isGoldenTheme ? 'bg-yellow-400' : 'bg-white'}`} style={{ width: `${getPlanProgress.percent}%` }}></div>
+                                              <div className="bg-white h-2 rounded-full transition-all" style={{ width: `${getPlanProgress.percent}%` }}></div>
                                            </div>
                                            <div className="flex flex-wrap gap-2 items-center">
                                               <span className="text-sm text-indigo-100 mr-2">Próximos:</span>
@@ -2505,7 +2408,7 @@ const App: React.FC = () => {
                                               )) : <span className="text-sm font-bold">Meta diária cumprida! 🎉</span>}
                                            </div>
                                            {getPlanProgress.nextBatch.length > 0 && (
-                                              <button onClick={() => handleQuickRead(getPlanProgress.nextBatch)} className={`mt-4 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:opacity-90 transition-colors ${isGoldenTheme ? 'bg-yellow-500 text-black' : 'bg-white text-indigo-600'}`}>
+                                              <button onClick={() => handleQuickRead(getPlanProgress.nextBatch)} className="mt-4 bg-white text-indigo-600 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-indigo-50 transition-colors">
                                                  Ler Agora <ArrowRight size={16} />
                                               </button>
                                            )}
@@ -2548,86 +2451,18 @@ const App: React.FC = () => {
                                 subtext={`${completionPercentage.toFixed(1)}% da Bíblia`} 
                                 icon={<BookOpen size={24} />} 
                                 highlight={true} 
-                                colorClass={isGoldenTheme ? 'bg-yellow-600' : 'bg-indigo-600'}
                                 progress={completionPercentage}
                               />
                               <StatCard 
                                 title="Previsão de Conclusão" 
                                 value={advancedStats.projection.date} 
-                                subtext={`Você vai concluir a Bíblia toda em ${advancedStats.projection.date} nesse ritmo atual.`} 
+                                subtext="Neste ritmo atual" 
                                 icon={<Hourglass size={24} />} 
                                 colorClass="bg-purple-600"
                               />
-                              <StatCard 
-                                title="Ritmo Atual" 
-                                value={advancedStats.avgChaptersPerDay.toFixed(1)} 
-                                subtext="capítulos por dia (média)" 
-                                icon={<Activity size={24} />} 
-                                colorClass="bg-emerald-600"
-                              />
-                              <StatCard 
-                                title="Sequência" 
-                                value={`${currentStreak} dias`} 
-                                subtext={getStreakMessage(currentStreak)} 
-                                icon={<Flame size={24} />} 
-                                colorClass="bg-orange-500" 
-                              />
+                              <StatCard title="Sequência" value={`${currentStreak} dias`} subtext="Mantenha o fogo aceso!" icon={<Flame size={24} />} colorClass="bg-orange-500" />
+                              <StatCard title="Conquistas" value={unlockedAchievements.size} subtext={`de ${ACHIEVEMENTS.length}`} icon={<Trophy size={24} />} />
                           </div>
-
-                          {/* Simulador de Ritmo */}
-                          <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-gray-100 dark:border-slate-800 shadow-sm animate-fade-in">
-                              <h3 className="font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-                                  <Calculator size={18} className="text-indigo-500" /> Simulador de Conclusão
-                              </h3>
-                              <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">Veja como aumentar seu ritmo diário antecipa a conclusão de toda a Bíblia.</p>
-                              
-                              <div className="flex flex-col md:flex-row items-center gap-8">
-                                  <div className="flex-1 w-full">
-                                      <div className="flex justify-between mb-2">
-                                          <label className="text-sm font-bold text-gray-700 dark:text-gray-300">Ler {simulatedPace} capítulos por dia</label>
-                                          <span className="text-xs text-gray-400">Arraste para simular</span>
-                                      </div>
-                                      <input 
-                                          type="range" 
-                                          min="1" 
-                                          max="20" 
-                                          value={simulatedPace} 
-                                          onChange={(e) => setSimulatedPace(parseInt(e.target.value))}
-                                          className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700 accent-indigo-600"
-                                      />
-                                      <div className="flex justify-between mt-1 text-xs text-gray-400">
-                                          <span>1 cap/dia</span>
-                                          <span>10 caps/dia</span>
-                                          <span>20 caps/dia</span>
-                                      </div>
-                                  </div>
-                                  <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl min-w-[200px] text-center border border-indigo-100 dark:border-indigo-800">
-                                      <p className="text-xs text-indigo-600 dark:text-indigo-300 uppercase font-bold tracking-wider mb-1">Previsão Simulada</p>
-                                      <p className="text-2xl font-bold text-gray-900 dark:text-white">{calculateSimulationDate(simulatedPace)}</p>
-                                  </div>
-                              </div>
-                          </div>
-
-                          {/* Completion Badge Activation */}
-                          {totalReadCount >= TOTAL_CHAPTERS_BIBLE && !isGoldenTheme && (
-                              <div className="bg-gradient-to-r from-yellow-400 to-amber-500 rounded-2xl p-6 text-white shadow-xl flex items-center justify-between gap-4 animate-pulse">
-                                  <div className="flex items-center gap-4">
-                                      <div className="bg-white/20 p-3 rounded-full">
-                                          <Gem size={32} className="text-white" />
-                                      </div>
-                                      <div>
-                                          <h3 className="text-xl font-bold">Jornada Completa!</h3>
-                                          <p className="text-yellow-50 text-sm">Você leu toda a Bíblia. Desbloqueie o tema exclusivo.</p>
-                                      </div>
-                                  </div>
-                                  <button 
-                                      onClick={activateGoldenTheme}
-                                      className="bg-white text-amber-600 px-6 py-2 rounded-xl font-bold hover:bg-yellow-50 transition-colors shadow-md"
-                                  >
-                                      Ativar Tema Peregrino
-                                  </button>
-                              </div>
-                          )}
 
                           {/* Invite Friends Banner */}
                           <div className="bg-gradient-to-r from-emerald-500 to-teal-600 rounded-2xl p-6 text-white shadow-lg flex flex-col sm:flex-row justify-between items-center gap-6 relative overflow-hidden">

@@ -1,38 +1,17 @@
 import { GoogleGenAI } from "@google/genai";
 import { DevotionalStyle } from '../types';
 
+// Use fallback empty string if process is undefined (browser safety)
+const apiKey = (typeof process !== 'undefined' && process.env && process.env.API_KEY) ? process.env.API_KEY : '';
+
+// Always use named parameter for initialization
+const ai = new GoogleGenAI({ apiKey });
+
 export const generateDevotional = async (bookName: string, chapters: number[], style: DevotionalStyle = 'theologian') => {
-  // Tenta obter a chave de API de várias fontes para garantir compatibilidade entre AI Studio e Ambiente Externo (Vite/Local)
-  let apiKey = '';
-  
-  try {
-    // 1. Prioridade: Padrão do AI Studio
-    if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
-      apiKey = process.env.API_KEY;
-    } 
-    // 2. Compatibilidade com o README (GEMINI_API_KEY)
-    else if (typeof process !== 'undefined' && process.env && process.env.GEMINI_API_KEY) {
-      apiKey = process.env.GEMINI_API_KEY;
-    }
-    // 3. Compatibilidade com Vite (import.meta.env)
-    else if (typeof import.meta !== 'undefined' && import.meta.env) {
-      apiKey = import.meta.env.VITE_API_KEY || import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.GEMINI_API_KEY || '';
-    }
-  } catch (e) {
-    console.warn("Erro ao ler variáveis de ambiente:", e);
-  }
-
-  // 4. Fallback: Chave fornecida diretamente (Para garantir funcionamento imediato)
   if (!apiKey) {
-      apiKey = 'AIzaSyA6OCv5X0ps7Shu_0OKYrqs2o4P1YiD3ME';
+      console.warn("API Key not found. AI features disabled.");
+      return "Configuração de IA pendente.";
   }
-
-  if (!apiKey) {
-      console.warn("API Key not found. Please check your .env file or environment configuration.");
-      return "Serviço de IA indisponível. (Chave de API não detectada no ambiente).";
-  }
-
-  const ai = new GoogleGenAI({ apiKey });
 
   const chaptersStr = chapters.join(', ');
   let roleInstruction = '';
@@ -102,17 +81,9 @@ export const generateDevotional = async (bookName: string, chapters: number[], s
       contents: prompt,
     });
     // Directly access text property
-    const text = response.text;
-    if (!text) {
-        console.warn("Gemini response was empty or undefined.");
-        return "A IA gerou uma resposta vazia. Tente novamente.";
-    }
-    return text.trim();
-  } catch (error: any) {
+    return response.text?.trim() || "Não foi possível gerar a reflexão no momento.";
+  } catch (error) {
     console.error("Error generating devotional:", error);
-    if (error.message?.includes('API key')) {
-        return "Erro de autenticação com a IA. Verifique a Chave de API.";
-    }
-    return "Erro ao conectar com o serviço de IA. Verifique sua conexão ou tente mais tarde.";
+    return "Erro ao conectar com o serviço de IA. Tente novamente mais tarde.";
   }
 };
