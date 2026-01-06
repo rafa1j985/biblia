@@ -2,12 +2,29 @@ import { GoogleGenAI } from "@google/genai";
 import { DevotionalStyle } from '../types';
 
 export const generateDevotional = async (bookName: string, chapters: number[], style: DevotionalStyle = 'theologian') => {
-  // Inicializa a chave dentro da função para garantir que as variáveis de ambiente já foram carregadas
-  const apiKey = process.env.API_KEY;
+  // Tenta obter a chave de API de várias fontes para garantir compatibilidade entre AI Studio e Ambiente Externo (Vite/Local)
+  let apiKey = '';
+  
+  try {
+    // 1. Prioridade: Padrão do AI Studio
+    if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
+      apiKey = process.env.API_KEY;
+    } 
+    // 2. Compatibilidade com o README (GEMINI_API_KEY)
+    else if (typeof process !== 'undefined' && process.env && process.env.GEMINI_API_KEY) {
+      apiKey = process.env.GEMINI_API_KEY;
+    }
+    // 3. Compatibilidade com Vite (import.meta.env)
+    else if (typeof import.meta !== 'undefined' && import.meta.env) {
+      apiKey = import.meta.env.VITE_API_KEY || import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.GEMINI_API_KEY || '';
+    }
+  } catch (e) {
+    console.warn("Erro ao ler variáveis de ambiente:", e);
+  }
 
   if (!apiKey) {
-      console.warn("API Key not found in process.env.API_KEY. AI features disabled.");
-      return "Serviço de IA indisponível (Chave de API não detectada).";
+      console.warn("API Key not found. Please check your .env file or environment configuration.");
+      return "Serviço de IA indisponível. (Chave de API não detectada no ambiente).";
   }
 
   const ai = new GoogleGenAI({ apiKey });
@@ -83,6 +100,6 @@ export const generateDevotional = async (bookName: string, chapters: number[], s
     return response.text?.trim() || "Não foi possível gerar a reflexão no momento.";
   } catch (error) {
     console.error("Error generating devotional:", error);
-    return "Erro ao conectar com o serviço de IA. Tente novamente mais tarde.";
+    return "Erro ao conectar com o serviço de IA. Verifique sua conexão ou tente mais tarde.";
   }
 };
