@@ -1,5 +1,4 @@
-
-import { BibleBook, PlanType, Achievement, DevotionalStyle } from './types';
+import { BibleBook, PlanType, Achievement } from './types';
 
 // Adicione aqui os e-mails que terão acesso Master
 export const ADMIN_EMAILS = [
@@ -9,32 +8,91 @@ export const ADMIN_EMAILS = [
   'dev@teste.com' 
 ];
 
-export const DEVOTIONAL_STYLES: Record<DevotionalStyle, { title: string; description: string; icon: string }> = {
-  'theologian': {
-    title: 'Teológico & Histórico',
-    description: 'Estilo Luiz Sayão. Foco em contexto, original grego/hebraico e cultura.',
-    icon: 'Scroll'
-  },
-  'pastoral': {
-    title: 'Pastor Acolhedor',
-    description: 'Linguagem simples e empática. Ideal para novos na fé e conforto.',
-    icon: 'HeartHandshake' // Mapear este ícone no App.tsx ou usar um existente
-  },
-  'youth': {
-    title: 'Jovem & Dinâmico',
-    description: 'Linguagem moderna, foco em propósito e desafios atuais.',
-    icon: 'Zap'
-  },
-  'kids': {
-    title: 'Bíblia Kids',
-    description: 'Divertido e narrativo. Explicações fáceis com lições de moral.',
-    icon: 'Smile' // Mapear este ícone
-  },
-  'classic': {
-    title: 'Devocional Clássico',
-    description: 'Estilo reverente (ex: Spurgeon). Foco em oração e santidade.',
-    icon: 'Feather'
-  }
+// --- SISTEMA DE TEXTOS DINÂMICOS (CMS) ---
+export const DEFAULT_TEXTS: Record<string, string> = {
+  // Navegação (Sidebar/Menu)
+  'nav_dashboard': 'Visão Geral',
+  'nav_tracker': 'Leitura Livre',
+  'nav_community': 'Comunidade',
+  'nav_history': 'Histórico',
+  'nav_achievements': 'Conquistas',
+  'nav_support': 'Suporte',
+  'nav_admin': 'Admin',
+  'nav_logout': 'Sair',
+  'nav_theme_light': 'Tema Claro',
+  'nav_theme_dark': 'Tema Escuro',
+
+  // Dashboard (Visão Geral)
+  'dash_welcome_title': 'Continue sua jornada',
+  'dash_no_plan_msg': 'Você ainda não selecionou um plano de leitura guiado. Escolha um para manter a constância ou siga com a leitura livre.',
+  'dash_btn_choose_plan': 'Escolher Plano',
+  'dash_plan_active': 'Plano Ativo:',
+  'dash_plan_progress': 'Progresso do Plano',
+  'dash_daily_goal': 'Meta diária cumprida! 🎉',
+  'dash_btn_read_now': 'Ler Agora',
+  'dash_stat_read': 'Total Lido',
+  'dash_stat_prediction': 'Previsão de Conclusão',
+  'dash_stat_pace': 'Ritmo Atual',
+  'dash_stat_streak': 'Sequência',
+  'dash_sim_title': 'Simulador de Conclusão',
+  'dash_sim_desc': 'Veja como aumentar seu ritmo diário antecipa a conclusão de toda a Bíblia.',
+  'dash_invite_title': 'Espalhe a Palavra',
+  'dash_invite_msg': 'Compartilhe o app com amigos e familiares. Edifiquem-se juntos na leitura da Palavra.',
+  'dash_btn_invite': 'Convidar Amigos',
+
+  // Leitura Livre (Tracker)
+  'tracker_title': 'Leitura Livre',
+  'tracker_subtitle': 'Selecione um livro para marcar sua leitura ou ler o texto.',
+  'tracker_tab_old': 'Antigo',
+  'tracker_tab_new': 'Novo',
+  'tracker_btn_mark': 'Marcar',
+  'tracker_btn_read': 'Ler',
+  'tracker_btn_save': 'Salvar Leitura',
+  'tracker_back_btn': 'Voltar para Livros',
+  'tracker_selected_count': 'capítulos selecionados',
+
+  // Comunidade
+  'comm_create_title': 'Criar Grupo',
+  'comm_create_desc': 'Monte sua célula, grupo de discipulado ou chame sua família para ler junto.',
+  'comm_create_btn': 'Criar Novo Grupo',
+  'comm_join_title': 'Entrar em Grupo',
+  'comm_join_desc': 'Já tem um convite? Digite o código de 6 dígitos do grupo.',
+  'comm_join_btn': 'Entrar no Grupo',
+  'comm_feed_title': 'Feed da Comunidade',
+  'comm_btn_invite': 'Convidar via WhatsApp',
+  'comm_btn_leave': 'Sair da Comunidade',
+  'comm_members_title': 'Membros',
+
+  // Histórico & Conquistas
+  'hist_empty': 'Nenhum registro de leitura encontrado.',
+  'hist_with_note': 'Com Nota',
+  'hist_edit_note': 'Editar Nota',
+  'hist_add_note': 'Adicionar Nota',
+  'achiev_title': 'Galeria de Conquistas',
+  'achiev_subtitle': 'Acompanhe seus troféus desbloqueados.',
+  'achiev_locked': 'Bloqueado',
+  'achiev_unlocked': 'Desbloqueado',
+
+  // Suporte
+  'supp_title': 'Como podemos ajudar?',
+  'supp_subtitle': 'Envie dúvidas, sugestões ou relate problemas. Nossa equipe responderá em breve.',
+  'supp_type_question': 'Dúvida',
+  'supp_type_suggestion': 'Sugestão',
+  'supp_type_problem': 'Problema',
+  'supp_btn_send': 'Enviar Mensagem',
+  'supp_success_title': 'Mensagem Recebida!',
+  'supp_success_msg': 'Obrigado pelo seu contato. Responderemos o mais breve possível.',
+
+  // Admin
+  'admin_tab_metrics': 'Métricas',
+  'admin_tab_plans': 'Gerenciar Planos',
+  'admin_tab_users': 'Usuários',
+  'admin_tab_support': 'Suporte',
+  'admin_tab_content': 'Editor de Conteúdo',
+  'admin_content_title': 'Editor de Conteúdo do App',
+  'admin_content_subtitle': 'Altere os textos do aplicativo em tempo real.',
+  'admin_btn_save_content': 'Salvar Alterações de Texto',
+  'admin_btn_restore_defaults': 'Restaurar Padrões'
 };
 
 export const PLANS_CONFIG: Record<PlanType, { title: string, days: number, scope: 'ALL' | 'OLD' | 'NEW' | 'PAUL', description: string }> = {
