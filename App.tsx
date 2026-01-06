@@ -151,7 +151,7 @@ const NotificationToast = ({ message, type, onClose }: { message: string, type: 
   useEffect(() => {
     const timer = setTimeout(() => {
       onClose();
-    }, 4000);
+    }, 6000);
     return () => clearTimeout(timer);
   }, [onClose]);
 
@@ -1362,6 +1362,10 @@ const App: React.FC = () => {
     let reflection = '';
     try {
         reflection = await generateDevotional(book.name, sessionSelectedChapters, devotionalStyle);
+        // Check for specific error message returned by service
+        if (reflection && (reflection.includes("Serviço de IA indisponível") || reflection.includes("Chave de API não detectada"))) {
+             showNotification("Alerta: Chave de API da IA não encontrada. Leia o README para configurar o arquivo .env", "error");
+        }
     } catch (e) {
         console.error(e);
     }
