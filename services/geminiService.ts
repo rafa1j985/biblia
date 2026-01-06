@@ -1,17 +1,16 @@
 import { GoogleGenAI } from "@google/genai";
 import { DevotionalStyle } from '../types';
 
-// Use fallback empty string if process is undefined (browser safety)
-const apiKey = (typeof process !== 'undefined' && process.env && process.env.API_KEY) ? process.env.API_KEY : '';
-
-// Always use named parameter for initialization
-const ai = new GoogleGenAI({ apiKey });
-
 export const generateDevotional = async (bookName: string, chapters: number[], style: DevotionalStyle = 'theologian') => {
+  // Inicializa a chave dentro da função para garantir que as variáveis de ambiente já foram carregadas
+  const apiKey = process.env.API_KEY;
+
   if (!apiKey) {
-      console.warn("API Key not found. AI features disabled.");
-      return "Configuração de IA pendente.";
+      console.warn("API Key not found in process.env.API_KEY. AI features disabled.");
+      return "Serviço de IA indisponível (Chave de API não detectada).";
   }
+
+  const ai = new GoogleGenAI({ apiKey });
 
   const chaptersStr = chapters.join(', ');
   let roleInstruction = '';
