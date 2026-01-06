@@ -86,11 +86,7 @@ import {
   Edit,
   MoreHorizontal,
   PlusCircle,
-  UserCog,
-  Youtube,
-  FileText,
-  Sparkles,
-  BookHeart
+  UserCog
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -109,9 +105,8 @@ import {
   Area
 } from 'recharts';
 import { BIBLE_BOOKS, TOTAL_CHAPTERS_BIBLE, ADMIN_EMAILS, PLANS_CONFIG, ACHIEVEMENTS, DEFAULT_TEXTS } from './constants';
-import { BibleBook, ReadChaptersMap, ReadingLog, UserPlan, PlanType, SupportTicket, Group, GroupMember, GroupActivity, ActivityType, PlanConfig, Devotional } from './types';
+import { BibleBook, ReadChaptersMap, ReadingLog, UserPlan, PlanType, SupportTicket, Group, GroupMember, GroupActivity, ActivityType, PlanConfig } from './types';
 import { supabase } from './services/supabase';
-import { generateDevotionalFromTranscript } from './services/geminiService';
 
 // ... (Constants omitted for brevity, keeping existing code structure)
 // --- Versículos Diários ---
@@ -155,16 +150,30 @@ const PAULINE_BOOKS = ['ROM', '1CO', '2CO', 'GAL', 'EPH', 'PHP', 'COL', '1TH', '
 
 // --- Helper Functions ---
 const calculateAchievements = (logs: ReadingLog[], chaptersMap: ReadChaptersMap) => {
-    // ... (unchanged)
     if (!logs.length) return new Set<number>();
+
     const unlocked = new Set<number>();
+
     const isBookComplete = (id: string) => (chaptersMap[id]?.length || 0) === BIBLE_BOOKS.find(b => b.id === id)?.chapters;
-    const hasEarlyMorning = logs.some(l => { const hour = new Date(l.timestamp).getHours(); return hour >= 0 && hour < 6; });
+
+    const hasEarlyMorning = logs.some(l => {
+        const hour = new Date(l.timestamp).getHours();
+        return hour >= 0 && hour < 6;
+    });
     if (hasEarlyMorning) unlocked.add(1); 
-    const hasMorning = logs.some(l => { const hour = new Date(l.timestamp).getHours(); return hour >= 0 && hour < 8; });
+
+    const hasMorning = logs.some(l => {
+        const hour = new Date(l.timestamp).getHours();
+        return hour >= 0 && hour < 8;
+    });
     if (hasMorning) unlocked.add(2); 
-    const hasLateNight = logs.some(l => { const hour = new Date(l.timestamp).getHours(); return hour >= 22; });
+
+    const hasLateNight = logs.some(l => {
+        const hour = new Date(l.timestamp).getHours();
+        return hour >= 22;
+    });
     if (hasLateNight) unlocked.add(3);
+
     let maxStreak = 0;
     if (logs.length > 0) {
         const sortedDates = [...new Set(logs.map(l => l.date))].sort();
@@ -173,89 +182,136 @@ const calculateAchievements = (logs: ReadingLog[], chaptersMap: ReadChaptersMap)
             const prev = new Date(sortedDates[i-1]);
             const curr = new Date(sortedDates[i]);
             const diffDays = Math.round((curr.getTime() - prev.getTime()) / (1000 * 60 * 60 * 24));
-            if (diffDays === 1) currentRun++; else currentRun = 1;
+            if (diffDays === 1) currentRun++;
+            else currentRun = 1;
             maxStreak = Math.max(maxStreak, currentRun);
         }
         if (sortedDates.length === 1) maxStreak = 1;
     }
+
     if (maxStreak >= 3) unlocked.add(4);
     if (maxStreak >= 7) unlocked.add(5);
     if (maxStreak >= 30) unlocked.add(6);
     if (maxStreak >= 365) unlocked.add(8);
+    
     if (['GEN', 'EXO', 'LEV', 'NUM', 'DEU'].every(isBookComplete)) unlocked.add(21);
+    
     const historicalOT = ['JOS', 'JDG', 'RUT', '1SA', '2SA', '1KI', '2KI', '1CH', '2CH', 'EZR', 'NEH', 'EST'];
     if (historicalOT.every(isBookComplete)) unlocked.add(22);
+    
     const poetical = ['JOB', 'PSA', 'PRO', 'ECC', 'SNG'];
     if (poetical.every(isBookComplete)) unlocked.add(23);
+
     if (['MAT', 'MRK', 'LUK', 'JHN'].every(isBookComplete)) unlocked.add(26);
+    
     if (isBookComplete('ACT')) unlocked.add(27);
+    
     if (PAULINE_BOOKS.every(isBookComplete)) unlocked.add(28);
+    
     if (isBookComplete('REV')) unlocked.add(30);
+
     if (isBookComplete('PRO')) unlocked.add(37);
+
     if (isBookComplete('PSA')) unlocked.add(38);
+
     const allOT = BIBLE_BOOKS.filter(b => b.testament === 'Old');
     if (allOT.every(b => isBookComplete(b.id))) unlocked.add(31);
+
     const allNT = BIBLE_BOOKS.filter(b => b.testament === 'New');
     if (allNT.every(b => isBookComplete(b.id))) unlocked.add(32);
+
     if (allOT.every(b => isBookComplete(b.id)) && allNT.every(b => isBookComplete(b.id))) unlocked.add(33);
+    
     const maxChaptersInDay = logs.reduce((max, log) => Math.max(max, log.chapters.length), 0);
     if (maxChaptersInDay >= 10) unlocked.add(72);
+
     const chaptersReadByDateAndBook: Record<string, Set<number>> = {};
     const uniqueDates = new Set<string>();
+
     logs.forEach(log => {
         uniqueDates.add(log.date);
         const key = `${log.date}|${log.bookId}`;
-        if (!chaptersReadByDateAndBook[key]) { chaptersReadByDateAndBook[key] = new Set(); }
+        if (!chaptersReadByDateAndBook[key]) {
+            chaptersReadByDateAndBook[key] = new Set();
+        }
         log.chapters.forEach(c => chaptersReadByDateAndBook[key].add(c));
     });
+
     let hasImmersion = false;
     for (const [key, chaptersSet] of Object.entries(chaptersReadByDateAndBook)) {
         const [_, bookId] = key.split('|');
         const book = BIBLE_BOOKS.find(b => b.id === bookId);
-        if (book && chaptersSet.size === book.chapters) { hasImmersion = true; break; }
+        if (book && chaptersSet.size === book.chapters) {
+            hasImmersion = true;
+            break;
+        }
     }
     if (hasImmersion) unlocked.add(73);
+
     let hasWeekend = false;
     const sortedDates = Array.from(uniqueDates).sort();
+    
     for (const dateStr of sortedDates) {
         const dateObj = new Date(`${dateStr}T12:00:00`);
+        
         if (dateObj.getDay() === 6) {
             const nextDay = new Date(dateObj);
             nextDay.setDate(dateObj.getDate() + 1);
             const nextDayStr = nextDay.toISOString().split('T')[0];
-            if (uniqueDates.has(nextDayStr)) { hasWeekend = true; break; }
+            
+            if (uniqueDates.has(nextDayStr)) {
+                hasWeekend = true;
+                break;
+            }
         }
     }
     if (hasWeekend) unlocked.add(75);
+
     if (logs.some(l => l.userNotes && l.userNotes.trim().length > 0)) unlocked.add(55);
+
     const notesCount = logs.filter(l => l.userNotes && l.userNotes.trim().length > 0).length;
     if (notesCount >= 10) unlocked.add(56);
+
     if (logs.length > 0) {
         const sorted = [...logs].sort((a,b) => a.timestamp - b.timestamp);
         const first = sorted[0].timestamp;
         const last = sorted[sorted.length-1].timestamp;
         const diffDays = (last - first) / (1000 * 3600 * 24);
+        
         if (diffDays >= 6) unlocked.add(92); 
         if (diffDays >= 29) unlocked.add(93);
     }
+    
     if (unlocked.has(33) && unlocked.has(8)) unlocked.add(117);
+
     return unlocked;
 };
 
-// ... (Other helper functions remain the same)
 const getAdvancedStats = (logs: ReadingLog[], chaptersMap: ReadChaptersMap, totalRead: number) => {
   if (logs.length < 2) return { avgChaptersPerDay: 0, projection: { date: 'Indefinido', daysRemaining: 0 } };
+  
   const sortedLogs = [...logs].sort((a, b) => a.timestamp - b.timestamp);
   const startDate = sortedLogs[0].timestamp;
   const lastDate = sortedLogs[sortedLogs.length - 1].timestamp;
+  
   const msPerDay = 1000 * 60 * 60 * 24;
   const daysElapsed = Math.max(1, (lastDate - startDate) / msPerDay);
+  
   const avgChaptersPerDay = totalRead / daysElapsed;
+  
   const remainingChapters = TOTAL_CHAPTERS_BIBLE - totalRead;
   const daysRemaining = avgChaptersPerDay > 0 ? Math.ceil(remainingChapters / avgChaptersPerDay) : 0;
+  
   const projectionDate = new Date();
   projectionDate.setDate(projectionDate.getDate() + daysRemaining);
-  return { avgChaptersPerDay, projection: { date: avgChaptersPerDay > 0 ? projectionDate.toLocaleDateString('pt-BR') : 'Indefinido', daysRemaining } };
+  
+  return {
+    avgChaptersPerDay,
+    projection: {
+      date: avgChaptersPerDay > 0 ? projectionDate.toLocaleDateString('pt-BR') : 'Indefinido',
+      daysRemaining
+    }
+  };
 };
 
 const getStreakMessage = (streak: number) => {
@@ -277,49 +333,639 @@ const calculateSimulationDate = (pace: number, totalRead: number) => {
 
 const handleSendPasswordReset = async (email: string) => {
     if (!confirm(`Enviar email de redefinição de senha para ${email}?`)) return;
-    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+         redirectTo: window.location.origin,
+    });
     if (error) alert("Erro ao enviar email: " + error.message);
     else alert("Email de redefinição enviado!");
 };
 
 // --- Custom Toast Component ---
 const NotificationToast = ({ message, type, onClose }: { message: string, type: 'success' | 'error', onClose: () => void }) => {
-  useEffect(() => { const timer = setTimeout(() => { onClose(); }, 6000); return () => clearTimeout(timer); }, [onClose]);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      onClose();
+    }, 6000);
+    return () => clearTimeout(timer);
+  }, [onClose]);
+
   return (
-    <div className={`fixed top-4 left-1/2 transform -translate-x-1/2 z-[100] flex items-center gap-3 px-6 py-4 rounded-xl shadow-2xl animate-fade-in-down border ${type === 'success' ? 'bg-white dark:bg-slate-800 text-gray-800 dark:text-white border-green-500' : 'bg-white dark:bg-slate-800 text-gray-800 dark:text-white border-red-500'}`}>
-      <div className={`p-2 rounded-full ${type === 'success' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>{type === 'success' ? <CheckCircle2 size={24} /> : <AlertTriangle size={24} />}</div>
-      <div><p className="font-bold text-sm">{type === 'success' ? 'Sucesso!' : 'Atenção'}</p><p className="text-sm opacity-90">{message}</p></div>
-      <button onClick={onClose} className="ml-4 text-gray-400 hover:text-gray-600"><X size={18} /></button>
+    <div className={`fixed top-4 left-1/2 transform -translate-x-1/2 z-[100] flex items-center gap-3 px-6 py-4 rounded-xl shadow-2xl animate-fade-in-down border ${
+      type === 'success' 
+        ? 'bg-white dark:bg-slate-800 text-gray-800 dark:text-white border-green-500' 
+        : 'bg-white dark:bg-slate-800 text-gray-800 dark:text-white border-red-500'
+    }`}>
+      <div className={`p-2 rounded-full ${type === 'success' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+        {type === 'success' ? <CheckCircle2 size={24} /> : <AlertTriangle size={24} />}
+      </div>
+      <div>
+        <p className="font-bold text-sm">{type === 'success' ? 'Sucesso!' : 'Atenção'}</p>
+        <p className="text-sm opacity-90">{message}</p>
+      </div>
+      <button onClick={onClose} className="ml-4 text-gray-400 hover:text-gray-600">
+        <X size={18} />
+      </button>
     </div>
   );
 };
 
-// ... (ConfirmationModal, TransferAdminModal, StatCard, BibleReaderModal, LoginScreen, ChangePasswordModal, PlanSelectionModal, UserInspectorModal remain unchanged)
-
 // --- Confirmation Modal ---
 const ConfirmationModal = ({ isOpen, onClose, onConfirm, title, message, confirmText = "Confirmar", cancelText = "Cancelar", isDestructive = false }: { isOpen: boolean, onClose: () => void, onConfirm: () => void, title: string, message: string, confirmText?: string, cancelText?: string, isDestructive?: boolean }) => {
   if (!isOpen) return null;
+  
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
       <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 max-w-sm w-full shadow-2xl border border-gray-200 dark:border-slate-800 transform transition-all scale-100">
         <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">{title}</h3>
         <p className="text-gray-500 dark:text-gray-400 text-sm mb-6">{message}</p>
         <div className="flex gap-3">
-          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl font-bold text-sm bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-700 transition-colors">{cancelText}</button>
-          <button onClick={() => { onConfirm(); onClose(); }} className={`flex-1 py-2.5 rounded-xl font-bold text-sm text-white shadow-lg transition-colors ${isDestructive ? 'bg-red-600 hover:bg-red-700' : 'bg-indigo-600 hover:bg-indigo-700'}`}>{confirmText}</button>
+          <button 
+            onClick={onClose}
+            className="flex-1 py-2.5 rounded-xl font-bold text-sm bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-700 transition-colors"
+          >
+            {cancelText}
+          </button>
+          <button 
+            onClick={() => { onConfirm(); onClose(); }}
+            className={`flex-1 py-2.5 rounded-xl font-bold text-sm text-white shadow-lg transition-colors ${isDestructive ? 'bg-red-600 hover:bg-red-700' : 'bg-indigo-600 hover:bg-indigo-700'}`}
+          >
+            {confirmText}
+          </button>
         </div>
       </div>
     </div>
   );
 };
-// ... (Keeping components minimal in XML for brevity but they are same as original)
-const TransferAdminModal = ({ isOpen, onClose, onConfirm, members, successorId, setSuccessorId }: { isOpen: boolean, onClose: () => void, onConfirm: () => void, members: GroupMember[], successorId: string, setSuccessorId: (id: string) => void }) => { if (!isOpen) return null; return (<div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in"><div className="bg-white dark:bg-slate-900 rounded-2xl p-6 max-w-md w-full shadow-2xl border border-gray-200 dark:border-slate-800 transform transition-all scale-100"><div className="flex items-center gap-3 mb-4 text-orange-600 dark:text-orange-500"><UserCog size={28} /><h3 className="text-lg font-bold text-gray-900 dark:text-white">Eleger Novo Admin</h3></div><p className="text-gray-500 dark:text-gray-400 text-sm mb-4">Como criador do grupo, você deve eleger um novo administrador antes de sair.</p><div className="mb-6 space-y-2 max-h-60 overflow-y-auto">{members.map(member => (<button key={member.user_id} onClick={() => setSuccessorId(member.user_id)} className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all ${successorId === member.user_id ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20' : 'border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-800'}`}><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-full bg-gray-200 dark:bg-slate-700 flex items-center justify-center text-xs font-bold text-gray-600 dark:text-gray-300">{member.user_name.charAt(0)}</div><span className="font-medium text-sm text-gray-900 dark:text-white">{member.user_name}</span></div>{successorId === member.user_id && <CheckCircle2 size={18} className="text-indigo-600 dark:text-indigo-400" />}</button>))}</div><div className="flex gap-3"><button onClick={onClose} className="flex-1 py-2.5 rounded-xl font-bold text-sm bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-700 transition-colors">Cancelar</button><button onClick={() => { onConfirm(); onClose(); }} disabled={!successorId} className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white shadow-lg transition-colors bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed">Confirmar e Sair</button></div></div></div>); };
-const StatCard = ({ title, value, subtext, icon, highlight = false, colorClass = "bg-indigo-600", progress }: { title: string; value: string | number; subtext?: string; icon: React.ReactNode, highlight?: boolean, colorClass?: string, progress?: number }) => (<div className={`rounded-xl p-6 shadow-sm border flex flex-col justify-between transition-colors ${highlight ? `${colorClass} border-transparent text-white` : 'bg-white dark:bg-slate-900 border-gray-100 dark:border-slate-800'}`}><div className="flex items-start justify-between w-full"><div><p className={`text-sm font-medium mb-1 ${highlight ? 'text-indigo-100' : 'text-gray-500 dark:text-gray-400'}`}>{title}</p><h3 className={`text-2xl font-bold ${highlight ? 'text-white' : 'text-gray-900 dark:text-white'}`}>{value}</h3>{subtext && <p className={`text-xs mt-1 ${highlight ? 'text-indigo-200' : 'text-gray-400 dark:text-gray-500'}`}>{subtext}</p>}</div><div className={`p-2 rounded-lg ${highlight ? 'bg-white/20 text-white' : 'bg-indigo-50 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400'}`}>{icon}</div></div>{progress !== undefined && (<div className={`w-full h-1.5 rounded-full mt-4 overflow-hidden ${highlight ? 'bg-black/20' : 'bg-gray-100 dark:bg-slate-800'}`}><div className={`h-full rounded-full transition-all duration-1000 ${highlight ? 'bg-white/90' : 'bg-indigo-500'}`} style={{ width: `${progress}%` }}></div></div>)}</div>);
-const BibleReaderModal = ({ book, chapter, onClose, onNext, onPrev }: { book: BibleBook, chapter: number, onClose: () => void, onNext?: () => void, onPrev?: () => void }) => { const [text, setText] = useState<string>(''); const [verses, setVerses] = useState<{number: number, text: string}[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState(''); useEffect(() => { const fetchText = async () => { setLoading(true); setError(''); try { const queryBook = BIBLE_API_MAPPING[book.id]; if (!queryBook) { console.error(`Livro ID ${book.id} não encontrado no mapeamento.`); throw new Error(`Livro não mapeado na API: ${book.name}`); } const url = `https://bible-api.com/${encodeURIComponent(queryBook)}+${chapter}?translation=almeida`; const response = await fetch(url); if (!response.ok) { if (response.status === 404) throw new Error('Capítulo não encontrado na versão Almeida.'); throw new Error('Falha de conexão com a Bíblia Online.'); } const data = await response.json(); if (data.verses && Array.isArray(data.verses)) { setVerses(data.verses.map((v: any) => ({ number: v.verse, text: v.text }))); setText(data.text || ''); } else if (data.text) { setText(data.text); } else { throw new Error('Formato de texto inválido recebido.'); } } catch (err: any) { console.error(err); setError(err.message || 'Não foi possível carregar o texto.'); } finally { setLoading(false); } }; fetchText(); }, [book, chapter]); return (<div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in"><div className="bg-white dark:bg-slate-900 w-full max-w-3xl h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-gray-200 dark:border-slate-700 transition-colors"><div className="p-4 border-b border-gray-100 dark:border-slate-800 flex justify-between items-center bg-gray-50 dark:bg-slate-950"><div className="flex items-center gap-4"><button onClick={onPrev} disabled={!onPrev} className="p-2 hover:bg-gray-200 dark:hover:bg-slate-800 rounded-full disabled:opacity-30 transition-colors"><ChevronLeft size={20} className="text-gray-600 dark:text-gray-300" /></button><div><h3 className="font-bold text-lg text-gray-900 dark:text-white serif">{book.name} {chapter}</h3><p className="text-xs text-gray-500 dark:text-gray-400">Versão Almeida</p></div><button onClick={onNext} disabled={!onNext} className="p-2 hover:bg-gray-200 dark:hover:bg-slate-800 rounded-full disabled:opacity-30 transition-colors"><ChevronRight size={20} className="text-gray-600 dark:text-gray-300" /></button></div><button onClick={onClose} className="p-2 hover:bg-gray-200 dark:hover:bg-slate-800 rounded-full text-gray-500 dark:text-gray-400 transition-colors"><X size={24} /></button></div><div className="flex-1 overflow-y-auto p-6 md:p-8 bg-white dark:bg-slate-900 text-gray-900 dark:text-gray-100">{loading ? (<div className="h-full flex flex-col items-center justify-center gap-3 text-gray-400 dark:text-gray-500"><Loader2 size={32} className="animate-spin text-indigo-600" /><p>Carregando as Escrituras...</p></div>) : error ? (<div className="h-full flex flex-col items-center justify-center gap-3 text-red-500 text-center px-4"><ShieldAlert size={32} /><p>{error}</p><p className="text-xs text-gray-400">Verifique sua conexão ou tente mais tarde.</p><button onClick={onClose} className="text-sm underline mt-2 text-gray-500">Fechar</button></div>) : (<div className="max-w-2xl mx-auto">{verses.length > 0 ? (<div className="space-y-4">{verses.map((v) => (<p key={v.number} className="text-lg leading-relaxed text-gray-800 dark:text-gray-200 font-serif"><span className="text-xs font-bold text-indigo-500 dark:text-indigo-400 align-top mr-1 select-none">{v.number}</span>{v.text}</p>))}</div>) : (<p className="text-lg leading-relaxed text-gray-800 dark:text-gray-200 font-serif whitespace-pre-wrap">{text}</p>)}</div>)}</div><div className="p-3 border-t border-gray-100 dark:border-slate-800 bg-gray-50 dark:bg-slate-950 text-center"><p className="text-xs text-gray-400">Não se esqueça de marcar como lido após terminar.</p></div></div></div>); };
-const LoginScreen = ({ onLogin }: { onLogin: (user: any) => void }) => { const [authMode, setAuthMode] = useState<'login' | 'register' | 'forgot'>('login'); const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [name, setName] = useState(''); const [error, setError] = useState(''); const [successMsg, setSuccessMsg] = useState(''); const [loading, setLoading] = useState(false); useEffect(() => { setError(''); setSuccessMsg(''); }, [authMode]); const handleAuth = async (e: React.FormEvent) => { e.preventDefault(); setError(''); setSuccessMsg(''); setLoading(true); try { if (authMode === 'login') { const { data, error } = await supabase.auth.signInWithPassword({ email, password }); if (error) throw error; if (data.user) onLogin(data.user); } else if (authMode === 'register') { const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { full_name: name, } } }); if (error) { if (error.message.includes('already registered')) { setError('Este e-mail já está cadastrado.'); setTimeout(() => { if(window.confirm("E-mail já cadastrado. Deseja recuperar sua senha?")) { setAuthMode('forgot'); } }, 500); } else { throw error; } } else if (data.user) { if (data.user.identities?.length === 0) { setError('Este e-mail já está cadastrado. Tente fazer login.'); } else { onLogin(data.user); } } } else if (authMode === 'forgot') { const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin, }); if (error) throw error; setSuccessMsg('E-mail de recuperação enviado! Verifique sua caixa de entrada.'); } } catch (err: any) { setError(err.message || 'Ocorreu um erro. Tente novamente.'); } finally { setLoading(false); } }; return (<div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-4 transition-colors"><div className="bg-white dark:bg-slate-900 p-8 rounded-2xl shadow-xl max-w-md w-full border border-gray-100 dark:border-slate-800 relative overflow-hidden transition-colors"><div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-indigo-500 to-purple-500"></div><div className="text-center mb-8"><div className="bg-indigo-600 w-14 h-14 rounded-xl flex items-center justify-center text-white mx-auto mb-4 shadow-indigo-200 dark:shadow-none shadow-lg"><Book size={28} /></div><h1 className="text-2xl font-bold text-gray-900 dark:text-white serif">Bíblia Tracker</h1><p className="text-gray-500 dark:text-gray-400 mt-2 text-sm">{authMode === 'login' && 'Bem-vindo de volta!'}{authMode === 'register' && 'Crie sua conta para começar'}{authMode === 'forgot' && 'Recupere seu acesso'}</p></div>{authMode !== 'forgot' && (<div className="flex bg-gray-100 dark:bg-slate-800 p-1 rounded-xl mb-6"><button onClick={() => setAuthMode('login')} className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all ${authMode === 'login' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-white shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}>Entrar</button><button onClick={() => setAuthMode('register')} className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all ${authMode === 'register' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-white shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}>Cadastrar</button></div>)}<form onSubmit={handleAuth} className="space-y-4">{authMode === 'register' && (<div className="space-y-1 animate-fade-in"><label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide ml-1">Nome Completo</label><div className="relative"><User className="absolute left-3 top-3.5 text-gray-400" size={18} /><input type="text" value={name} onChange={(e) => setName(e.target.value)} className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 dark:border-slate-700 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all bg-gray-50 dark:bg-slate-800 dark:text-white focus:bg-white dark:focus:bg-slate-900" placeholder="Seu nome" required /></div></div>)}<div className="space-y-1"><label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide ml-1">E-mail</label><div className="relative"><Mail className="absolute left-3 top-3.5 text-gray-400" size={18} /><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 dark:border-slate-700 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all bg-gray-50 dark:bg-slate-800 dark:text-white focus:bg-white dark:focus:bg-slate-900" placeholder="seu@email.com" required /></div></div>{authMode !== 'forgot' && (<div className="space-y-1 animate-fade-in"><div className="flex justify-between items-center"><label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide ml-1">Senha</label>{authMode === 'login' && (<button type="button" onClick={() => setAuthMode('forgot')} className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline">Esqueceu a senha?</button>)}</div><div className="relative"><Lock className="absolute left-3 top-3.5 text-gray-400" size={18} /><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 dark:border-slate-700 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all bg-gray-50 dark:bg-slate-800 dark:text-white focus:bg-white dark:focus:bg-slate-900" placeholder="••••••••" required minLength={6} /></div></div>)}{error && (<div className="p-3 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-300 text-sm rounded-lg flex items-center gap-2 border border-red-100 dark:border-red-800"><ShieldAlert size={16} />{error}</div>)}{successMsg && (<div className="p-3 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 text-sm rounded-lg flex items-center gap-2 border border-green-100 dark:border-green-800"><CheckCircle2 size={16} />{successMsg}</div>)}<button type="submit" disabled={loading} className="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-bold hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-200 dark:shadow-none mt-4 flex justify-center items-center gap-2">{loading ? <Loader2 className="animate-spin" /> : (<>{authMode === 'login' && 'Entrar'}{authMode === 'register' && 'Criar Conta'}{authMode === 'forgot' && 'Enviar Link de Recuperação'}</>)}</button></form>{authMode === 'forgot' && (<button onClick={() => setAuthMode('login')} className="w-full mt-4 py-2 text-sm text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 font-medium">Voltar para o Login</button>)}</div></div>); };
-const ChangePasswordModal = ({ onClose }: { onClose: () => void }) => { const [newPassword, setNewPassword] = useState(''); const [confirmPassword, setConfirmPassword] = useState(''); const [message, setMessage] = useState<{type: 'error' | 'success', text: string} | null>(null); const [loading, setLoading] = useState(false); const handleChange = async (e: React.FormEvent) => { e.preventDefault(); if (newPassword.length < 6) { setMessage({ type: 'error', text: 'A nova senha deve ter pelo menos 6 caracteres.' }); return; } if (newPassword !== confirmPassword) { setMessage({ type: 'error', text: 'As novas senhas não coincidem.' }); return; } setLoading(true); const { error } = await supabase.auth.updateUser({ password: newPassword }); if (error) { setMessage({ type: 'error', text: 'Erro ao atualizar senha.' }); } else { setMessage({ type: 'success', text: 'Senha alterada com sucesso!' }); setTimeout(onClose, 1500); } setLoading(false); }; return (<div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4 backdrop-blur-sm"><div className="bg-white dark:bg-slate-900 rounded-2xl p-6 max-w-sm w-full shadow-2xl animate-fade-in"><div className="flex justify-between items-center mb-4"><h3 className="font-bold text-lg text-gray-900 dark:text-white">Alterar Senha</h3><button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"><X size={20} /></button></div><form onSubmit={handleChange} className="space-y-3"><input type="password" placeholder="Nova Senha" value={newPassword} onChange={e => setNewPassword(e.target.value)} className="w-full p-3 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-indigo-500 outline-none" required /><input type="password" placeholder="Confirmar Nova Senha" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} className="w-full p-3 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-indigo-500 outline-none" required />{message && (<div className={`p-3 text-sm rounded-lg ${message.type === 'success' ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300' : 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-300'}`}>{message.text}</div>)}<button type="submit" disabled={loading} className="w-full bg-indigo-600 text-white py-2.5 rounded-lg font-bold text-sm hover:bg-indigo-700 flex justify-center">{loading ? <Loader2 size={16} className="animate-spin" /> : 'Salvar Nova Senha'}</button></form></div></div>); };
-const PlanSelectionModal = ({ onClose, onSelectPlan, availablePlans }: { onClose: () => void, onSelectPlan: (plan: PlanConfig) => void, availablePlans: Record<string, PlanConfig> }) => { return (<div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in"><div className="bg-white dark:bg-slate-900 rounded-2xl max-w-2xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"><div className="p-6 border-b border-gray-100 dark:border-slate-800 flex justify-between items-center bg-indigo-600 text-white"><div><h3 className="font-bold text-xl">Planos de Leitura</h3><p className="text-indigo-200 text-sm">Escolha abaixo um Plano de Leitura guiado.</p></div><button onClick={onClose} className="text-indigo-200 hover:text-white bg-indigo-500/30 p-2 rounded-full"><X size={20} /></button></div><div className="overflow-y-auto p-6 space-y-4 bg-white dark:bg-slate-900">{Object.entries(availablePlans).map(([key, config]) => (<button key={key} onClick={() => onSelectPlan(config)} className="w-full text-left bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-5 hover:border-indigo-400 dark:hover:border-indigo-500 hover:shadow-md transition-all group relative overflow-hidden"><div className="absolute top-0 right-0 w-2 h-full bg-gray-100 dark:bg-slate-700 group-hover:bg-indigo-500 transition-colors"></div><div className="flex justify-between items-start"><div><h4 className="font-bold text-gray-900 dark:text-white text-lg group-hover:text-indigo-700 dark:group-hover:text-indigo-400 transition-colors">{config.title}</h4><p className="text-gray-500 dark:text-gray-400 text-sm mt-1 pr-4">{config.description}</p></div><div className="bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-300 px-3 py-1 rounded-lg text-xs font-bold whitespace-nowrap">{config.days} dias</div></div><div className="mt-3 flex items-center gap-2 text-xs font-medium text-indigo-600 dark:text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity">Começar este plano <ChevronRight size={14} /></div></button>))}</div></div></div>); };
-const UserInspectorModal = ({ userId, allLogs, onClose }: { userId: string, allLogs: ReadingLog[], onClose: () => void }) => { const userLogs = useMemo(() => allLogs.filter(l => l.user_id === userId || l.user_email === userId), [userId, allLogs]); const userName = userLogs[0]?.user_name || userId; const stats = useMemo(() => { const chaptersRead = userLogs.reduce((acc, log) => acc + log.chapters.length, 0); const uniqueBooks = new Set(userLogs.map(l => l.bookId)).size; const lastActive = userLogs.length > 0 ? new Date(userLogs[0].timestamp).toLocaleDateString('pt-BR') : 'Nunca'; return { chaptersRead, uniqueBooks, lastActive }; }, [userLogs]); return (<div className="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in"><div className="bg-white dark:bg-slate-900 rounded-2xl max-w-3xl w-full shadow-2xl h-[80vh] flex flex-col overflow-hidden"><div className="p-6 border-b border-gray-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-950"><div><h3 className="font-bold text-xl text-gray-900 dark:text-white flex items-center gap-2"><UserCircle size={24} className="text-indigo-500"/> {userName}</h3><p className="text-sm text-gray-500">Detalhes do Usuário</p></div><button onClick={onClose} className="p-2 hover:bg-gray-200 dark:hover:bg-slate-800 rounded-full"><X size={20} /></button></div><div className="flex-1 overflow-y-auto p-6"><div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6"><div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl text-center"><p className="text-xs text-indigo-600 dark:text-indigo-300 uppercase font-bold">Capítulos Lidos</p><p className="text-2xl font-bold text-gray-900 dark:text-white">{stats.chaptersRead}</p></div><div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-xl text-center"><p className="text-xs text-purple-600 dark:text-purple-300 uppercase font-bold">Livros Iniciados</p><p className="text-2xl font-bold text-gray-900 dark:text-white">{stats.uniqueBooks}</p></div><div className="bg-emerald-50 dark:bg-emerald-900/20 p-4 rounded-xl text-center"><p className="text-xs text-emerald-600 dark:text-emerald-300 uppercase font-bold">Última Atividade</p><p className="text-xl font-bold text-gray-900 dark:text-white">{stats.lastActive}</p></div></div><h4 className="font-bold text-gray-900 dark:text-white mb-3">Histórico Recente</h4>{userLogs.length === 0 ? (<p className="text-gray-500 text-sm">Nenhuma atividade registrada.</p>) : (<div className="space-y-2">{userLogs.slice(0, 20).map(log => (<div key={log.id} className="flex justify-between items-center p-3 border border-gray-100 dark:border-slate-800 rounded-lg"><div><span className="font-bold text-gray-800 dark:text-gray-200">{BIBLE_BOOKS.find(b => b.id === log.bookId)?.name}</span><span className="ml-2 text-indigo-600 dark:text-indigo-400 font-mono text-sm">{log.chapters.join(', ')}</span></div><span className="text-xs text-gray-400">{new Date(log.timestamp).toLocaleDateString('pt-BR')}</span></div>))}</div>)}</div></div></div>); };
+
+// ... (TransferAdminModal, StatCard, BibleReaderModal, LoginScreen, ChangePasswordModal, PlanSelectionModal, UserInspectorModal remain unchanged)
+const TransferAdminModal = ({ isOpen, onClose, onConfirm, members, successorId, setSuccessorId }: { isOpen: boolean, onClose: () => void, onConfirm: () => void, members: GroupMember[], successorId: string, setSuccessorId: (id: string) => void }) => {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 max-w-md w-full shadow-2xl border border-gray-200 dark:border-slate-800 transform transition-all scale-100">
+        <div className="flex items-center gap-3 mb-4 text-orange-600 dark:text-orange-500">
+            <UserCog size={28} />
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white">Eleger Novo Admin</h3>
+        </div>
+        <p className="text-gray-500 dark:text-gray-400 text-sm mb-4">
+            Como criador do grupo, você deve eleger um novo administrador antes de sair.
+        </p>
+        
+        <div className="mb-6 space-y-2 max-h-60 overflow-y-auto">
+            {members.map(member => (
+                <button
+                    key={member.user_id}
+                    onClick={() => setSuccessorId(member.user_id)}
+                    className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all ${successorId === member.user_id ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20' : 'border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-800'}`}
+                >
+                    <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-gray-200 dark:bg-slate-700 flex items-center justify-center text-xs font-bold text-gray-600 dark:text-gray-300">
+                            {member.user_name.charAt(0)}
+                        </div>
+                        <span className="font-medium text-sm text-gray-900 dark:text-white">{member.user_name}</span>
+                    </div>
+                    {successorId === member.user_id && <CheckCircle2 size={18} className="text-indigo-600 dark:text-indigo-400" />}
+                </button>
+            ))}
+        </div>
+
+        <div className="flex gap-3">
+          <button 
+            onClick={onClose}
+            className="flex-1 py-2.5 rounded-xl font-bold text-sm bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-700 transition-colors"
+          >
+            Cancelar
+          </button>
+          <button 
+            onClick={() => { onConfirm(); onClose(); }}
+            disabled={!successorId}
+            className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white shadow-lg transition-colors bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Confirmar e Sair
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ... (Other helpers same)
+const StatCard = ({ title, value, subtext, icon, highlight = false, colorClass = "bg-indigo-600", progress }: { title: string; value: string | number; subtext?: string; icon: React.ReactNode, highlight?: boolean, colorClass?: string, progress?: number }) => (
+  <div className={`rounded-xl p-6 shadow-sm border flex flex-col justify-between transition-colors ${highlight ? `${colorClass} border-transparent text-white` : 'bg-white dark:bg-slate-900 border-gray-100 dark:border-slate-800'}`}>
+    <div className="flex items-start justify-between w-full">
+      <div>
+        <p className={`text-sm font-medium mb-1 ${highlight ? 'text-indigo-100' : 'text-gray-500 dark:text-gray-400'}`}>{title}</p>
+        <h3 className={`text-2xl font-bold ${highlight ? 'text-white' : 'text-gray-900 dark:text-white'}`}>{value}</h3>
+        {subtext && <p className={`text-xs mt-1 ${highlight ? 'text-indigo-200' : 'text-gray-400 dark:text-gray-500'}`}>{subtext}</p>}
+      </div>
+      <div className={`p-2 rounded-lg ${highlight ? 'bg-white/20 text-white' : 'bg-indigo-50 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400'}`}>
+        {icon}
+      </div>
+    </div>
+    {progress !== undefined && (
+      <div className={`w-full h-1.5 rounded-full mt-4 overflow-hidden ${highlight ? 'bg-black/20' : 'bg-gray-100 dark:bg-slate-800'}`}>
+         <div className={`h-full rounded-full transition-all duration-1000 ${highlight ? 'bg-white/90' : 'bg-indigo-500'}`} style={{ width: `${progress}%` }}></div>
+      </div>
+    )}
+  </div>
+);
+
+const BibleReaderModal = ({ book, chapter, onClose, onNext, onPrev }: { book: BibleBook, chapter: number, onClose: () => void, onNext?: () => void, onPrev?: () => void }) => {
+  const [text, setText] = useState<string>('');
+  const [verses, setVerses] = useState<{number: number, text: string}[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const fetchText = async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const queryBook = BIBLE_API_MAPPING[book.id];
+        if (!queryBook) {
+            console.error(`Livro ID ${book.id} não encontrado no mapeamento.`);
+            throw new Error(`Livro não mapeado na API: ${book.name}`);
+        }
+
+        const url = `https://bible-api.com/${encodeURIComponent(queryBook)}+${chapter}?translation=almeida`;
+        
+        const response = await fetch(url);
+        
+        if (!response.ok) {
+            if (response.status === 404) throw new Error('Capítulo não encontrado na versão Almeida.');
+            throw new Error('Falha de conexão com a Bíblia Online.');
+        }
+        
+        const data = await response.json();
+        
+        if (data.verses && Array.isArray(data.verses)) {
+            setVerses(data.verses.map((v: any) => ({
+                number: v.verse,
+                text: v.text
+            })));
+            setText(data.text || '');
+        } else if (data.text) {
+            setText(data.text);
+        } else {
+            throw new Error('Formato de texto inválido recebido.');
+        }
+
+      } catch (err: any) {
+        console.error(err);
+        setError(err.message || 'Não foi possível carregar o texto.');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchText();
+  }, [book, chapter]);
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+      <div className="bg-white dark:bg-slate-900 w-full max-w-3xl h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-gray-200 dark:border-slate-700 transition-colors">
+        
+        {/* Header */}
+        <div className="p-4 border-b border-gray-100 dark:border-slate-800 flex justify-between items-center bg-gray-50 dark:bg-slate-950">
+          <div className="flex items-center gap-4">
+             <button onClick={onPrev} disabled={!onPrev} className="p-2 hover:bg-gray-200 dark:hover:bg-slate-800 rounded-full disabled:opacity-30 transition-colors">
+                <ChevronLeft size={20} className="text-gray-600 dark:text-gray-300" />
+             </button>
+             <div>
+                <h3 className="font-bold text-lg text-gray-900 dark:text-white serif">{book.name} {chapter}</h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400">Versão Almeida</p>
+             </div>
+             <button onClick={onNext} disabled={!onNext} className="p-2 hover:bg-gray-200 dark:hover:bg-slate-800 rounded-full disabled:opacity-30 transition-colors">
+                <ChevronRight size={20} className="text-gray-600 dark:text-gray-300" />
+             </button>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-gray-200 dark:hover:bg-slate-800 rounded-full text-gray-500 dark:text-gray-400 transition-colors">
+            <X size={24} />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-6 md:p-8 bg-white dark:bg-slate-900 text-gray-900 dark:text-gray-100">
+          {loading ? (
+             <div className="h-full flex flex-col items-center justify-center gap-3 text-gray-400 dark:text-gray-500">
+                <Loader2 size={32} className="animate-spin text-indigo-600" />
+                <p>Carregando as Escrituras...</p>
+             </div>
+          ) : error ? (
+            <div className="h-full flex flex-col items-center justify-center gap-3 text-red-500 text-center px-4">
+                <ShieldAlert size={32} />
+                <p>{error}</p>
+                <p className="text-xs text-gray-400">Verifique sua conexão ou tente mais tarde.</p>
+                <button onClick={onClose} className="text-sm underline mt-2 text-gray-500">Fechar</button>
+            </div>
+          ) : (
+            <div className="max-w-2xl mx-auto">
+                {verses.length > 0 ? (
+                    <div className="space-y-4">
+                        {verses.map((v) => (
+                            <p key={v.number} className="text-lg leading-relaxed text-gray-800 dark:text-gray-200 font-serif">
+                                <span className="text-xs font-bold text-indigo-500 dark:text-indigo-400 align-top mr-1 select-none">{v.number}</span>
+                                {v.text}
+                            </p>
+                        ))}
+                    </div>
+                ) : (
+                    <p className="text-lg leading-relaxed text-gray-800 dark:text-gray-200 font-serif whitespace-pre-wrap">{text}</p>
+                )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer Hint */}
+        <div className="p-3 border-t border-gray-100 dark:border-slate-800 bg-gray-50 dark:bg-slate-950 text-center">
+            <p className="text-xs text-gray-400">Não se esqueça de marcar como lido após terminar.</p>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const LoginScreen = ({ onLogin }: { onLogin: (user: any) => void }) => {
+  // ... (LoginScreen implementation same as before)
+  const [authMode, setAuthMode] = useState<'login' | 'register' | 'forgot'>('login');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [name, setName] = useState(''); // Para cadastro
+  const [error, setError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    setError('');
+    setSuccessMsg('');
+  }, [authMode]);
+
+  const handleAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setSuccessMsg('');
+    setLoading(true);
+
+    try {
+      if (authMode === 'login') {
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+        if (data.user) onLogin(data.user);
+      } 
+      else if (authMode === 'register') {
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              full_name: name,
+            }
+          }
+        });
+
+        if (error) {
+          if (error.message.includes('already registered')) {
+            setError('Este e-mail já está cadastrado.');
+            setTimeout(() => {
+                if(window.confirm("E-mail já cadastrado. Deseja recuperar sua senha?")) {
+                    setAuthMode('forgot');
+                }
+            }, 500);
+          } else {
+            throw error;
+          }
+        } else if (data.user) {
+          if (data.user.identities?.length === 0) {
+              setError('Este e-mail já está cadastrado. Tente fazer login.');
+          } else {
+              onLogin(data.user);
+          }
+        }
+      } 
+      else if (authMode === 'forgot') {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: window.location.origin, 
+        });
+        if (error) throw error;
+        setSuccessMsg('E-mail de recuperação enviado! Verifique sua caixa de entrada.');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Ocorreu um erro. Tente novamente.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-4 transition-colors">
+      <div className="bg-white dark:bg-slate-900 p-8 rounded-2xl shadow-xl max-w-md w-full border border-gray-100 dark:border-slate-800 relative overflow-hidden transition-colors">
+        <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-indigo-500 to-purple-500"></div>
+
+        <div className="text-center mb-8">
+          <div className="bg-indigo-600 w-14 h-14 rounded-xl flex items-center justify-center text-white mx-auto mb-4 shadow-indigo-200 dark:shadow-none shadow-lg">
+            <Book size={28} />
+          </div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white serif">Bíblia Tracker</h1>
+          <p className="text-gray-500 dark:text-gray-400 mt-2 text-sm">
+            {authMode === 'login' && 'Bem-vindo de volta!'}
+            {authMode === 'register' && 'Crie sua conta para começar'}
+            {authMode === 'forgot' && 'Recupere seu acesso'}
+          </p>
+        </div>
+
+        {authMode !== 'forgot' && (
+          <div className="flex bg-gray-100 dark:bg-slate-800 p-1 rounded-xl mb-6">
+            <button
+              onClick={() => setAuthMode('login')}
+              className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all ${authMode === 'login' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-white shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
+            >
+              Entrar
+            </button>
+            <button
+              onClick={() => setAuthMode('register')}
+              className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all ${authMode === 'register' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-white shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
+            >
+              Cadastrar
+            </button>
+          </div>
+        )}
+
+        <form onSubmit={handleAuth} className="space-y-4">
+          
+          {authMode === 'register' && (
+            <div className="space-y-1 animate-fade-in">
+              <label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide ml-1">Nome Completo</label>
+              <div className="relative">
+                <User className="absolute left-3 top-3.5 text-gray-400" size={18} />
+                <input 
+                  type="text" 
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 dark:border-slate-700 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all bg-gray-50 dark:bg-slate-800 dark:text-white focus:bg-white dark:focus:bg-slate-900"
+                  placeholder="Seu nome"
+                  required
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide ml-1">E-mail</label>
+            <div className="relative">
+              <Mail className="absolute left-3 top-3.5 text-gray-400" size={18} />
+              <input 
+                type="email" 
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 dark:border-slate-700 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all bg-gray-50 dark:bg-slate-800 dark:text-white focus:bg-white dark:focus:bg-slate-900"
+                placeholder="seu@email.com"
+                required
+              />
+            </div>
+          </div>
+
+          {authMode !== 'forgot' && (
+            <div className="space-y-1 animate-fade-in">
+              <div className="flex justify-between items-center">
+                <label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide ml-1">Senha</label>
+                {authMode === 'login' && (
+                  <button 
+                    type="button"
+                    onClick={() => setAuthMode('forgot')}
+                    className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
+                  >
+                    Esqueceu a senha?
+                  </button>
+                )}
+              </div>
+              <div className="relative">
+                <Lock className="absolute left-3 top-3.5 text-gray-400" size={18} />
+                <input 
+                  type="password" 
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 dark:border-slate-700 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all bg-gray-50 dark:bg-slate-800 dark:text-white focus:bg-white dark:focus:bg-slate-900"
+                  placeholder="••••••••"
+                  required
+                  minLength={6}
+                />
+              </div>
+            </div>
+          )}
+
+          {error && (
+            <div className="p-3 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-300 text-sm rounded-lg flex items-center gap-2 border border-red-100 dark:border-red-800">
+              <ShieldAlert size={16} />
+              {error}
+            </div>
+          )}
+
+          {successMsg && (
+            <div className="p-3 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 text-sm rounded-lg flex items-center gap-2 border border-green-100 dark:border-green-800">
+              <CheckCircle2 size={16} />
+              {successMsg}
+            </div>
+          )}
+
+          <button 
+            type="submit"
+            disabled={loading}
+            className="w-full bg-indigo-600 text-white py-3.5 rounded-xl font-bold hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-200 dark:shadow-none mt-4 flex justify-center items-center gap-2"
+          >
+            {loading ? <Loader2 className="animate-spin" /> : (
+              <>
+                {authMode === 'login' && 'Entrar'}
+                {authMode === 'register' && 'Criar Conta'}
+                {authMode === 'forgot' && 'Enviar Link de Recuperação'}
+              </>
+            )}
+          </button>
+        </form>
+
+        {authMode === 'forgot' && (
+          <button 
+            onClick={() => setAuthMode('login')}
+            className="w-full mt-4 py-2 text-sm text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 font-medium"
+          >
+            Voltar para o Login
+          </button>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const ChangePasswordModal = ({ onClose }: { onClose: () => void }) => {
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [message, setMessage] = useState<{type: 'error' | 'success', text: string} | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const handleChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPassword.length < 6) {
+      setMessage({ type: 'error', text: 'A nova senha deve ter pelo menos 6 caracteres.' });
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setMessage({ type: 'error', text: 'As novas senhas não coincidem.' });
+      return;
+    }
+    setLoading(true);
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) {
+      setMessage({ type: 'error', text: 'Erro ao atualizar senha.' });
+    } else {
+      setMessage({ type: 'success', text: 'Senha alterada com sucesso!' });
+      setTimeout(onClose, 1500);
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4 backdrop-blur-sm">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 max-w-sm w-full shadow-2xl animate-fade-in">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="font-bold text-lg text-gray-900 dark:text-white">Alterar Senha</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+            <X size={20} />
+          </button>
+        </div>
+        <form onSubmit={handleChange} className="space-y-3">
+          <input 
+            type="password" 
+            placeholder="Nova Senha"
+            value={newPassword}
+            onChange={e => setNewPassword(e.target.value)}
+            className="w-full p-3 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+            required
+          />
+          <input 
+            type="password" 
+            placeholder="Confirmar Nova Senha"
+            value={confirmPassword}
+            onChange={e => setConfirmPassword(e.target.value)}
+            className="w-full p-3 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+            required
+          />
+          {message && (
+            <div className={`p-3 text-sm rounded-lg ${message.type === 'success' ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300' : 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-300'}`}>
+              {message.text}
+            </div>
+          )}
+          <button type="submit" disabled={loading} className="w-full bg-indigo-600 text-white py-2.5 rounded-lg font-bold text-sm hover:bg-indigo-700 flex justify-center">
+             {loading ? <Loader2 size={16} className="animate-spin" /> : 'Salvar Nova Senha'}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+const PlanSelectionModal = ({ onClose, onSelectPlan, availablePlans }: { onClose: () => void, onSelectPlan: (plan: PlanConfig) => void, availablePlans: Record<string, PlanConfig> }) => {
+  return (
+    <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-2xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+        <div className="p-6 border-b border-gray-100 dark:border-slate-800 flex justify-between items-center bg-indigo-600 text-white">
+          <div>
+            <h3 className="font-bold text-xl">Planos de Leitura</h3>
+            <p className="text-indigo-200 text-sm">Escolha abaixo um Plano de Leitura guiado.</p>
+          </div>
+          <button onClick={onClose} className="text-indigo-200 hover:text-white bg-indigo-500/30 p-2 rounded-full">
+            <X size={20} />
+          </button>
+        </div>
+        <div className="overflow-y-auto p-6 space-y-4 bg-white dark:bg-slate-900">
+          {Object.entries(availablePlans).map(([key, config]) => (
+            <button 
+              key={key}
+              onClick={() => onSelectPlan(config)}
+              className="w-full text-left bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-5 hover:border-indigo-400 dark:hover:border-indigo-500 hover:shadow-md transition-all group relative overflow-hidden"
+            >
+              <div className="absolute top-0 right-0 w-2 h-full bg-gray-100 dark:bg-slate-700 group-hover:bg-indigo-500 transition-colors"></div>
+              <div className="flex justify-between items-start">
+                <div>
+                  <h4 className="font-bold text-gray-900 dark:text-white text-lg group-hover:text-indigo-700 dark:group-hover:text-indigo-400 transition-colors">{config.title}</h4>
+                  <p className="text-gray-500 dark:text-gray-400 text-sm mt-1 pr-4">{config.description}</p>
+                </div>
+                <div className="bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-300 px-3 py-1 rounded-lg text-xs font-bold whitespace-nowrap">
+                  {config.days} dias
+                </div>
+              </div>
+              <div className="mt-3 flex items-center gap-2 text-xs font-medium text-indigo-600 dark:text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                Começar este plano <ChevronRight size={14} />
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const UserInspectorModal = ({ userId, allLogs, onClose }: { userId: string, allLogs: ReadingLog[], onClose: () => void }) => {
+    const userLogs = useMemo(() => allLogs.filter(l => l.user_id === userId || l.user_email === userId), [userId, allLogs]);
+    const userName = userLogs[0]?.user_name || userId;
+
+    const stats = useMemo(() => {
+        const chaptersRead = userLogs.reduce((acc, log) => acc + log.chapters.length, 0);
+        const uniqueBooks = new Set(userLogs.map(l => l.bookId)).size;
+        const lastActive = userLogs.length > 0 ? new Date(userLogs[0].timestamp).toLocaleDateString('pt-BR') : 'Nunca';
+        return { chaptersRead, uniqueBooks, lastActive };
+    }, [userLogs]);
+
+    return (
+        <div className="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-3xl w-full shadow-2xl h-[80vh] flex flex-col overflow-hidden">
+                <div className="p-6 border-b border-gray-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-950">
+                    <div>
+                        <h3 className="font-bold text-xl text-gray-900 dark:text-white flex items-center gap-2">
+                             <UserCircle size={24} className="text-indigo-500"/> {userName}
+                        </h3>
+                        <p className="text-sm text-gray-500">Detalhes do Usuário</p>
+                    </div>
+                    <button onClick={onClose} className="p-2 hover:bg-gray-200 dark:hover:bg-slate-800 rounded-full">
+                        <X size={20} />
+                    </button>
+                </div>
+                
+                <div className="flex-1 overflow-y-auto p-6">
+                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                         <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl text-center">
+                             <p className="text-xs text-indigo-600 dark:text-indigo-300 uppercase font-bold">Capítulos Lidos</p>
+                             <p className="text-2xl font-bold text-gray-900 dark:text-white">{stats.chaptersRead}</p>
+                         </div>
+                         <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-xl text-center">
+                             <p className="text-xs text-purple-600 dark:text-purple-300 uppercase font-bold">Livros Iniciados</p>
+                             <p className="text-2xl font-bold text-gray-900 dark:text-white">{stats.uniqueBooks}</p>
+                         </div>
+                         <div className="bg-emerald-50 dark:bg-emerald-900/20 p-4 rounded-xl text-center">
+                             <p className="text-xs text-emerald-600 dark:text-emerald-300 uppercase font-bold">Última Atividade</p>
+                             <p className="text-xl font-bold text-gray-900 dark:text-white">{stats.lastActive}</p>
+                         </div>
+                     </div>
+
+                     <h4 className="font-bold text-gray-900 dark:text-white mb-3">Histórico Recente</h4>
+                     {userLogs.length === 0 ? (
+                         <p className="text-gray-500 text-sm">Nenhuma atividade registrada.</p>
+                     ) : (
+                         <div className="space-y-2">
+                             {userLogs.slice(0, 20).map(log => (
+                                 <div key={log.id} className="flex justify-between items-center p-3 border border-gray-100 dark:border-slate-800 rounded-lg">
+                                     <div>
+                                         <span className="font-bold text-gray-800 dark:text-gray-200">{BIBLE_BOOKS.find(b => b.id === log.bookId)?.name}</span>
+                                         <span className="ml-2 text-indigo-600 dark:text-indigo-400 font-mono text-sm">{log.chapters.join(', ')}</span>
+                                     </div>
+                                     <span className="text-xs text-gray-400">{new Date(log.timestamp).toLocaleDateString('pt-BR')}</span>
+                                 </div>
+                             ))}
+                         </div>
+                     )}
+                </div>
+            </div>
+        </div>
+    );
+};
 
 // --- Main App Component ---
 
@@ -340,7 +986,7 @@ const App: React.FC = () => {
       isDestructive?: boolean;
   }>({ isOpen: false, title: '', message: '', onConfirm: () => {} });
 
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'tracker' | 'history' | 'community' | 'admin' | 'achievements' | 'support' | 'devotionals'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'tracker' | 'history' | 'community' | 'admin' | 'achievements' | 'support'>('dashboard');
   const [selectedBookId, setSelectedBookId] = useState<string | null>(null);
   
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
@@ -362,7 +1008,7 @@ const App: React.FC = () => {
 
   const [adminLogs, setAdminLogs] = useState<any[]>([]);
   const [isAdminLoading, setIsAdminLoading] = useState(false);
-  const [adminView, setAdminView] = useState<'overview' | 'users' | 'plans' | 'support' | 'content' | 'generator'>('overview');
+  const [adminView, setAdminView] = useState<'overview' | 'users' | 'plans' | 'support' | 'content'>('overview');
   const [supportTickets, setSupportTickets] = useState<SupportTicket[]>([]);
   const [updatingTicketId, setUpdatingTicketId] = useState<string | null>(null);
   const [ticketFilter, setTicketFilter] = useState<'all' | 'open' | 'resolved'>('all');
@@ -419,22 +1065,11 @@ const App: React.FC = () => {
   // Admin Inspector State
   const [inspectingUserId, setInspectingUserId] = useState<string | null>(null);
 
-  // --- Devotionals State ---
-  const [devotionalsList, setDevotionalsList] = useState<Devotional[]>([]);
-  const [selectedDevotional, setSelectedDevotional] = useState<Devotional | null>(null);
-  const [isDevotionalsLoading, setIsDevotionalsLoading] = useState(false);
-  
-  // --- Admin Generator State ---
-  const [genTranscript, setGenTranscript] = useState('');
-  const [generatedDevotional, setGeneratedDevotional] = useState<Devotional | null>(null);
-  const [isGeneratingDevotional, setIsGeneratingDevotional] = useState(false);
-  const [isSavingDevotional, setIsSavingDevotional] = useState(false);
-
   const showNotification = useCallback((message: string, type: 'success' | 'error' = 'success') => {
       setNotification({ message, type });
   }, []);
 
-  // ... (Same helpers)
+  // --- CMS Helper ---
   const t = useCallback((key: string) => {
     return appTexts[key] || DEFAULT_TEXTS[key] || key;
   }, [appTexts]);
@@ -474,10 +1109,11 @@ const App: React.FC = () => {
       
       // Load Texts
       fetchAppTexts();
-      fetchDevotionals();
   }, []);
 
   const fetchAppTexts = async () => {
+    // Assuming a table 'app_config' where we store text overrides as individual rows or a big JSON
+    // Strategy: Store individual keys as rows { key: 'nav_dashboard', value: '...' }
     const { data, error } = await supabase.from('app_config').select('key, value').in('key', Object.keys(DEFAULT_TEXTS));
     if (data) {
         const loadedTexts = { ...DEFAULT_TEXTS };
@@ -487,20 +1123,6 @@ const App: React.FC = () => {
         setAppTexts(loadedTexts);
         setEditingTexts(loadedTexts);
     }
-  };
-
-  const fetchDevotionals = async () => {
-      setIsDevotionalsLoading(true);
-      // Supabase fetch
-      const { data, error } = await supabase.from('devotionals').select('*').order('created_at', { ascending: false });
-      if (data) {
-          setDevotionalsList(data);
-      } else {
-           // Fallback to local storage if DB fails or table doesn't exist yet
-           const local = localStorage.getItem('local_devotionals');
-           if (local) setDevotionalsList(JSON.parse(local));
-      }
-      setIsDevotionalsLoading(false);
   };
 
   const handleSaveContent = async () => {
@@ -519,6 +1141,9 @@ const App: React.FC = () => {
         if(error) console.error("Error saving texts", error);
     }
     
+    // Delete resets (optional, or just update to default)
+    // Simpler: Just upsert everything that is different from default, but here we keep it simple.
+    // If we want to really "reset" we should delete the row. 
     if (resets.length > 0) {
         await supabase.from('app_config').delete().in('key', resets);
     }
@@ -673,7 +1298,7 @@ const App: React.FC = () => {
           setActiveGroupId(null);
       }
       setIsGroupLoading(false);
-  }, [user]); 
+  }, [user]); // activeGroupId removed from dependency array
 
   // Fetch details for the active group
   const fetchGroupDetails = useCallback(async () => {
@@ -765,11 +1390,13 @@ const App: React.FC = () => {
   }, [user, isAdmin]);
 
   const adminStats = useMemo(() => {
-      // ... (Stats Logic Unchanged)
       if(!adminLogs.length) return null;
+
       const totalChaptersRead = adminLogs.reduce((acc, log) => acc + (log.chapters?.length || 0), 0);
       const uniqueUsers = new Set(adminLogs.map(l => l.user_email)).size;
       const totalReadings = adminLogs.length;
+      
+      // Calculate books completed globally (approx)
       let booksCompleted = 0;
       const userReadMap: Record<string, Record<string, number>> = {}; // user -> book -> count
       adminLogs.forEach(log => {
@@ -777,42 +1404,98 @@ const App: React.FC = () => {
           if (!userReadMap[log.user_id][log.book_id]) userReadMap[log.user_id][log.book_id] = 0;
           userReadMap[log.user_id][log.book_id] += (log.chapters?.length || 0);
       });
+      
       Object.values(userReadMap).forEach(userBooks => {
           Object.entries(userBooks).forEach(([bookId, count]) => {
               const book = BIBLE_BOOKS.find(b => b.id === bookId);
               if (book && count >= book.chapters) booksCompleted++;
           });
       });
+
+      // Calculate medals
       let totalMedals = 0;
       const userLogsMap: Record<string, ReadingLog[]> = {};
+
       adminLogs.forEach((rawLog: any) => {
+          // Normalize user_id
           const uid = rawLog.user_id;
           if(!uid) return;
-          if (!userLogsMap[uid]) { userLogsMap[uid] = []; }
-          userLogsMap[uid].push({ id: rawLog.id, date: rawLog.date, timestamp: rawLog.timestamp, bookId: rawLog.book_id, chapters: rawLog.chapters || [], aiReflection: rawLog.ai_reflection, userNotes: rawLog.user_notes, user_id: rawLog.user_id, user_email: rawLog.user_email, user_name: rawLog.user_name, group_id: rawLog.group_id });
+          
+          if (!userLogsMap[uid]) {
+              userLogsMap[uid] = [];
+          }
+          userLogsMap[uid].push({
+            id: rawLog.id,
+            date: rawLog.date,
+            timestamp: rawLog.timestamp,
+            bookId: rawLog.book_id,
+            chapters: rawLog.chapters || [],
+            aiReflection: rawLog.ai_reflection,
+            userNotes: rawLog.user_notes,
+            user_id: rawLog.user_id,
+            user_email: rawLog.user_email,
+            user_name: rawLog.user_name,
+            group_id: rawLog.group_id
+          });
       });
+
       Object.values(userLogsMap).forEach(logs => {
           const map: ReadChaptersMap = {};
-          logs.forEach(l => { if (!map[l.bookId]) map[l.bookId] = []; const uniqueChapters = new Set([...map[l.bookId], ...l.chapters]); map[l.bookId] = Array.from(uniqueChapters); });
+          logs.forEach(l => {
+              if (!map[l.bookId]) map[l.bookId] = [];
+              // Use Set to ensure uniqueness per book
+              const uniqueChapters = new Set([...map[l.bookId], ...l.chapters]);
+              map[l.bookId] = Array.from(uniqueChapters);
+          });
+          
           const userAchievements = calculateAchievements(logs, map);
           totalMedals += userAchievements.size;
       });
-      return { totalChaptersRead, uniqueUsers, totalReadings, booksCompleted, plansFinished: 0, medalsEarned: totalMedals };
+      
+      return {
+          totalChaptersRead,
+          uniqueUsers,
+          totalReadings,
+          booksCompleted,
+          plansFinished: 0, 
+          medalsEarned: totalMedals
+      };
   }, [adminLogs]);
 
   // --- Handlers ---
   const handleSelectPlan = (config: PlanConfig) => {
-    // ... (unchanged)
     if (!user) return;
+    
+    // Calculate daily target based on config
     let totalChaptersInScope = 0;
     const bookList = config.scope === 'CUSTOM' ? (config.books || []) : BIBLE_BOOKS.map(b => b.id);
+    
     BIBLE_BOOKS.forEach(book => {
       let isInScope = false;
-      if (config.scope === 'PAUL') { isInScope = PAULINE_BOOKS.includes(book.id); } else if (config.scope === 'CUSTOM') { isInScope = bookList.includes(book.id); } else { isInScope = config.scope === 'ALL' || (config.scope === 'OLD' && book.testament === 'Old') || (config.scope === 'NEW' && book.testament === 'New'); }
+      if (config.scope === 'PAUL') {
+          isInScope = PAULINE_BOOKS.includes(book.id);
+      } else if (config.scope === 'CUSTOM') {
+          isInScope = bookList.includes(book.id);
+      } else {
+          isInScope = config.scope === 'ALL' || 
+             (config.scope === 'OLD' && book.testament === 'Old') ||
+             (config.scope === 'NEW' && book.testament === 'New');
+      }
+      
       if (isInScope) totalChaptersInScope += book.chapters;
     });
+
     const dailyTarget = Math.ceil(totalChaptersInScope / config.days);
-    const newPlan: UserPlan = { id: config.id, title: config.title, startDate: new Date().toISOString(), targetDailyChapters: dailyTarget, scope: config.scope, customBooks: config.books, days: config.days, description: config.description };
+    const newPlan: UserPlan = {
+      id: config.id,
+      title: config.title,
+      startDate: new Date().toISOString(),
+      targetDailyChapters: dailyTarget,
+      scope: config.scope,
+      customBooks: config.books,
+      days: config.days,
+      description: config.description
+    };
     setUserPlan(newPlan);
     localStorage.setItem(`bible_plan_${user.id}`, JSON.stringify(newPlan));
     setIsPlanModalOpen(false);
@@ -820,8 +1503,22 @@ const App: React.FC = () => {
   };
 
   // --- Wrapper Functions for Modal ---
-  const handleAbandonPlanRequest = () => { setConfirmModal({ isOpen: true, title: 'Abandonar Plano', message: 'Tem certeza que deseja abandonar o plano atual? Seu histórico de leitura será mantido, mas o progresso do plano será resetado.', onConfirm: executeAbandonPlan, isDestructive: true }); };
-  const executeAbandonPlan = () => { setUserPlan(null); if(user) localStorage.removeItem(`bible_plan_${user.id}`); showNotification("Plano removido. Você está livre para escolher outro.", "success"); };
+  const handleAbandonPlanRequest = () => {
+      setConfirmModal({
+          isOpen: true,
+          title: 'Abandonar Plano',
+          message: 'Tem certeza que deseja abandonar o plano atual? Seu histórico de leitura será mantido, mas o progresso do plano será resetado.',
+          onConfirm: executeAbandonPlan,
+          isDestructive: true
+      });
+  };
+
+  const executeAbandonPlan = () => {
+      setUserPlan(null);
+      if(user) localStorage.removeItem(`bible_plan_${user.id}`);
+      showNotification("Plano removido. Você está livre para escolher outro.", "success");
+  };
+
   const getPlanProgress = useMemo(() => {
     if (!userPlan) return null;
     let readInScope = 0;
@@ -829,31 +1526,94 @@ const App: React.FC = () => {
     const flatList: {bookId: string, chapter: number}[] = [];
     BIBLE_BOOKS.forEach(book => {
       let isInScope = false;
-      if (userPlan.scope === 'PAUL') { isInScope = PAULINE_BOOKS.includes(book.id); } else if (userPlan.scope === 'CUSTOM') { isInScope = (userPlan.customBooks || []).includes(book.id); } else { isInScope = userPlan.scope === 'ALL' || (userPlan.scope === 'OLD' && book.testament === 'Old') || (userPlan.scope === 'NEW' && book.testament === 'New'); }
-      if (isInScope) { totalInScope += book.chapters; const readCount = readChapters[book.id]?.length || 0; readInScope += readCount; for(let i = 1; i <= book.chapters; i++) { flatList.push({bookId: book.id, chapter: i}); } }
+      if (userPlan.scope === 'PAUL') {
+          isInScope = PAULINE_BOOKS.includes(book.id);
+      } else if (userPlan.scope === 'CUSTOM') {
+          isInScope = (userPlan.customBooks || []).includes(book.id);
+      } else {
+          isInScope = userPlan.scope === 'ALL' || 
+                       (userPlan.scope === 'OLD' && book.testament === 'Old') ||
+                       (userPlan.scope === 'NEW' && book.testament === 'New');
+      }
+      if (isInScope) {
+        totalInScope += book.chapters;
+        const readCount = readChapters[book.id]?.length || 0;
+        readInScope += readCount;
+        for(let i = 1; i <= book.chapters; i++) {
+          flatList.push({bookId: book.id, chapter: i});
+        }
+      }
     });
-    const unreadChapters = flatList.filter(item => { const isRead = readChapters[item.bookId]?.includes(item.chapter); return !isRead; });
+    const unreadChapters = flatList.filter(item => {
+      const isRead = readChapters[item.bookId]?.includes(item.chapter);
+      return !isRead;
+    });
     const nextBatch = unreadChapters.slice(0, userPlan.targetDailyChapters);
-    return { readInScope, totalInScope, percent: totalInScope > 0 ? (readInScope / totalInScope) * 100 : 0, nextBatch };
+    return {
+      readInScope,
+      totalInScope,
+      percent: totalInScope > 0 ? (readInScope / totalInScope) * 100 : 0,
+      nextBatch
+    };
   }, [userPlan, readChapters]);
 
   const handleCreateCustomPlan = async () => {
-      // ... (unchanged)
-      if (!newPlanForm.title || !newPlanForm.days || newPlanForm.days <= 0) { showNotification('Preencha o título e uma duração válida.', 'error'); return; }
-      if (newPlanForm.scope === 'CUSTOM' && selectedBooksForPlan.length === 0) { showNotification('Selecione pelo menos um livro para o plano customizado.', 'error'); return; }
+      if (!newPlanForm.title || !newPlanForm.days || newPlanForm.days <= 0) {
+          showNotification('Preencha o título e uma duração válida.', 'error');
+          return;
+      }
+      if (newPlanForm.scope === 'CUSTOM' && selectedBooksForPlan.length === 0) {
+          showNotification('Selecione pelo menos um livro para o plano customizado.', 'error');
+          return;
+      }
+
       const planId = `CUSTOM_${Date.now()}`;
-      const newPlanConfig: PlanConfig = { id: planId, title: newPlanForm.title, description: newPlanForm.description || '', days: newPlanForm.days, scope: newPlanForm.scope as any, books: newPlanForm.scope === 'CUSTOM' ? selectedBooksForPlan : undefined, is_active: true };
+      const newPlanConfig: PlanConfig = {
+          id: planId,
+          title: newPlanForm.title,
+          description: newPlanForm.description || '',
+          days: newPlanForm.days,
+          scope: newPlanForm.scope as any,
+          books: newPlanForm.scope === 'CUSTOM' ? selectedBooksForPlan : undefined,
+          is_active: true
+      };
+
+      // Tentar salvar no banco (assumindo tabela reading_plans)
       const { error } = await supabase.from('reading_plans').insert(newPlanConfig);
+      
+      // Mesmo se der erro (tabela não existe), atualizamos localmente para a sessão
       setCustomPlans(prev => ({ ...prev, [planId]: newPlanConfig }));
-      if (error) { console.warn("Could not save plan to DB (table might be missing), but enabled locally.", error); showNotification('Plano criado localmente (DB indisponível).', 'success'); } else { showNotification('Plano criado e salvo com sucesso!', 'success'); }
+      
+      if (error) {
+          console.warn("Could not save plan to DB (table might be missing), but enabled locally.", error);
+          showNotification('Plano criado localmente (DB indisponível).', 'success');
+      } else {
+          showNotification('Plano criado e salvo com sucesso!', 'success');
+      }
+      
       setIsCreatingPlan(false);
       setNewPlanForm({ scope: 'ALL', days: 30, title: '', description: '' });
       setSelectedBooksForPlan([]);
   };
 
-  // ... (Other Handlers unchanged)
-  const handleQuickRead = (batch: {bookId: string, chapter: number}[]) => { if (batch.length === 0) return; const targetBook = batch[0].bookId; const targetChapters = batch.filter(b => b.bookId === targetBook).map(b => b.chapter); setSelectedBookId(targetBook); setSessionSelectedChapters(targetChapters); setActiveTab('tracker'); };
-  const totalReadCount = useMemo(() => { let count = 0; Object.values(readChapters).forEach((chapters) => { count += (chapters as number[]).length; }); return count; }, [readChapters]);
+  const handleQuickRead = (batch: {bookId: string, chapter: number}[]) => {
+    if (batch.length === 0) return;
+    const targetBook = batch[0].bookId;
+    const targetChapters = batch.filter(b => b.bookId === targetBook).map(b => b.chapter);
+    setSelectedBookId(targetBook);
+    setSessionSelectedChapters(targetChapters);
+    setActiveTab('tracker');
+  };
+
+  // ... (rest of helper functions remain same) ...
+  const totalReadCount = useMemo(() => {
+    let count = 0;
+    Object.values(readChapters).forEach((chapters) => {
+      count += (chapters as number[]).length;
+    });
+    return count;
+  }, [readChapters]);
+
   const completionPercentage = (totalReadCount / TOTAL_CHAPTERS_BIBLE) * 100;
   const advancedStats = useMemo(() => getAdvancedStats(readingLogs, readChapters, totalReadCount), [readChapters, readingLogs, totalReadCount]);
   const currentStreak = useMemo(() => {
@@ -865,300 +1625,346 @@ const App: React.FC = () => {
     if (uniqueDates[0] !== today && uniqueDates[0] !== yesterday) return 0; 
     let streak = 0;
     let currentDate = new Date(uniqueDates[0]);
-    for (let i = 0; i < uniqueDates.length; i++) { const logDate = new Date(uniqueDates[i]); const diffTime = Math.abs(currentDate.getTime() - logDate.getTime()); const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); if (i === 0) streak = 1; else if (diffDays === 1) { streak++; currentDate = logDate; } else break; }
+    for (let i = 0; i < uniqueDates.length; i++) {
+        const logDate = new Date(uniqueDates[i]);
+        const diffTime = Math.abs(currentDate.getTime() - logDate.getTime());
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+        if (i === 0) streak = 1;
+        else if (diffDays === 1) {
+           streak++;
+           currentDate = logDate;
+        } else break;
+    }
     return streak;
   }, [readingLogs]);
 
-  const handleLogout = async () => { await supabase.auth.signOut(); setUser(null); setMobileMenuOpen(false); setActiveTab('dashboard'); };
-  const handleToggleChapter = (chapter: number) => { if (trackerMode === 'read' && selectedBookId) { const book = BIBLE_BOOKS.find(b => b.id === selectedBookId)!; setReadingChapter({ book, chapter }); return; } setSessionSelectedChapters(prev => prev.includes(chapter) ? prev.filter(c => c !== chapter) : [...prev, chapter]); };
+  // ... (Other handlers like logout, saveSession, etc. remain same) ...
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setUser(null); 
+    setMobileMenuOpen(false);
+    setActiveTab('dashboard');
+  };
+
+  const handleToggleChapter = (chapter: number) => {
+    if (trackerMode === 'read' && selectedBookId) {
+      const book = BIBLE_BOOKS.find(b => b.id === selectedBookId)!;
+      setReadingChapter({ book, chapter });
+      return;
+    }
+    setSessionSelectedChapters(prev => 
+      prev.includes(chapter) 
+        ? prev.filter(c => c !== chapter) 
+        : [...prev, chapter]
+    );
+  };
+
   const handleSaveSession = async () => {
     if (sessionSelectedChapters.length === 0 || !user || !selectedBookId) return;
     const book = BIBLE_BOOKS.find(b => b.id === selectedBookId)!;
     const today = new Date().toISOString().split('T')[0];
     const prevChaptersRead = readChapters[selectedBookId]?.length || 0;
-    const logEntry: any = { user_id: user.id, user_email: user.email, user_name: user.user_metadata?.full_name || 'Usuário', date: today, timestamp: Date.now(), book_id: selectedBookId, chapters: sessionSelectedChapters.sort((a, b) => a - b), ai_reflection: '', user_notes: '', group_id: activeGroupId };
+    const prevAchievements = new Set(unlockedAchievements);
+    
+    // Log reading primarily (keeps personal history)
+    const logEntry: any = {
+        user_id: user.id,
+        user_email: user.email, 
+        user_name: user.user_metadata?.full_name || 'Usuário',
+        date: today,
+        timestamp: Date.now(),
+        book_id: selectedBookId,
+        chapters: sessionSelectedChapters.sort((a, b) => a - b),
+        ai_reflection: '',
+        user_notes: '',
+        group_id: activeGroupId // Stores the currently active group in the personal log, or null
+    };
+    
     const { error } = await supabase.from('reading_logs').insert(logEntry).select().single();
-    if (error) { showNotification('Erro ao salvar: ' + error.message, 'error'); } else { await fetchData(); if (userGroups.length > 0) { const chaptersJustRead = sessionSelectedChapters.length; const bookIsComplete = (prevChaptersRead + chaptersJustRead) >= book.chapters; for (const group of userGroups) { await logGroupActivity(group.id, 'READING', { bookId: selectedBookId, chapters: sessionSelectedChapters, text: '' }); if (bookIsComplete) { await logGroupActivity(group.id, 'BOOK_COMPLETE', { bookId: selectedBookId }); } } const groupIds = userGroups.map(g => g.id); await supabase.from('group_members').update({ last_active: new Date().toISOString() }).in('group_id', groupIds).eq('user_id', user.id); } if(isAdmin) fetchAdminData(); setSessionSelectedChapters([]); showNotification("Registrado com sucesso! Que Deus te abençoe!", 'success'); if (userGroups.length > 0) setActiveTab('community'); else setActiveTab('history'); }
+    if (error) {
+        showNotification('Erro ao salvar: ' + error.message, 'error');
+    } else {
+        await fetchData();
+        
+        // Broadcast activity to ALL user groups
+        if (userGroups.length > 0) {
+            const chaptersJustRead = sessionSelectedChapters.length;
+            const bookIsComplete = (prevChaptersRead + chaptersJustRead) >= book.chapters;
+
+            for (const group of userGroups) {
+                // Log Reading Activity
+                await logGroupActivity(group.id, 'READING', { bookId: selectedBookId, chapters: sessionSelectedChapters, text: '' });
+                
+                // Log Book Completion if applicable
+                if (bookIsComplete) {
+                     await logGroupActivity(group.id, 'BOOK_COMPLETE', { bookId: selectedBookId });
+                }
+            }
+            
+            // Update last active status for user in group_members table
+            // We do this for all groups user belongs to
+            const groupIds = userGroups.map(g => g.id);
+            await supabase.from('group_members')
+                .update({ last_active: new Date().toISOString() })
+                .in('group_id', groupIds)
+                .eq('user_id', user.id);
+        }
+        
+        if(isAdmin) fetchAdminData(); 
+        setSessionSelectedChapters([]);
+        showNotification("Registrado com sucesso! Que Deus te abençoe!", 'success');
+        if (userGroups.length > 0) setActiveTab('community'); else setActiveTab('history');
+    }
   };
-  const logGroupActivity = async (groupId: string, type: ActivityType, data: any) => { if(!user || !groupId) return; const { error } = await supabase.from('group_activities').insert({ group_id: groupId, user_id: user.id, user_name: user.user_metadata?.full_name || user.email, type: type, data: data, created_at: new Date().toISOString() }); if(!error && groupId === activeGroupId) fetchGroupDetails(); };
+
+  const logGroupActivity = async (groupId: string, type: ActivityType, data: any) => {
+    if(!user || !groupId) return;
+    const { error } = await supabase.from('group_activities').insert({
+        group_id: groupId,
+        user_id: user.id,
+        user_name: user.user_metadata?.full_name || user.email,
+        type: type,
+        data: data,
+        created_at: new Date().toISOString()
+    });
+    if(!error && groupId === activeGroupId) fetchGroupDetails(); // Refresh if looking at this group
+  };
   
-  // --- Admin Handlers ---
-  const handleKickMemberRequest = (member: GroupMember) => { setMemberToKick(member); setConfirmModal({ isOpen: true, title: 'Remover Membro', message: `Tem certeza que deseja remover ${member.user_name} deste grupo?`, onConfirm: () => executeKickMember(member), isDestructive: true }); };
-  const executeKickMember = async (member: GroupMember) => { const { error, data } = await supabase.from('group_members').delete().eq('group_id', activeGroupId).eq('user_id', member.user_id).select(); if (error) { showNotification('Erro ao remover membro: ' + error.message, 'error'); } else if (!data || data.length === 0) { showNotification('Não foi possível remover. Verifique se você é administrador.', 'error'); } else { showNotification('Membro removido com sucesso.', 'success'); fetchGroupDetails(); } setMemberToKick(null); };
-  const handleDeleteGroupRequest = () => { setConfirmModal({ isOpen: true, title: 'Excluir Comunidade', message: 'ATENÇÃO: Esta ação é irreversível. Todas as atividades, histórico e membros serão removidos permanentemente. Deseja continuar?', onConfirm: executeDeleteGroup, isDestructive: true }); };
-  const executeDeleteGroup = async () => { if (!activeGroupId) return; setIsGroupLoading(true); const { error, data } = await supabase.from('groups').delete().eq('id', activeGroupId).select(); if (error) { showNotification('Erro ao excluir grupo: ' + error.message, 'error'); } else if (!data || data.length === 0) { showNotification('Não foi possível excluir. Verifique se você é o dono do grupo.', 'error'); } else { const updatedGroups = userGroups.filter(g => g.id !== activeGroupId); setUserGroups(updatedGroups); if (updatedGroups.length > 0) setActiveGroupId(updatedGroups[0].id); else setActiveGroupId(null); showNotification('Comunidade excluída.', 'success'); } setIsGroupLoading(false); };
-  const handleLeaveGroupRequest = () => { if (!activeGroupId || !user) return; if (isGroupOwner) { if (groupMembers.length <= 1) { setConfirmModal({ isOpen: true, title: 'Sair e Excluir', message: 'Você é o único membro. Sair irá excluir a comunidade permanentemente.', onConfirm: executeDeleteGroup, isDestructive: true }); } else { setIsTransferringAdmin(true); } } else { const targetGroupId = activeGroupId; setConfirmModal({ isOpen: true, title: 'Sair da Comunidade', message: 'Tem certeza que deseja sair deste grupo? Você perderá acesso ao feed e ao histórico compartilhado desta comunidade.', onConfirm: () => executeLeaveGroup(targetGroupId), isDestructive: true }); } };
-  const executeTransferAndLeave = async () => { if (!activeGroupId || !successorId) return; setIsGroupLoading(true); const { error: groupError } = await supabase.from('groups').update({ owner_id: successorId }).eq('id', activeGroupId); if (groupError) { showNotification('Erro ao transferir posse: ' + groupError.message, 'error'); setIsGroupLoading(false); return; } await supabase.from('group_members').update({ role: 'admin' }).eq('group_id', activeGroupId).eq('user_id', successorId); await executeLeaveGroup(activeGroupId); setSuccessorId(''); setIsTransferringAdmin(false); };
-  const executeLeaveGroup = async (targetGroupId: string) => { if (!user || !targetGroupId) return; setIsGroupLoading(true); const { error, data } = await supabase.from('group_members').delete().eq('group_id', targetGroupId).eq('user_id', user.id).select(); if (error) { showNotification('Erro ao sair do grupo: ' + error.message, 'error'); } else if (!data || data.length === 0) { showNotification('Não foi possível sair do grupo. Tente recarregar a página.', 'error'); } else { setUserGroups(prevGroups => { const updatedGroups = prevGroups.filter(g => g.id !== targetGroupId); if (updatedGroups.length > 0) { setActiveGroupId(currentActive => currentActive === targetGroupId ? updatedGroups[0].id : currentActive); } else { setActiveGroupId(null); } return updatedGroups; }); showNotification('Você saiu do grupo.', 'success'); } setIsGroupLoading(false); };
+  // --- Community Admin Actions ---
 
-  const handleSaveNote = async (logId: string) => { const { error } = await supabase.from('reading_logs').update({ user_notes: tempNoteContent }).eq('id', logId); if (!error) { await fetchData(); if(isAdmin) fetchAdminData(); setEditingNoteId(null); setTempNoteContent(''); showNotification('Nota salva!', 'success'); } else { showNotification('Erro ao salvar nota.', 'error'); } };
-  const handleSupportSubmit = async (e: React.FormEvent) => { e.preventDefault(); setSupportSuccess(false); if (!supportForm.message.trim() || !user) return; setIsSubmittingSupport(true); const { error } = await supabase.from('support_tickets').insert({ user_id: user.id, user_email: user.email, type: supportForm.type, message: supportForm.message, created_at: new Date().toISOString(), status: 'open' }); setIsSubmittingSupport(false); if (error) showNotification('Erro: ' + error.message, 'error'); else { setSupportSuccess(true); setSupportForm({ ...supportForm, message: '' }); showNotification(t('supp_success_title'), 'success'); setTimeout(() => setSupportSuccess(false), 5000); } };
-  const handleSaveNews = async () => { const { error } = await supabase.from('app_config').upsert({ key: 'site_news', value: editingNews }); if (error) showNotification('Erro ao salvar notícia.', 'error'); else { setSiteNews(editingNews); showNotification('Notícia publicada!', 'success'); } };
-  const startEditingNote = (log: ReadingLog) => { setEditingNoteId(log.id); setTempNoteContent(log.userNotes || ''); };
-  const handleToggleTicketStatus = async (ticketId: string, currentStatus: string | undefined | null) => { setUpdatingTicketId(ticketId); const newStatus = currentStatus === 'resolved' ? 'open' : 'resolved'; setSupportTickets(prev => prev.map(t => t.id === ticketId ? { ...t, status: newStatus } : t)); const { error } = await supabase.from('support_tickets').update({ status: newStatus }).eq('id', ticketId); if (!error) await fetchAdminData(); else { console.error("Error updating ticket:", error); showNotification('Erro ao atualizar status', 'error'); if(isAdmin) fetchAdminData(); } setUpdatingTicketId(null); };
-  const handleShareApp = async () => { const text = `Estou lendo a Bíblia com o App Bíblia Tracker! Acompanhe seu progresso, ganhe conquistas. Comece agora: ${window.location.href}`; if (navigator.share) { try { await navigator.share({ title: 'Bíblia Tracker', text: text, url: window.location.href }); } catch (error) { console.log('Error sharing:', error); } } else { try { await navigator.clipboard.writeText(text); showNotification('Link copiado!', 'success'); } catch (err) { showNotification('Não foi possível copiar.', 'error'); } } };
-  const handleCreateGroup = async () => { if(!newGroupName.trim() || !user) return; setIsGroupLoading(true); const code = Math.random().toString(36).substring(2, 8).toUpperCase(); const { data: group, error } = await supabase.from('groups').insert({ name: newGroupName, code: code, owner_id: user.id }).select().single(); if(error) showNotification('Erro ao criar: ' + error.message, 'error'); else { await supabase.from('group_members').insert({ group_id: group.id, user_id: user.id, user_name: user.user_metadata?.full_name || 'Admin', role: 'admin', last_active: new Date().toISOString() }); setUserGroups([...userGroups, group]); setActiveGroupId(group.id); setIsAddingGroup(false); setNewGroupName(''); } setIsGroupLoading(false); };
-  const handleJoinGroup = async () => { if(!joinCode.trim() || !user) return; setIsGroupLoading(true); const { data: group, error: searchError } = await supabase.from('groups').select('*').eq('code', joinCode.toUpperCase()).single(); if(searchError || !group) showNotification('Grupo não encontrado.', 'error'); else { if (userGroups.some(g => g.id === group.id)) { showNotification('Você já é membro deste grupo!', 'error'); setActiveGroupId(group.id); setIsAddingGroup(false); setIsGroupLoading(false); return; } const { error: joinError } = await supabase.from('group_members').insert({ group_id: group.id, user_id: user.id, user_name: user.user_metadata?.full_name || 'Membro', role: 'member', last_active: new Date().toISOString() }); if(joinError) { if(joinError.message.includes('duplicate')) showNotification('Você já está neste grupo!', 'error'); else showNotification('Erro ao entrar: ' + joinError.message, 'error'); } else { setUserGroups([...userGroups, group]); setActiveGroupId(group.id); setIsAddingGroup(false); setJoinCode(''); } } setIsGroupLoading(false); };
-  const handleReaction = async (activityId: string, type: 'amen' | 'fire') => { setGroupActivity(prev => prev.map(a => { if(a.id === activityId) { return { ...a, amen_count: type === 'amen' ? a.amen_count + 1 : a.amen_count, fire_count: type === 'fire' ? a.fire_count + 1 : a.fire_count, user_has_reacted: true }; } return a; })); const column = type === 'amen' ? 'amen_count' : 'fire_count'; const { data: current } = await supabase.from('group_activities').select(column).eq('id', activityId).single(); const newCount = (current?.[column] || 0) + 1; await supabase.from('group_activities').update({ [column]: newCount }).eq('id', activityId); };
+  const handleKickMemberRequest = (member: GroupMember) => {
+      setMemberToKick(member);
+      setConfirmModal({
+          isOpen: true,
+          title: 'Remover Membro',
+          message: `Tem certeza que deseja remover ${member.user_name} deste grupo?`,
+          onConfirm: () => executeKickMember(member),
+          isDestructive: true
+      });
+  };
 
-  // --- NEW: Devotional Generation Handlers ---
-  const handleGenerateDevotional = async () => {
-      if (!genTranscript) {
-          showNotification('Preencha a transcrição.', 'error');
+  const executeKickMember = async (member: GroupMember) => {
+      const { error } = await supabase
+          .from('group_members')
+          .delete()
+          .eq('group_id', activeGroupId)
+          .eq('user_id', member.user_id);
+
+      if (error) {
+          showNotification('Erro ao remover membro: ' + error.message, 'error');
+      } else {
+          showNotification('Membro removido com sucesso.', 'success');
+          fetchGroupDetails();
+      }
+      setMemberToKick(null);
+  };
+
+  const handleDeleteGroupRequest = () => {
+      setConfirmModal({
+          isOpen: true,
+          title: 'Excluir Comunidade',
+          message: 'ATENÇÃO: Esta ação é irreversível. Todas as atividades, histórico e membros serão removidos permanentemente. Deseja continuar?',
+          onConfirm: executeDeleteGroup,
+          isDestructive: true
+      });
+  };
+
+  const executeDeleteGroup = async () => {
+      if (!activeGroupId) return;
+      setIsGroupLoading(true);
+      // Assuming Cascade Delete is set up on DB for members/activities linked to group
+      const { error } = await supabase.from('groups').delete().eq('id', activeGroupId);
+
+      if (error) {
+          showNotification('Erro ao excluir grupo: ' + error.message, 'error');
+      } else {
+          const updatedGroups = userGroups.filter(g => g.id !== activeGroupId);
+          setUserGroups(updatedGroups);
+          if (updatedGroups.length > 0) setActiveGroupId(updatedGroups[0].id);
+          else setActiveGroupId(null);
+          showNotification('Comunidade excluída.', 'success');
+      }
+      setIsGroupLoading(false);
+  };
+
+  const handleLeaveGroupRequest = () => {
+      if (!activeGroupId || !user) return;
+
+      // Check if user is the Owner/Admin of this specific group
+      if (isGroupOwner) {
+          // If only 1 member (the owner), suggest deleting
+          if (groupMembers.length <= 1) {
+              setConfirmModal({
+                  isOpen: true,
+                  title: 'Sair e Excluir',
+                  message: 'Você é o único membro. Sair irá excluir a comunidade permanentemente.',
+                  onConfirm: executeDeleteGroup, // Re-use delete logic
+                  isDestructive: true
+              });
+          } else {
+              // If owner leaves but others remain, MUST transfer admin
+              setIsTransferringAdmin(true);
+          }
+      } else {
+          // Regular member leaving
+          // Capture current activeGroupId to pass to execution
+          const targetGroupId = activeGroupId;
+          setConfirmModal({
+              isOpen: true,
+              title: 'Sair da Comunidade',
+              message: 'Tem certeza que deseja sair deste grupo? Você perderá acesso ao feed e ao histórico compartilhado desta comunidade.',
+              onConfirm: () => executeLeaveGroup(targetGroupId),
+              isDestructive: true
+          });
+      }
+  };
+
+  const executeTransferAndLeave = async () => {
+      if (!activeGroupId || !successorId) return;
+      setIsGroupLoading(true);
+
+      // 1. Update Group Owner
+      const { error: groupError } = await supabase
+          .from('groups')
+          .update({ owner_id: successorId })
+          .eq('id', activeGroupId);
+
+      if (groupError) {
+          showNotification('Erro ao transferir posse: ' + groupError.message, 'error');
+          setIsGroupLoading(false);
           return;
       }
-      setIsGeneratingDevotional(true);
-      const devotional = await generateDevotionalFromTranscript(genTranscript);
-      if (devotional) {
-          // Video URL handling removed
-          setGeneratedDevotional(devotional);
-          showNotification('Devocional gerado! Revise abaixo.', 'success');
-      } else {
-          showNotification('Erro ao gerar devocional. Verifique a chave da API.', 'error');
-      }
-      setIsGeneratingDevotional(false);
-  };
 
-  const handleSaveDevotional = async () => {
-      if (!generatedDevotional || !user) return;
-      setIsSavingDevotional(true);
+      // 2. Update Members Roles (Promote successor)
+      await supabase
+          .from('group_members')
+          .update({ role: 'admin' })
+          .eq('group_id', activeGroupId)
+          .eq('user_id', successorId);
+
+      // 3. Remove Current User
+      await executeLeaveGroup(activeGroupId);
       
-      const { error } = await supabase.from('devotionals').insert({
-          title: generatedDevotional.title,
-          verse_text: generatedDevotional.verse_text,
-          verse_ref: generatedDevotional.verse_ref,
-          content: generatedDevotional.content,
-          application: generatedDevotional.application,
-          source_credit: generatedDevotional.source_credit,
-          video_url: null, // Always null as the field was removed
-          created_by: user.id
-      });
+      setSuccessorId('');
+      setIsTransferringAdmin(false);
+  };
+
+  // REFACTORED: Accept targetGroupId to ensure correct group is deleted regardless of current state
+  const executeLeaveGroup = async (targetGroupId: string) => {
+      if (!user || !targetGroupId) return;
+      setIsGroupLoading(true);
+      const { error } = await supabase
+          .from('group_members')
+          .delete()
+          .eq('group_id', targetGroupId)
+          .eq('user_id', user.id);
 
       if (error) {
-          console.error(error);
-          showNotification('Erro ao salvar no banco de dados.', 'error');
+          showNotification('Erro ao sair do grupo: ' + error.message, 'error');
       } else {
-          // Save locally as backup/immediate update
-          const currentLocal = JSON.parse(localStorage.getItem('local_devotionals') || '[]');
-          const newDevotionalWithDate = { ...generatedDevotional, id: Date.now().toString(), created_at: new Date().toISOString() };
-          localStorage.setItem('local_devotionals', JSON.stringify([newDevotionalWithDate, ...currentLocal]));
+          // Remove from local list safely using functional update to ensure we have latest list
+          setUserGroups(prevGroups => {
+              const updatedGroups = prevGroups.filter(g => g.id !== targetGroupId);
+              
+              // Determine new active group
+              if (updatedGroups.length > 0) {
+                  // If we deleted the active group, switch to the first one available
+                  setActiveGroupId(currentActive => currentActive === targetGroupId ? updatedGroups[0].id : currentActive);
+              } else {
+                  setActiveGroupId(null);
+              }
+              return updatedGroups;
+          });
           
-          showNotification('Devocional publicado com sucesso!', 'success');
-          setGeneratedDevotional(null);
-          setGenTranscript('');
-          fetchDevotionals(); // Refresh list
+          showNotification('Você saiu do grupo.', 'success');
       }
-      setIsSavingDevotional(false);
+      setIsGroupLoading(false);
   };
 
-  const handleDeleteDevotional = async (id: string) => {
-      if (!confirm('Tem certeza que deseja excluir este devocional?')) return;
-      const { error } = await supabase.from('devotionals').delete().eq('id', id);
-      if (error) {
-           // Try local delete if DB fails (or if it was a local-only item)
-           const currentLocal = JSON.parse(localStorage.getItem('local_devotionals') || '[]');
-           const updated = currentLocal.filter((d: any) => d.id !== id);
-           localStorage.setItem('local_devotionals', JSON.stringify(updated));
-           setDevotionalsList(prev => prev.filter(d => d.id !== id));
-           showNotification('Removido (Local).', 'success');
-      } else {
-          setDevotionalsList(prev => prev.filter(d => d.id !== id));
-          showNotification('Devocional excluído.', 'success');
+  // ... (Other handlers unchanged: handleSaveNote, handleSupportSubmit, handleSaveNews, startEditingNote, handleToggleTicketStatus, handleShareApp, handleCreateGroup, handleJoinGroup, handleReaction)
+  const handleSaveNote = async (logId: string) => {
+      const { error } = await supabase.from('reading_logs').update({ user_notes: tempNoteContent }).eq('id', logId);
+      if (!error) { await fetchData(); if(isAdmin) fetchAdminData(); setEditingNoteId(null); setTempNoteContent(''); showNotification('Nota salva!', 'success'); } 
+      else { showNotification('Erro ao salvar nota.', 'error'); }
+  };
+  const handleSupportSubmit = async (e: React.FormEvent) => {
+      e.preventDefault(); setSupportSuccess(false); if (!supportForm.message.trim() || !user) return;
+      setIsSubmittingSupport(true);
+      const { error } = await supabase.from('support_tickets').insert({ user_id: user.id, user_email: user.email, type: supportForm.type, message: supportForm.message, created_at: new Date().toISOString(), status: 'open' });
+      setIsSubmittingSupport(false);
+      if (error) showNotification('Erro: ' + error.message, 'error');
+      else { setSupportSuccess(true); setSupportForm({ ...supportForm, message: '' }); showNotification(t('supp_success_title'), 'success'); setTimeout(() => setSupportSuccess(false), 5000); }
+  };
+  const handleSaveNews = async () => {
+      const { error } = await supabase.from('app_config').upsert({ key: 'site_news', value: editingNews });
+      if (error) showNotification('Erro ao salvar notícia.', 'error');
+      else { setSiteNews(editingNews); showNotification('Notícia publicada!', 'success'); }
+  };
+  const startEditingNote = (log: ReadingLog) => { setEditingNoteId(log.id); setTempNoteContent(log.userNotes || ''); };
+  const handleToggleTicketStatus = async (ticketId: string, currentStatus: string | undefined | null) => {
+      setUpdatingTicketId(ticketId);
+      const newStatus = currentStatus === 'resolved' ? 'open' : 'resolved';
+      setSupportTickets(prev => prev.map(t => t.id === ticketId ? { ...t, status: newStatus } : t));
+      const { error } = await supabase.from('support_tickets').update({ status: newStatus }).eq('id', ticketId);
+      if (!error) await fetchAdminData(); else { console.error("Error updating ticket:", error); showNotification('Erro ao atualizar status', 'error'); if(isAdmin) fetchAdminData(); }
+      setUpdatingTicketId(null);
+  };
+  const handleShareApp = async () => {
+    const text = `Estou lendo a Bíblia com o App Bíblia Tracker! Acompanhe seu progresso, ganhe conquistas. Comece agora: ${window.location.href}`;
+    if (navigator.share) { try { await navigator.share({ title: 'Bíblia Tracker', text: text, url: window.location.href }); } catch (error) { console.log('Error sharing:', error); } } 
+    else { try { await navigator.clipboard.writeText(text); showNotification('Link copiado!', 'success'); } catch (err) { showNotification('Não foi possível copiar.', 'error'); } }
+  };
+  const handleCreateGroup = async () => {
+      if(!newGroupName.trim() || !user) return; setIsGroupLoading(true); const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+      const { data: group, error } = await supabase.from('groups').insert({ name: newGroupName, code: code, owner_id: user.id }).select().single();
+      if(error) showNotification('Erro ao criar: ' + error.message, 'error'); 
+      else { 
+          await supabase.from('group_members').insert({ group_id: group.id, user_id: user.id, user_name: user.user_metadata?.full_name || 'Admin', role: 'admin', last_active: new Date().toISOString() }); 
+          // Update local state to include new group and switch to it
+          setUserGroups([...userGroups, group]);
+          setActiveGroupId(group.id);
+          setIsAddingGroup(false);
+          setNewGroupName('');
       }
+      setIsGroupLoading(false);
   };
+  const handleJoinGroup = async () => {
+      if(!joinCode.trim() || !user) return; setIsGroupLoading(true);
+      const { data: group, error: searchError } = await supabase.from('groups').select('*').eq('code', joinCode.toUpperCase()).single();
+      if(searchError || !group) showNotification('Grupo não encontrado.', 'error');
+      else { 
+          // Check if already member
+          if (userGroups.some(g => g.id === group.id)) {
+              showNotification('Você já é membro deste grupo!', 'error');
+              setActiveGroupId(group.id);
+              setIsAddingGroup(false);
+              setIsGroupLoading(false);
+              return;
+          }
 
-  // --- Render Functions ---
-  const renderDevotionals = () => {
-      if (selectedDevotional) {
-          return (
-              <div className="max-w-3xl mx-auto animate-fade-in">
-                  <button onClick={() => setSelectedDevotional(null)} className="mb-6 text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white flex items-center gap-2 transition-colors">
-                      <ChevronLeft size={20} /> Voltar para lista
-                  </button>
-                  <article className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl overflow-hidden border border-gray-100 dark:border-slate-800">
-                      {selectedDevotional.video_url && (
-                          <div className="aspect-video w-full bg-black">
-                              <iframe 
-                                  width="100%" 
-                                  height="100%" 
-                                  src={selectedDevotional.video_url.replace("watch?v=", "embed/")} 
-                                  title={selectedDevotional.title} 
-                                  frameBorder="0" 
-                                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
-                                  allowFullScreen
-                              ></iframe>
-                          </div>
-                      )}
-                      <div className="p-8 md:p-10 font-serif">
-                          <h2 className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-6 leading-tight">{selectedDevotional.title}</h2>
-                          
-                          <div className="bg-indigo-50 dark:bg-indigo-900/20 p-6 rounded-xl border-l-4 border-indigo-500 mb-8">
-                              <p className="text-xl text-indigo-900 dark:text-indigo-200 italic font-medium">"{selectedDevotional.verse_text}"</p>
-                              <p className="text-sm text-indigo-600 dark:text-indigo-400 font-bold mt-3 uppercase tracking-wide">— {selectedDevotional.verse_ref}</p>
-                          </div>
-
-                          <div className="prose dark:prose-invert max-w-none text-lg leading-relaxed text-gray-700 dark:text-gray-300 space-y-4 whitespace-pre-wrap">
-                              {selectedDevotional.content}
-                          </div>
-
-                          <div className="mt-8 p-6 bg-emerald-50 dark:bg-emerald-900/10 rounded-xl border border-emerald-100 dark:border-emerald-900/30">
-                              <h3 className="flex items-center gap-2 text-emerald-800 dark:text-emerald-400 font-bold mb-3">
-                                  <Footprints size={20} /> Aplicação Prática
-                              </h3>
-                              <p className="text-emerald-900 dark:text-emerald-200 whitespace-pre-wrap">{selectedDevotional.application}</p>
-                          </div>
-
-                          <div className="mt-10 pt-6 border-t border-gray-100 dark:border-slate-800 text-center text-sm text-gray-400 italic">
-                              {selectedDevotional.source_credit}
-                          </div>
-                      </div>
-                  </article>
-              </div>
-          );
+          const { error: joinError } = await supabase.from('group_members').insert({ group_id: group.id, user_id: user.id, user_name: user.user_metadata?.full_name || 'Membro', role: 'member', last_active: new Date().toISOString() }); 
+          if(joinError) { 
+              if(joinError.message.includes('duplicate')) showNotification('Você já está neste grupo!', 'error'); 
+              else showNotification('Erro ao entrar: ' + joinError.message, 'error'); 
+          } else {
+              // Update local state
+              setUserGroups([...userGroups, group]);
+              setActiveGroupId(group.id);
+              setIsAddingGroup(false);
+              setJoinCode('');
+          }
       }
-
-      return (
-          <div className="max-w-5xl mx-auto animate-fade-in">
-              <div className="text-center mb-10">
-                  <div className="inline-flex p-4 bg-teal-100 dark:bg-teal-900/30 rounded-full text-teal-600 dark:text-teal-400 mb-4">
-                      <BookHeart size={32} />
-                  </div>
-                  <h2 className="text-3xl font-bold text-gray-900 dark:text-white serif">Devocionais Diários</h2>
-                  <p className="text-gray-500 dark:text-gray-400 mt-2">Reflexões profundas baseadas em grandes mensagens.</p>
-              </div>
-
-              {isDevotionalsLoading ? (
-                  <div className="flex justify-center py-12"><Loader2 className="animate-spin text-indigo-600" size={32} /></div>
-              ) : devotionalsList.length === 0 ? (
-                  <div className="text-center py-12 bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-800">
-                      <p className="text-gray-500">Nenhum devocional disponível no momento.</p>
-                  </div>
-              ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                      {devotionalsList.map(dev => (
-                          <div key={dev.id} onClick={() => setSelectedDevotional(dev)} className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-800 overflow-hidden hover:shadow-xl hover:border-indigo-300 dark:hover:border-indigo-700 transition-all cursor-pointer group flex flex-col h-full">
-                              <div className="h-2 bg-indigo-500 group-hover:h-3 transition-all"></div>
-                              <div className="p-6 flex-1 flex flex-col">
-                                  <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wide mb-2">{new Date(dev.created_at || Date.now()).toLocaleDateString('pt-BR')}</span>
-                                  <h3 className="text-xl font-bold text-gray-900 dark:text-white serif mb-3 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors line-clamp-2">{dev.title}</h3>
-                                  <p className="text-gray-600 dark:text-gray-400 text-sm line-clamp-3 mb-4 flex-1">{dev.content}</p>
-                                  <div className="flex items-center gap-2 text-xs font-medium text-gray-400 border-t border-gray-100 dark:border-slate-800 pt-4">
-                                      <User size={12} /> {dev.source_credit.replace('Este devocional foi criado com base na mensagem do ', '')}
-                                  </div>
-                              </div>
-                          </div>
-                      ))}
-                  </div>
-              )}
-          </div>
-      );
+      setIsGroupLoading(false);
+  };
+  const handleReaction = async (activityId: string, type: 'amen' | 'fire') => {
+      setGroupActivity(prev => prev.map(a => { if(a.id === activityId) { return { ...a, amen_count: type === 'amen' ? a.amen_count + 1 : a.amen_count, fire_count: type === 'fire' ? a.fire_count + 1 : a.fire_count, user_has_reacted: true }; } return a; }));
+      const column = type === 'amen' ? 'amen_count' : 'fire_count';
+      const { data: current } = await supabase.from('group_activities').select(column).eq('id', activityId).single();
+      const newCount = (current?.[column] || 0) + 1;
+      await supabase.from('group_activities').update({ [column]: newCount }).eq('id', activityId);
   };
 
-  const renderAdminDevotionals = () => {
-      return (
-          <div className="space-y-6">
-              <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-gray-200 dark:border-slate-800">
-                  <div className="mb-6 border-b border-gray-100 dark:border-slate-800 pb-4">
-                      <h3 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                          <Sparkles size={24} className="text-indigo-500" /> Gerador de Devocionais com IA
-                      </h3>
-                      <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">Cole a transcrição do YouTube e deixe a IA criar um devocional estruturado.</p>
-                  </div>
-
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                      {/* Input Column */}
-                      <div className="space-y-4">
-                          <div>
-                              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Transcrição do Vídeo</label>
-                              <textarea 
-                                  className="w-full p-3 rounded-lg border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 text-sm h-64 font-mono"
-                                  placeholder="Cole aqui o texto completo da transcrição..."
-                                  value={genTranscript}
-                                  onChange={e => setGenTranscript(e.target.value)}
-                              ></textarea>
-                              <p className="text-xs text-gray-400 mt-1">A IA irá ignorar anúncios, músicas e avisos automaticamente.</p>
-                          </div>
-                          <button 
-                              onClick={handleGenerateDevotional}
-                              disabled={isGeneratingDevotional || !genTranscript}
-                              className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold hover:bg-indigo-700 transition-colors shadow-lg disabled:opacity-50 flex justify-center items-center gap-2"
-                          >
-                              {isGeneratingDevotional ? <Loader2 className="animate-spin" /> : <Sparkles size={20} />} Gerar Devocional
-                          </button>
-                      </div>
-
-                      {/* Preview Column */}
-                      <div className="bg-gray-50 dark:bg-slate-950 rounded-xl border border-gray-200 dark:border-slate-800 p-6 flex flex-col">
-                          <h4 className="font-bold text-gray-500 text-xs uppercase mb-4">Pré-visualização</h4>
-                          
-                          {generatedDevotional ? (
-                              <div className="flex-1 overflow-y-auto pr-2 space-y-4">
-                                  <div>
-                                      <p className="text-xs text-gray-400 font-bold">TÍTULO</p>
-                                      <p className="font-bold text-lg text-gray-900 dark:text-white serif">{generatedDevotional.title}</p>
-                                  </div>
-                                  <div>
-                                      <p className="text-xs text-gray-400 font-bold">VERSÍCULO CHAVE</p>
-                                      <p className="italic text-gray-800 dark:text-gray-200">"{generatedDevotional.verse_text}" <span className="text-indigo-500 font-bold">({generatedDevotional.verse_ref})</span></p>
-                                  </div>
-                                  <div>
-                                      <p className="text-xs text-gray-400 font-bold">REFLEXÃO</p>
-                                      <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{generatedDevotional.content}</p>
-                                  </div>
-                                  <div>
-                                      <p className="text-xs text-gray-400 font-bold">APLICAÇÃO</p>
-                                      <div className="bg-emerald-50 dark:bg-emerald-900/10 p-3 rounded-lg text-sm text-emerald-800 dark:text-emerald-200 whitespace-pre-wrap">
-                                          {generatedDevotional.application}
-                                      </div>
-                                  </div>
-                                  <div className="pt-4 border-t border-gray-200 dark:border-slate-800">
-                                      <p className="text-xs text-gray-400 italic">{generatedDevotional.source_credit}</p>
-                                  </div>
-
-                                  <button 
-                                      onClick={handleSaveDevotional}
-                                      disabled={isSavingDevotional}
-                                      className="w-full mt-4 bg-emerald-600 text-white py-3 rounded-xl font-bold hover:bg-emerald-700 transition-colors shadow-lg flex justify-center items-center gap-2"
-                                  >
-                                      {isSavingDevotional ? <Loader2 className="animate-spin" /> : <Save size={20} />} Publicar no App
-                                  </button>
-                              </div>
-                          ) : (
-                              <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
-                                  <FileText size={48} className="mb-4 opacity-20" />
-                                  <p>O resultado gerado pela IA aparecerá aqui para revisão antes de salvar.</p>
-                              </div>
-                          )}
-                      </div>
-                  </div>
-              </div>
-
-              {/* List of Existing Devotionals for Management */}
-              <div className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-800 overflow-hidden">
-                  <div className="p-6 border-b border-gray-100 dark:border-slate-800 bg-gray-50 dark:bg-slate-950">
-                      <h3 className="font-bold text-gray-900 dark:text-white">Gerenciar Devocionais Publicados</h3>
-                  </div>
-                  <div className="divide-y divide-gray-100 dark:divide-slate-800">
-                      {devotionalsList.map(dev => (
-                          <div key={dev.id} className="p-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-slate-800/50">
-                              <div>
-                                  <h4 className="font-bold text-gray-900 dark:text-white">{dev.title}</h4>
-                                  <p className="text-xs text-gray-500">{new Date(dev.created_at || Date.now()).toLocaleDateString()}</p>
-                              </div>
-                              <button onClick={() => dev.id && handleDeleteDevotional(dev.id)} className="text-red-500 hover:bg-red-50 p-2 rounded-lg" title="Excluir">
-                                  <Trash2 size={18} />
-                              </button>
-                          </div>
-                      ))}
-                      {devotionalsList.length === 0 && <p className="p-6 text-gray-500 text-sm text-center">Nenhum devocional encontrado.</p>}
-                  </div>
-              </div>
-          </div>
-      );
-  };
-
-  // ... (renderTracker, renderCommunity, renderAchievements, renderSupport remain same)
-  // Re-inserting simplified versions for the XML to be valid if I cut them
+  // --- Render Functions (Simplified for brevity, complex logic stays) ---
   const renderTracker = () => { /* ... existing tracker code ... */ 
      if (!selectedBookId) {
       return (
@@ -1309,13 +2115,30 @@ const App: React.FC = () => {
 
       return (
           <div className="max-w-7xl mx-auto animate-fade-in flex flex-col lg:flex-row gap-6">
-              {/* Sidebar Code Omitted for brevity but assumed present */}
-              {/* Group Switcher Sidebar */}
+              
+              {/* Group Switcher Sidebar (Desktop: Left Col, Mobile: Top Row) */}
               <div className="lg:w-20 flex lg:flex-col gap-3 overflow-x-auto lg:overflow-visible pb-2 lg:pb-0 shrink-0 border-b lg:border-b-0 lg:border-r border-gray-200 dark:border-slate-800 lg:pr-6">
                   {userGroups.map(group => (
-                      <button key={group.id} onClick={() => setActiveGroupId(group.id)} className={`w-12 h-12 lg:w-16 lg:h-16 rounded-2xl flex items-center justify-center font-bold text-xl transition-all shadow-sm shrink-0 ${activeGroupId === group.id ? 'bg-indigo-600 text-white ring-4 ring-indigo-100 dark:ring-indigo-900/50 scale-105' : 'bg-white dark:bg-slate-800 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700'}`} title={group.name}>{group.name.charAt(0).toUpperCase()}</button>
+                      <button
+                          key={group.id}
+                          onClick={() => setActiveGroupId(group.id)}
+                          className={`w-12 h-12 lg:w-16 lg:h-16 rounded-2xl flex items-center justify-center font-bold text-xl transition-all shadow-sm shrink-0 ${
+                              activeGroupId === group.id 
+                              ? 'bg-indigo-600 text-white ring-4 ring-indigo-100 dark:ring-indigo-900/50 scale-105' 
+                              : 'bg-white dark:bg-slate-800 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700'
+                          }`}
+                          title={group.name}
+                      >
+                          {group.name.charAt(0).toUpperCase()}
+                      </button>
                   ))}
-                  <button onClick={() => setIsAddingGroup(true)} className="w-12 h-12 lg:w-16 lg:h-16 rounded-2xl flex items-center justify-center font-bold text-xl bg-gray-100 dark:bg-slate-800 text-gray-400 hover:bg-gray-200 dark:hover:bg-slate-700 transition-all shrink-0 border-2 border-dashed border-gray-300 dark:border-slate-600" title="Adicionar Comunidade"><Plus size={24} /></button>
+                  <button
+                      onClick={() => setIsAddingGroup(true)}
+                      className="w-12 h-12 lg:w-16 lg:h-16 rounded-2xl flex items-center justify-center font-bold text-xl bg-gray-100 dark:bg-slate-800 text-gray-400 hover:bg-gray-200 dark:hover:bg-slate-700 transition-all shrink-0 border-2 border-dashed border-gray-300 dark:border-slate-600"
+                      title="Adicionar Comunidade"
+                  >
+                      <Plus size={24} />
+                  </button>
               </div>
 
               {/* Main Feed Content */}
@@ -1375,16 +2198,32 @@ const App: React.FC = () => {
                                <div className="flex items-center gap-2">
                                    <div title={diffHours < 24 ? "Leu hoje" : "Não lê há dias"} className={`w-3 h-3 rounded-full ${statusColor} ring-2 ring-white dark:ring-slate-900`}></div>
                                    {isGroupOwner && member.user_id !== user.id && (
-                                       <button onClick={() => handleKickMemberRequest(member)} className="text-gray-400 hover:text-red-500 transition-colors p-1" title="Remover Membro"><Trash2 size={14} /></button>
+                                       <button 
+                                           onClick={() => handleKickMemberRequest(member)}
+                                           className="text-gray-400 hover:text-red-500 transition-colors p-1"
+                                           title="Remover Membro"
+                                       >
+                                           <Trash2 size={14} />
+                                       </button>
                                    )}
                                </div>
                            </div>
                        ); })}</div></div>
                        
-                       <button onClick={handleLeaveGroupRequest} className="w-full border border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400 py-3 rounded-xl font-bold hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors flex items-center justify-center gap-2 hidden lg:flex"><LogOut size={18} /> {isGroupOwner && groupMembers.length <= 1 ? 'Excluir Grupo' : 'Sair do Grupo'}</button>
+                       <button 
+                          onClick={handleLeaveGroupRequest}
+                          className="w-full border border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400 py-3 rounded-xl font-bold hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors flex items-center justify-center gap-2 hidden lg:flex"
+                       >
+                          <LogOut size={18} /> {isGroupOwner && groupMembers.length <= 1 ? 'Excluir Grupo' : 'Sair do Grupo'}
+                       </button>
 
                        {isGroupOwner && (
-                           <button onClick={handleDeleteGroupRequest} className="w-full border border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400 py-3 rounded-xl font-bold hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors flex items-center justify-center gap-2 hidden lg:flex mt-2"><Trash2 size={18} /> Excluir Comunidade</button>
+                           <button 
+                              onClick={handleDeleteGroupRequest}
+                              className="w-full border border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400 py-3 rounded-xl font-bold hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors flex items-center justify-center gap-2 hidden lg:flex mt-2"
+                           >
+                              <Trash2 size={18} /> Excluir Comunidade
+                           </button>
                        )}
                   </div>
               </div>
@@ -1427,7 +2266,6 @@ const App: React.FC = () => {
                       {[
                         { id: 'dashboard', label: t('nav_dashboard'), icon: LayoutDashboard },
                         { id: 'tracker', label: t('nav_tracker'), icon: BookOpen },
-                        { id: 'devotionals', label: 'Devocionais', icon: BookHeart },
                         { id: 'community', label: t('nav_community'), icon: Users },
                         { id: 'history', label: t('nav_history'), icon: History },
                         { id: 'achievements', label: t('nav_achievements'), icon: Trophy },
@@ -1495,7 +2333,6 @@ const App: React.FC = () => {
                              {[
                                 { id: 'dashboard', label: t('nav_dashboard'), icon: LayoutDashboard },
                                 { id: 'tracker', label: t('nav_tracker'), icon: BookOpen },
-                                { id: 'devotionals', label: 'Devocionais', icon: BookHeart },
                                 { id: 'community', label: t('nav_community'), icon: Users },
                                 { id: 'history', label: t('nav_history'), icon: History },
                                 { id: 'achievements', label: t('nav_achievements'), icon: Trophy },
@@ -1528,14 +2365,12 @@ const App: React.FC = () => {
                               <h1 className="text-2xl font-bold text-gray-900 dark:text-white transition-colors">
                                   {activeTab === 'dashboard' && t('nav_dashboard')}
                                   {activeTab === 'tracker' && t('nav_tracker')}
-                                  {activeTab === 'devotionals' && 'Devocionais Diários'}
                                   {activeTab === 'community' && t('nav_community')}
                                   {activeTab === 'history' && t('nav_history')}
                                   {activeTab === 'achievements' && t('nav_achievements')}
                                   {activeTab === 'admin' && 'Painel Administrativo'}
                                   {activeTab === 'support' && t('nav_support')}
                               </h1>
-                              {/* ... (UserInfo) */}
                               <div className="flex items-center gap-2 mt-1">
                                 <p className="text-gray-500 dark:text-gray-400 text-sm">
                                     Olá, {user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Visitante'}
@@ -1616,39 +2451,138 @@ const App: React.FC = () => {
                                 )}
                              </div>
                           </div>
-                          
-                          {/* ... (Existing Dashboard components: News, Stats, Simulation, etc.) */}
+
+                          {/* Site News Banner */}
                           {siteNews && showNews && (
                              <div className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800 rounded-xl p-4 flex items-start justify-between gap-4 animate-fade-in">
                                  <div className="flex items-start gap-3">
-                                     <div className="bg-indigo-100 dark:bg-indigo-800/50 p-2 rounded-lg text-indigo-600 dark:text-indigo-300"><Megaphone size={20} /></div>
-                                     <div><h4 className="font-bold text-gray-900 dark:text-white text-sm uppercase tracking-wide mb-1">Novidades</h4><p className="text-sm text-gray-600 dark:text-gray-300">{siteNews}</p></div>
+                                     <div className="bg-indigo-100 dark:bg-indigo-800/50 p-2 rounded-lg text-indigo-600 dark:text-indigo-300">
+                                         <Megaphone size={20} />
+                                     </div>
+                                     <div>
+                                         <h4 className="font-bold text-gray-900 dark:text-white text-sm uppercase tracking-wide mb-1">Novidades</h4>
+                                         <p className="text-sm text-gray-600 dark:text-gray-300">{siteNews}</p>
+                                     </div>
                                  </div>
-                                 <button onClick={() => setShowNews(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"><X size={18} /></button>
+                                 <button onClick={() => setShowNews(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+                                     <X size={18} />
+                                 </button>
                              </div>
                           )}
+
                           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                              <StatCard title={t('dash_stat_read')} value={totalReadCount} subtext={`${completionPercentage.toFixed(1)}% da Bíblia`} icon={<BookOpen size={24} />} highlight={true} colorClass={isGoldenTheme ? 'bg-yellow-600' : 'bg-indigo-600'} progress={completionPercentage} />
-                              <StatCard title={t('dash_stat_prediction')} value={advancedStats.projection.date} subtext={`Você vai concluir a Bíblia toda em ${advancedStats.projection.date} nesse ritmo atual.`} icon={<Hourglass size={24} />} colorClass="bg-purple-600" />
-                              <StatCard title={t('dash_stat_pace')} value={advancedStats.avgChaptersPerDay.toFixed(1)} subtext="capítulos por dia (média)" icon={<Activity size={24} />} colorClass="bg-emerald-600" />
-                              <StatCard title={t('dash_stat_streak')} value={`${currentStreak} dias`} subtext={getStreakMessage(currentStreak)} icon={<Flame size={24} />} colorClass="bg-orange-500" />
+                              <StatCard 
+                                title={t('dash_stat_read')} 
+                                value={totalReadCount} 
+                                subtext={`${completionPercentage.toFixed(1)}% da Bíblia`} 
+                                icon={<BookOpen size={24} />} 
+                                highlight={true} 
+                                colorClass={isGoldenTheme ? 'bg-yellow-600' : 'bg-indigo-600'}
+                                progress={completionPercentage}
+                              />
+                              <StatCard 
+                                title={t('dash_stat_prediction')} 
+                                value={advancedStats.projection.date} 
+                                subtext={`Você vai concluir a Bíblia toda em ${advancedStats.projection.date} nesse ritmo atual.`} 
+                                icon={<Hourglass size={24} />} 
+                                colorClass="bg-purple-600"
+                              />
+                              <StatCard 
+                                title={t('dash_stat_pace')} 
+                                value={advancedStats.avgChaptersPerDay.toFixed(1)} 
+                                subtext="capítulos por dia (média)" 
+                                icon={<Activity size={24} />} 
+                                colorClass="bg-emerald-600"
+                              />
+                              <StatCard 
+                                title={t('dash_stat_streak')} 
+                                value={`${currentStreak} dias`} 
+                                subtext={getStreakMessage(currentStreak)} 
+                                icon={<Flame size={24} />} 
+                                colorClass="bg-orange-500" 
+                              />
                           </div>
+
+                          {/* Simulador de Ritmo */}
                           <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-gray-100 dark:border-slate-800 shadow-sm animate-fade-in">
-                              <h3 className="font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2"><Calculator size={18} className="text-indigo-500" /> {t('dash_sim_title')}</h3>
+                              <h3 className="font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                                  <Calculator size={18} className="text-indigo-500" /> {t('dash_sim_title')}
+                              </h3>
                               <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">{t('dash_sim_desc')}</p>
+                              
                               <div className="flex flex-col md:flex-row items-center gap-8">
-                                  <div className="flex-1 w-full"><div className="flex justify-between mb-2"><label className="text-sm font-bold text-gray-700 dark:text-gray-300">Ler {simulatedPace} capítulos por dia</label><span className="text-xs text-gray-400">Arraste para simular</span></div><input type="range" min="1" max="20" value={simulatedPace} onChange={(e) => setSimulatedPace(parseInt(e.target.value))} className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700 accent-indigo-600" /><div className="flex justify-between mt-1 text-xs text-gray-400"><span>1 cap/dia</span><span>10 caps/dia</span><span>20 caps/dia</span></div></div>
-                                  <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl min-w-[200px] text-center border border-indigo-100 dark:border-indigo-800"><p className="text-xs text-indigo-600 dark:text-indigo-300 uppercase font-bold tracking-wider mb-1">Previsão Simulada</p><p className="text-2xl font-bold text-gray-900 dark:text-white">{calculateSimulationDate(simulatedPace, totalReadCount)}</p></div>
+                                  <div className="flex-1 w-full">
+                                      <div className="flex justify-between mb-2">
+                                          <label className="text-sm font-bold text-gray-700 dark:text-gray-300">Ler {simulatedPace} capítulos por dia</label>
+                                          <span className="text-xs text-gray-400">Arraste para simular</span>
+                                      </div>
+                                      <input 
+                                          type="range" 
+                                          min="1" 
+                                          max="20" 
+                                          value={simulatedPace} 
+                                          onChange={(e) => setSimulatedPace(parseInt(e.target.value))}
+                                          className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700 accent-indigo-600"
+                                      />
+                                      <div className="flex justify-between mt-1 text-xs text-gray-400">
+                                          <span>1 cap/dia</span>
+                                          <span>10 caps/dia</span>
+                                          <span>20 caps/dia</span>
+                                      </div>
+                                  </div>
+                                  <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl min-w-[200px] text-center border border-indigo-100 dark:border-indigo-800">
+                                      <p className="text-xs text-indigo-600 dark:text-indigo-300 uppercase font-bold tracking-wider mb-1">Previsão Simulada</p>
+                                      <p className="text-2xl font-bold text-gray-900 dark:text-white">{calculateSimulationDate(simulatedPace, totalReadCount)}</p>
+                                  </div>
                               </div>
                           </div>
-                          {totalReadCount >= TOTAL_CHAPTERS_BIBLE && !isGoldenTheme && (<div className="bg-gradient-to-r from-yellow-400 to-amber-500 rounded-2xl p-6 text-white shadow-xl flex items-center justify-between gap-4 animate-pulse"><div className="flex items-center gap-4"><div className="bg-white/20 p-3 rounded-full"><Gem size={32} className="text-white" /></div><div><h3 className="text-xl font-bold">Jornada Completa!</h3><p className="text-yellow-50 text-sm">Você leu toda a Bíblia. Desbloqueie o tema exclusivo.</p></div></div><button onClick={activateGoldenTheme} className="bg-white text-amber-600 px-6 py-2 rounded-xl font-bold hover:bg-yellow-50 transition-colors shadow-md">Ativar Tema Peregrino</button></div>)}
-                          <div className="bg-gradient-to-r from-emerald-500 to-teal-600 rounded-2xl p-6 text-white shadow-lg flex flex-col sm:flex-row justify-between items-center gap-6 relative overflow-hidden"><div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/3 blur-3xl"></div><div className="flex items-center gap-4 relative z-10"><div className="bg-white/20 p-3 rounded-xl backdrop-blur-sm"><Share2 size={28} className="text-white" /></div><div><h3 className="text-xl font-bold font-serif">{t('dash_invite_title')}</h3><p className="text-emerald-50 text-sm max-w-md">{t('dash_invite_msg')}</p></div></div><button onClick={handleShareApp} className="bg-white text-emerald-600 px-6 py-3 rounded-xl font-bold hover:bg-emerald-50 transition-colors shadow-md whitespace-nowrap z-10 flex items-center gap-2"><Send size={18} /> {t('dash_btn_invite')}</button></div>
+
+                          {/* Completion Badge Activation */}
+                          {totalReadCount >= TOTAL_CHAPTERS_BIBLE && !isGoldenTheme && (
+                              <div className="bg-gradient-to-r from-yellow-400 to-amber-500 rounded-2xl p-6 text-white shadow-xl flex items-center justify-between gap-4 animate-pulse">
+                                  <div className="flex items-center gap-4">
+                                      <div className="bg-white/20 p-3 rounded-full">
+                                          <Gem size={32} className="text-white" />
+                                      </div>
+                                      <div>
+                                          <h3 className="text-xl font-bold">Jornada Completa!</h3>
+                                          <p className="text-yellow-50 text-sm">Você leu toda a Bíblia. Desbloqueie o tema exclusivo.</p>
+                                      </div>
+                                  </div>
+                                  <button 
+                                      onClick={activateGoldenTheme}
+                                      className="bg-white text-amber-600 px-6 py-2 rounded-xl font-bold hover:bg-yellow-50 transition-colors shadow-md"
+                                  >
+                                      Ativar Tema Peregrino
+                                  </button>
+                              </div>
+                          )}
+
+                          {/* Invite Friends Banner */}
+                          <div className="bg-gradient-to-r from-emerald-500 to-teal-600 rounded-2xl p-6 text-white shadow-lg flex flex-col sm:flex-row justify-between items-center gap-6 relative overflow-hidden">
+                              <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/3 blur-3xl"></div>
+                              
+                              <div className="flex items-center gap-4 relative z-10">
+                                  <div className="bg-white/20 p-3 rounded-xl backdrop-blur-sm">
+                                      <Share2 size={28} className="text-white" />
+                                  </div>
+                                  <div>
+                                      <h3 className="text-xl font-bold font-serif">{t('dash_invite_title')}</h3>
+                                      <p className="text-emerald-50 text-sm max-w-md">{t('dash_invite_msg')}</p>
+                                  </div>
+                              </div>
+                              
+                              <button 
+                                  onClick={handleShareApp}
+                                  className="bg-white text-emerald-600 px-6 py-3 rounded-xl font-bold hover:bg-emerald-50 transition-colors shadow-md whitespace-nowrap z-10 flex items-center gap-2"
+                              >
+                                  <Send size={18} /> {t('dash_btn_invite')}
+                              </button>
+                          </div>
                         </div>
                       )}
 
                       {activeTab === 'tracker' && renderTracker()}
-                      
-                      {activeTab === 'devotionals' && renderDevotionals()}
                       
                       {activeTab === 'achievements' && renderAchievements()}
                       
@@ -1724,7 +2658,6 @@ const App: React.FC = () => {
                               <div className="flex overflow-x-auto gap-2 pb-2 mb-4 bg-white dark:bg-slate-900 p-2 rounded-xl sticky top-0 z-10 shadow-sm border border-gray-100 dark:border-slate-800">
                                   {([
                                       { id: 'overview', label: t('admin_tab_metrics') },
-                                      { id: 'generator', label: 'Gerador de Devocionais' },
                                       { id: 'plans', label: t('admin_tab_plans') },
                                       { id: 'content', label: t('admin_tab_content') },
                                       { id: 'users', label: t('admin_tab_users') },
@@ -1791,8 +2724,6 @@ const App: React.FC = () => {
                                       </div>
                                   </div>
                               )}
-                              
-                              {adminView === 'generator' && renderAdminDevotionals()}
 
                               {adminView === 'content' && (
                                   <div className="space-y-6">

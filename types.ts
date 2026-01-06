@@ -1,7 +1,4 @@
-
-export type PlanType = 'BIBLE_1Y' | 'BIBLE_6M' | 'BIBLE_3M' | 'NT_3M' | 'OT_9M' | 'CHRONO_1Y' | 'PAUL_3C';
-
-export type DevotionalStyle = 'theologian' | 'youth' | 'pastoral' | 'kids' | 'classic';
+export type PlanType = 'BIBLE_1Y' | 'BIBLE_6M' | 'BIBLE_3M' | 'NT_3M' | 'OT_9M' | 'CHRONO_1Y' | 'PAUL_3C' | string;
 
 export interface BibleBook {
   id: string;
@@ -43,7 +40,20 @@ export interface UserPlan {
   title: string;
   startDate: string;
   targetDailyChapters: number;
-  scope: 'ALL' | 'OLD' | 'NEW' | 'PAUL';
+  scope: 'ALL' | 'OLD' | 'NEW' | 'PAUL' | 'CUSTOM';
+  customBooks?: string[]; // IDs dos livros para escopo customizado
+  days?: number; // Total de dias do plano
+  description?: string;
+}
+
+export interface PlanConfig {
+    id: string; // Adicionado ID para gestão no banco
+    title: string;
+    days: number;
+    scope: 'ALL' | 'OLD' | 'NEW' | 'PAUL' | 'CUSTOM';
+    description: string;
+    books?: string[]; // Lista de IDs de livros se scope for CUSTOM
+    is_active?: boolean;
 }
 
 export interface SupportTicket {
@@ -97,3 +107,5 @@ export interface GroupActivity {
   fire_count: number;
   user_has_reacted?: boolean; // Auxiliar para UI
 }
+
+export type DevotionalStyle = 'theologian' | 'pastoral' | 'youth' | 'kids' | 'classic';
