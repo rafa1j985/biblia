@@ -22,6 +22,11 @@ export const generateDevotional = async (bookName: string, chapters: number[], s
     console.warn("Erro ao ler variáveis de ambiente:", e);
   }
 
+  // 4. Fallback: Chave fornecida diretamente (Para garantir funcionamento imediato)
+  if (!apiKey) {
+      apiKey = 'AIzaSyA6OCv5X0ps7Shu_0OKYrqs2o4P1YiD3ME';
+  }
+
   if (!apiKey) {
       console.warn("API Key not found. Please check your .env file or environment configuration.");
       return "Serviço de IA indisponível. (Chave de API não detectada no ambiente).";
@@ -97,9 +102,17 @@ export const generateDevotional = async (bookName: string, chapters: number[], s
       contents: prompt,
     });
     // Directly access text property
-    return response.text?.trim() || "Não foi possível gerar a reflexão no momento.";
-  } catch (error) {
+    const text = response.text;
+    if (!text) {
+        console.warn("Gemini response was empty or undefined.");
+        return "A IA gerou uma resposta vazia. Tente novamente.";
+    }
+    return text.trim();
+  } catch (error: any) {
     console.error("Error generating devotional:", error);
+    if (error.message?.includes('API key')) {
+        return "Erro de autenticação com a IA. Verifique a Chave de API.";
+    }
     return "Erro ao conectar com o serviço de IA. Verifique sua conexão ou tente mais tarde.";
   }
 };
