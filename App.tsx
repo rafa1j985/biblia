@@ -112,7 +112,6 @@ import { BibleBook, ReadChaptersMap, ReadingLog, UserPlan, PlanType, SupportTick
 import { supabase } from './services/supabase';
 import { generateDevotionalFromTranscript } from './services/geminiService';
 
-// ... (Rest of constants kept same)
 const DAILY_VERSES = [
   { text: "Lâmpada para os meus pés é tua palavra, e luz para o meu caminho.", ref: "Salmos 119:105" },
   { text: "Busquem, pois, em primeiro lugar o Reino de Deus e a sua justiça, e todas essas coisas lhes serão acrescentadas.", ref: "Mateus 6:33" },
@@ -151,14 +150,11 @@ const BIBLE_API_MAPPING: Record<string, string> = {
 
 const PAULINE_BOOKS = ['ROM', '1CO', '2CO', 'GAL', 'EPH', 'PHP', 'COL', '1TH', '2TH', '1TI', '2TI', 'TIT', 'PHM'];
 
-// ... (Functions calculateAchievements, getAdvancedStats, getStreakMessage, calculateSimulationDate, handleSendPasswordReset remain same)
-
-// --- Helper Functions from Original Code ---
 const calculateAchievements = (logs: ReadingLog[], chaptersMap: ReadChaptersMap) => {
     if (!logs.length) return new Set<number>();
     const unlocked = new Set<number>();
     const isBookComplete = (id: string) => (chaptersMap[id]?.length || 0) === BIBLE_BOOKS.find(b => b.id === id)?.chapters;
-    // ... (Mantendo a lógica existente de conquistas)
+    
     const hasEarlyMorning = logs.some(l => {
         const hour = new Date(l.timestamp).getHours();
         return hour >= 0 && hour < 6;
@@ -272,9 +268,6 @@ const handleSendPasswordReset = async (email: string) => {
     if (error) alert("Erro ao enviar email: " + error.message); else alert("Email de redefinição enviado!");
 };
 
-// ... (NotificationToast, ConfirmationModal, TransferAdminModal, StatCard, BibleReaderModal, LoginScreen, ChangePasswordModal, PlanSelectionModal, UserInspectorModal - same as original)
-
-// --- Custom Toast Component ---
 const NotificationToast = ({ message, type, onClose }: { message: string, type: 'success' | 'error', onClose: () => void }) => {
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -303,7 +296,6 @@ const NotificationToast = ({ message, type, onClose }: { message: string, type: 
   );
 };
 
-// --- Confirmation Modal ---
 const ConfirmationModal = ({ isOpen, onClose, onConfirm, title, message, confirmText = "Confirmar", cancelText = "Cancelar", isDestructive = false }: { isOpen: boolean, onClose: () => void, onConfirm: () => void, title: string, message: string, confirmText?: string, cancelText?: string, isDestructive?: boolean }) => {
   if (!isOpen) return null;
   
@@ -331,7 +323,6 @@ const ConfirmationModal = ({ isOpen, onClose, onConfirm, title, message, confirm
   );
 };
 
-// ... (TransferAdminModal, StatCard, BibleReaderModal, LoginScreen, ChangePasswordModal, PlanSelectionModal, UserInspectorModal remain unchanged)
 const TransferAdminModal = ({ isOpen, onClose, onConfirm, members, successorId, setSuccessorId }: { isOpen: boolean, onClose: () => void, onConfirm: () => void, members: GroupMember[], successorId: string, setSuccessorId: (id: string) => void }) => {
   if (!isOpen) return null;
 
@@ -384,7 +375,6 @@ const TransferAdminModal = ({ isOpen, onClose, onConfirm, members, successorId, 
   );
 };
 
-// ... (Other helpers same)
 const StatCard = ({ title, value, subtext, icon, highlight = false, colorClass = "bg-indigo-600", progress }: { title: string; value: string | number; subtext?: string; icon: React.ReactNode, highlight?: boolean, colorClass?: string, progress?: number }) => (
   <div className={`rounded-xl p-6 shadow-sm border flex flex-col justify-between transition-colors ${highlight ? `${colorClass} border-transparent text-white` : 'bg-white dark:bg-slate-900 border-gray-100 dark:border-slate-800'}`}>
     <div className="flex items-start justify-between w-full">
@@ -459,7 +449,6 @@ const BibleReaderModal = ({ book, chapter, onClose, onNext, onPrev }: { book: Bi
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
       <div className="bg-white dark:bg-slate-900 w-full max-w-3xl h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-gray-200 dark:border-slate-700 transition-colors">
         
-        {/* Header */}
         <div className="p-4 border-b border-gray-100 dark:border-slate-800 flex justify-between items-center bg-gray-50 dark:bg-slate-950">
           <div className="flex items-center gap-4">
              <button onClick={onPrev} disabled={!onPrev} className="p-2 hover:bg-gray-200 dark:hover:bg-slate-800 rounded-full disabled:opacity-30 transition-colors">
@@ -478,7 +467,6 @@ const BibleReaderModal = ({ book, chapter, onClose, onNext, onPrev }: { book: Bi
           </button>
         </div>
 
-        {/* Content */}
         <div className="flex-1 overflow-y-auto p-6 md:p-8 bg-white dark:bg-slate-900 text-gray-900 dark:text-gray-100">
           {loading ? (
              <div className="h-full flex flex-col items-center justify-center gap-3 text-gray-400 dark:text-gray-500">
@@ -510,7 +498,6 @@ const BibleReaderModal = ({ book, chapter, onClose, onNext, onPrev }: { book: Bi
           )}
         </div>
 
-        {/* Footer Hint */}
         <div className="p-3 border-t border-gray-100 dark:border-slate-800 bg-gray-50 dark:bg-slate-950 text-center">
             <p className="text-xs text-gray-400">Não se esqueça de marcar como lido após terminar.</p>
         </div>
@@ -520,11 +507,10 @@ const BibleReaderModal = ({ book, chapter, onClose, onNext, onPrev }: { book: Bi
 };
 
 const LoginScreen = ({ onLogin }: { onLogin: (user: any) => void }) => {
-  // ... (LoginScreen implementation same as before)
   const [authMode, setAuthMode] = useState<'login' | 'register' | 'forgot'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [name, setName] = useState(''); // Para cadastro
+  const [name, setName] = useState('');
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [loading, setLoading] = useState(false);
@@ -901,17 +887,13 @@ const UserInspectorModal = ({ userId, allLogs, onClose }: { userId: string, allL
     );
 };
 
-// --- Main App Component ---
-
-const App: React.FC = () => {
-  // ... (State variables same as before)
+export default function App() {
   const [user, setUser] = useState<any>(null); 
   const [loadingAuth, setLoadingAuth] = useState(true);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
   
   const [notification, setNotification] = useState<{message: string, type: 'success' | 'error'} | null>(null);
 
-  // --- Confirmation Modal State ---
   const [confirmModal, setConfirmModal] = useState<{
       isOpen: boolean;
       title: string;
@@ -951,7 +933,6 @@ const App: React.FC = () => {
   const [editingNews, setEditingNews] = useState('');
   const [showNews, setShowNews] = useState(true);
 
-  // --- CMS States ---
   const [appTexts, setAppTexts] = useState<Record<string, string>>(DEFAULT_TEXTS);
   const [editingTexts, setEditingTexts] = useState<Record<string, string>>(DEFAULT_TEXTS);
   const [isSavingTexts, setIsSavingTexts] = useState(false);
@@ -966,12 +947,10 @@ const App: React.FC = () => {
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [tempNoteContent, setTempNoteContent] = useState('');
 
-  // --- Community State ---
   const [userGroups, setUserGroups] = useState<Group[]>([]);
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
   const [isAddingGroup, setIsAddingGroup] = useState(false);
 
-  // --- Community Admin Features State ---
   const [memberToKick, setMemberToKick] = useState<GroupMember | null>(null);
   const [isTransferringAdmin, setIsTransferringAdmin] = useState(false);
   const [successorId, setSuccessorId] = useState<string>('');
@@ -982,25 +961,20 @@ const App: React.FC = () => {
   const [joinCode, setJoinCode] = useState('');
   const [newGroupName, setNewGroupName] = useState('');
 
-  // --- New States for Features ---
   const [dailyVerse, setDailyVerse] = useState<{text: string, ref: string} | null>(null);
-  const [simulatedPace, setSimulatedPace] = useState<number>(3); // Capítulos por dia default para simulação
+  const [simulatedPace, setSimulatedPace] = useState<number>(3); 
   const [isGoldenTheme, setIsGoldenTheme] = useState(false);
 
-  // --- Dynamic Plans State ---
   const [customPlans, setCustomPlans] = useState<Record<string, PlanConfig>>({});
   const [availablePlans, setAvailablePlans] = useState<Record<string, PlanConfig>>({});
   
-  // Plan Creator State
   const [newPlanForm, setNewPlanForm] = useState<Partial<PlanConfig>>({ scope: 'ALL', days: 30, title: '', description: '' });
   const [selectedBooksForPlan, setSelectedBooksForPlan] = useState<string[]>([]);
   const [isCreatingPlan, setIsCreatingPlan] = useState(false);
 
-  // Admin Inspector State
   const [inspectingUserId, setInspectingUserId] = useState<string | null>(null);
   const [userToDelete, setUserToDelete] = useState<{id: string, name: string} | null>(null);
 
-  // --- Devotionals State ---
   const [devotionals, setDevotionals] = useState<Devotional[]>([]);
   const [isGeneratingDevotional, setIsGeneratingDevotional] = useState(false);
   const [devotionalTranscript, setDevotionalTranscript] = useState('');
@@ -1012,7 +986,6 @@ const App: React.FC = () => {
       setNotification({ message, type });
   }, []);
 
-  // --- CMS Helper ---
   const t = useCallback((key: string) => {
     return appTexts[key] || DEFAULT_TEXTS[key] || key;
   }, [appTexts]);
@@ -1021,7 +994,6 @@ const App: React.FC = () => {
     return user && ADMIN_EMAILS.includes(user.email);
   }, [user]);
 
-  // Check if current user is owner of the active group
   const isGroupOwner = useMemo(() => {
       if (!user || !activeGroupId) return false;
       const group = userGroups.find(g => g.id === activeGroupId);
@@ -1032,7 +1004,7 @@ const App: React.FC = () => {
     const root = window.document.documentElement;
     root.classList.remove('light', 'dark', 'golden');
     if (isGoldenTheme) {
-        root.classList.add('golden', 'dark'); // Golden implies dark mode base
+        root.classList.add('golden', 'dark'); 
         localStorage.setItem('theme', 'golden');
     } else {
         root.classList.add(theme);
@@ -1041,23 +1013,18 @@ const App: React.FC = () => {
   }, [theme, isGoldenTheme]);
 
   useEffect(() => {
-      // Load Daily Verse on Mount
       const randomVerse = DAILY_VERSES[Math.floor(Math.random() * DAILY_VERSES.length)];
       setDailyVerse(randomVerse);
       
-      // Check local storage for golden theme preference (if saved as 'golden' in theme)
       if (localStorage.getItem('theme') === 'golden') {
           setIsGoldenTheme(true);
       }
       
-      // Load Texts
       fetchAppTexts();
       fetchDevotionals();
   }, []);
 
   const fetchDevotionals = async () => {
-    // Busca todos se for admin, ou apenas publicados se for user
-    // Por simplificação de segurança do RLS, autenticados podem ver tudo se quiserem, mas filtramos no front.
     const { data, error } = await supabase.from('devotionals')
         .select('*')
         .order('created_at', { ascending: false });
@@ -1066,8 +1033,6 @@ const App: React.FC = () => {
   };
 
   const fetchAppTexts = async () => {
-    // Assuming a table 'app_config' where we store text overrides as individual rows or a big JSON
-    // Strategy: Store individual keys as rows { key: 'nav_dashboard', value: '...' }
     const { data, error } = await supabase.from('app_config').select('key, value').in('key', Object.keys(DEFAULT_TEXTS));
     if (data) {
         const loadedTexts = { ...DEFAULT_TEXTS };
@@ -1086,18 +1051,13 @@ const App: React.FC = () => {
         value: editingTexts[key]
     }));
 
-    // Reset default values if they match default (delete from db)
     const resets = Object.keys(editingTexts).filter(key => editingTexts[key] === DEFAULT_TEXTS[key]).map(key => key);
 
-    // Upsert changes
     if (updates.length > 0) {
         const { error } = await supabase.from('app_config').upsert(updates, { onConflict: 'key' });
         if(error) console.error("Error saving texts", error);
     }
     
-    // Delete resets (optional, or just update to default)
-    // Simpler: Just upsert everything that is different from default, but here we keep it simple.
-    // If we want to really "reset" we should delete the row. 
     if (resets.length > 0) {
         await supabase.from('app_config').delete().in('key', resets);
     }
@@ -1110,7 +1070,6 @@ const App: React.FC = () => {
   const handleRestoreDefaults = async () => {
       if(!confirm('Tem certeza que deseja restaurar todos os textos originais?')) return;
       setIsSavingTexts(true);
-      // Delete all text keys from DB
       await supabase.from('app_config').delete().in('key', Object.keys(DEFAULT_TEXTS));
       setAppTexts(DEFAULT_TEXTS);
       setEditingTexts(DEFAULT_TEXTS);
@@ -1119,7 +1078,6 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
-     // Merge static plans with custom plans
      const staticPlans: Record<string, PlanConfig> = {};
      Object.entries(PLANS_CONFIG).forEach(([k, v]) => {
          staticPlans[k] = { ...v, id: k, is_active: true };
@@ -1147,16 +1105,7 @@ const App: React.FC = () => {
         const { data: { session }, error } = await supabase.auth.getSession();
         
         if (error) {
-           if (error.message.includes('Refresh Token') || error.message.includes('refresh_token')) {
-             console.warn("Invalid refresh token, signing out to clear state.");
-             Object.keys(localStorage).forEach(key => {
-                 if (key.startsWith('sb-')) localStorage.removeItem(key);
-             });
-             await supabase.auth.signOut().catch(() => {});
-             setUser(null);
-           } else {
-             console.error("Session check error:", error.message);
-           }
+           console.error("Session check error:", error.message);
         }
         setUser(session?.user ?? null);
       } catch (err) {
@@ -1172,7 +1121,7 @@ const App: React.FC = () => {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
-      const e = event as string;
+      const e = event as string; // FIX: Cast to string to allow comparison with custom events 'USER_DELETED' and 'TOKEN_REFRESH_REVOKED'
       if (e === 'SIGNED_OUT' || e === 'USER_DELETED') {
         setUser(null);
       } else if (e === 'TOKEN_REFRESH_REVOKED') {
@@ -1224,22 +1173,18 @@ const App: React.FC = () => {
       }
   };
 
-  // REFACTORED: Removed activeGroupId from dependency array to prevent auto-refetching
   const fetchGroupData = useCallback(async () => {
       if(!user) return;
       setIsGroupLoading(true);
-      // 1. Fetch all memberships for the user
       const { data: memberData, error } = await supabase.from('group_members').select('group_id').eq('user_id', user.id);
       
       if(memberData && memberData.length > 0) {
           const groupIds = memberData.map(m => m.group_id);
           
-          // 2. Fetch Group Details for all groups
           const { data: groupsData } = await supabase.from('groups').select('*').in('id', groupIds);
           
           if (groupsData) {
               setUserGroups(groupsData);
-              // Set active group if none selected
               setActiveGroupId(prevId => {
                   if (!prevId || !groupsData.find(g => g.id === prevId)) {
                       return groupsData[0].id;
@@ -1252,9 +1197,8 @@ const App: React.FC = () => {
           setActiveGroupId(null);
       }
       setIsGroupLoading(false);
-  }, [user]); // activeGroupId removed from dependency array
+  }, [user]);
 
-  // Fetch details for the active group
   const fetchGroupDetails = useCallback(async () => {
       if (!activeGroupId) {
           setGroupMembers([]);
@@ -1262,11 +1206,9 @@ const App: React.FC = () => {
           return;
       }
 
-      // Fetch Members
       const { data: allMembers } = await supabase.from('group_members').select('*').eq('group_id', activeGroupId);
       setGroupMembers(allMembers || []);
 
-      // Fetch Activity Feed
       const { data: activityData } = await supabase.from('group_activities')
             .select('*')
             .eq('group_id', activeGroupId)
@@ -1275,16 +1217,13 @@ const App: React.FC = () => {
       setGroupActivity(activityData || []);
   }, [activeGroupId]);
 
-  // Trigger details fetch when active group changes
   useEffect(() => {
       if (user && activeGroupId) {
           fetchGroupDetails();
       }
   }, [user, activeGroupId, fetchGroupDetails]);
 
-  // Fetch Custom Plans
   const fetchCustomPlans = useCallback(async () => {
-     // NOTE: We assume reading_plans table exists. If not, this might fail silently or we just use local state for demo.
      const { data, error } = await supabase.from('reading_plans').select('*').eq('is_active', true);
      if (data) {
          const planMap: Record<string, PlanConfig> = {};
@@ -1300,12 +1239,11 @@ const App: React.FC = () => {
       fetchData();
       fetchNews();
       fetchGroupData();
-      fetchCustomPlans(); // Try to load custom plans
+      fetchCustomPlans(); 
       if (isAdmin) fetchAdminData();
     }
   }, [user, fetchData, isAdmin, fetchGroupData, fetchCustomPlans]);
 
-  // ... (processLogs, unlockedAchievements, fetchAdminData, adminStats same as before)
   const processLogs = (data: any[], setLogs: Function, setMap: Function) => {
       const logs = data.map((item: any) => ({
         id: item.id,
@@ -1350,9 +1288,8 @@ const App: React.FC = () => {
       const uniqueUsers = new Set(adminLogs.map(l => l.user_email)).size;
       const totalReadings = adminLogs.length;
       
-      // Calculate books completed globally (approx)
       let booksCompleted = 0;
-      const userReadMap: Record<string, Record<string, number>> = {}; // user -> book -> count
+      const userReadMap: Record<string, Record<string, number>> = {}; 
       adminLogs.forEach(log => {
           if (!userReadMap[log.user_id]) userReadMap[log.user_id] = {};
           if (!userReadMap[log.user_id][log.book_id]) userReadMap[log.user_id][log.book_id] = 0;
@@ -1366,12 +1303,10 @@ const App: React.FC = () => {
           });
       });
 
-      // Calculate medals
       let totalMedals = 0;
       const userLogsMap: Record<string, ReadingLog[]> = {};
 
       adminLogs.forEach((rawLog: any) => {
-          // Normalize user_id
           const uid = rawLog.user_id;
           if(!uid) return;
           
@@ -1397,7 +1332,6 @@ const App: React.FC = () => {
           const map: ReadChaptersMap = {};
           logs.forEach(l => {
               if (!map[l.bookId]) map[l.bookId] = [];
-              // Use Set to ensure uniqueness per book
               const uniqueChapters = new Set([...map[l.bookId], ...l.chapters]);
               map[l.bookId] = Array.from(uniqueChapters);
           });
@@ -1416,11 +1350,9 @@ const App: React.FC = () => {
       };
   }, [adminLogs]);
 
-  // --- Handlers ---
   const handleSelectPlan = (config: PlanConfig) => {
     if (!user) return;
     
-    // Calculate daily target based on config
     let totalChaptersInScope = 0;
     const bookList = config.scope === 'CUSTOM' ? (config.books || []) : BIBLE_BOOKS.map(b => b.id);
     
@@ -1456,7 +1388,6 @@ const App: React.FC = () => {
     showNotification(`Plano "${config.title}" ativado com sucesso!`, 'success');
   };
 
-  // --- Wrapper Functions for Modal ---
   const handleAbandonPlanRequest = () => {
       setConfirmModal({
           isOpen: true,
@@ -1473,7 +1404,6 @@ const App: React.FC = () => {
       showNotification("Plano removido. Você está livre para escolher outro.", "success");
   };
 
-  // --- Admin User Deletion ---
   const handleDeleteUserRequest = (uid: string, name: string) => {
       setUserToDelete({ id: uid, name });
       setConfirmModal({
@@ -1490,21 +1420,19 @@ const App: React.FC = () => {
       
       setIsAdminLoading(true);
 
-      // Chama a função RPC criada no Supabase
       const { error } = await supabase.rpc('delete_user_by_admin', { target_user_id: userToDelete.id });
 
       if (error) {
           console.error("Erro ao excluir usuário:", error);
-          if (error.message?.includes('function') || error.code === '42883') { // 42883 is undefined_function
+          if (error.message?.includes('function') || error.code === '42883') { 
              alert("Atenção: A função de banco de dados necessária não foi encontrada.\n\nVocê precisa rodar o código SQL no painel do Supabase para que a exclusão funcione.");
           } else {
              showNotification('Erro ao excluir usuário: ' + error.message, 'error');
           }
       } else {
           showNotification(`Usuário ${userToDelete.name} excluído com sucesso.`, 'success');
-          // Optimistic update
           setAdminLogs(prev => prev.filter(l => l.user_id !== userToDelete.id));
-          fetchAdminData(); // Refresh list
+          fetchAdminData(); 
       }
       setIsAdminLoading(false);
       setUserToDelete(null);
@@ -1569,10 +1497,8 @@ const App: React.FC = () => {
           is_active: true
       };
 
-      // Tentar salvar no banco (assumindo tabela reading_plans)
       const { error } = await supabase.from('reading_plans').insert(newPlanConfig);
       
-      // Mesmo se der erro (tabela não existe), atualizamos localmente para a sessão
       setCustomPlans(prev => ({ ...prev, [planId]: newPlanConfig }));
       
       if (error) {
@@ -1596,7 +1522,6 @@ const App: React.FC = () => {
     setActiveTab('tracker');
   };
 
-  // --- Devotionals Handlers ---
   const handleGenerateDevotional = async () => {
       if(!devotionalTranscript.trim()) {
           showNotification("Insira a transcrição para gerar o devocional.", 'error');
@@ -1657,7 +1582,6 @@ const App: React.FC = () => {
       }
   };
 
-  // ... (rest of helper functions remain same) ...
   const totalReadCount = useMemo(() => {
     let count = 0;
     Object.values(readChapters).forEach((chapters) => {
@@ -1690,7 +1614,6 @@ const App: React.FC = () => {
     return streak;
   }, [readingLogs]);
 
-  // ... (Other handlers like logout, saveSession, etc. remain same) ...
   const handleLogout = async () => {
     await supabase.auth.signOut();
     setUser(null); 
@@ -1718,7 +1641,6 @@ const App: React.FC = () => {
     const prevChaptersRead = readChapters[selectedBookId]?.length || 0;
     const prevAchievements = new Set(unlockedAchievements);
     
-    // Log reading primarily (keeps personal history)
     const logEntry: any = {
         user_id: user.id,
         user_email: user.email, 
@@ -1729,7 +1651,7 @@ const App: React.FC = () => {
         chapters: sessionSelectedChapters.sort((a, b) => a - b),
         ai_reflection: '',
         user_notes: '',
-        group_id: activeGroupId // Stores the currently active group in the personal log, or null
+        group_id: activeGroupId 
     };
     
     const { error } = await supabase.from('reading_logs').insert(logEntry).select().single();
@@ -1738,23 +1660,18 @@ const App: React.FC = () => {
     } else {
         await fetchData();
         
-        // Broadcast activity to ALL user groups
         if (userGroups.length > 0) {
             const chaptersJustRead = sessionSelectedChapters.length;
             const bookIsComplete = (prevChaptersRead + chaptersJustRead) >= book.chapters;
 
             for (const group of userGroups) {
-                // Log Reading Activity
                 await logGroupActivity(group.id, 'READING', { bookId: selectedBookId, chapters: sessionSelectedChapters, text: '' });
                 
-                // Log Book Completion if applicable
                 if (bookIsComplete) {
                      await logGroupActivity(group.id, 'BOOK_COMPLETE', { bookId: selectedBookId });
                 }
             }
             
-            // Update last active status for user in group_members table
-            // We do this for all groups user belongs to
             const groupIds = userGroups.map(g => g.id);
             await supabase.from('group_members')
                 .update({ last_active: new Date().toISOString() })
@@ -1779,11 +1696,9 @@ const App: React.FC = () => {
         data: data,
         created_at: new Date().toISOString()
     });
-    if(!error && groupId === activeGroupId) fetchGroupDetails(); // Refresh if looking at this group
+    if(!error && groupId === activeGroupId) fetchGroupDetails(); 
   };
   
-  // --- Community Admin Actions ---
-
   const handleKickMemberRequest = (member: GroupMember) => {
       setMemberToKick(member);
       setConfirmModal({
@@ -1824,7 +1739,6 @@ const App: React.FC = () => {
   const executeDeleteGroup = async () => {
       if (!activeGroupId) return;
       setIsGroupLoading(true);
-      // Assuming Cascade Delete is set up on DB for members/activities linked to group
       const { error } = await supabase.from('groups').delete().eq('id', activeGroupId);
 
       if (error) {
@@ -1842,24 +1756,19 @@ const App: React.FC = () => {
   const handleLeaveGroupRequest = () => {
       if (!activeGroupId || !user) return;
 
-      // Check if user is the Owner/Admin of this specific group
       if (isGroupOwner) {
-          // If only 1 member (the owner), suggest deleting
           if (groupMembers.length <= 1) {
               setConfirmModal({
                   isOpen: true,
                   title: 'Sair e Excluir',
                   message: 'Você é o único membro. Sair irá excluir a comunidade permanentemente.',
-                  onConfirm: executeDeleteGroup, // Re-use delete logic
+                  onConfirm: executeDeleteGroup, 
                   isDestructive: true
               });
           } else {
-              // If owner leaves but others remain, MUST transfer admin
               setIsTransferringAdmin(true);
           }
       } else {
-          // Regular member leaving
-          // Capture current activeGroupId to pass to execution
           const targetGroupId = activeGroupId;
           setConfirmModal({
               isOpen: true,
@@ -1875,7 +1784,6 @@ const App: React.FC = () => {
       if (!activeGroupId || !successorId) return;
       setIsGroupLoading(true);
 
-      // 1. Update Group Owner
       const { error: groupError } = await supabase
           .from('groups')
           .update({ owner_id: successorId })
@@ -1887,21 +1795,18 @@ const App: React.FC = () => {
           return;
       }
 
-      // 2. Update Members Roles (Promote successor)
       await supabase
           .from('group_members')
           .update({ role: 'admin' })
           .eq('group_id', activeGroupId)
           .eq('user_id', successorId);
 
-      // 3. Remove Current User
       await executeLeaveGroup(activeGroupId);
       
       setSuccessorId('');
       setIsTransferringAdmin(false);
   };
 
-  // REFACTORED: Accept targetGroupId to ensure correct group is deleted regardless of current state
   const executeLeaveGroup = async (targetGroupId: string) => {
       if (!user || !targetGroupId) return;
       setIsGroupLoading(true);
@@ -1914,13 +1819,10 @@ const App: React.FC = () => {
       if (error) {
           showNotification('Erro ao sair do grupo: ' + error.message, 'error');
       } else {
-          // Remove from local list safely using functional update to ensure we have latest list
           setUserGroups(prevGroups => {
               const updatedGroups = prevGroups.filter(g => g.id !== targetGroupId);
               
-              // Determine new active group
               if (updatedGroups.length > 0) {
-                  // If we deleted the active group, switch to the first one available
                   setActiveGroupId(currentActive => currentActive === targetGroupId ? updatedGroups[0].id : currentActive);
               } else {
                   setActiveGroupId(null);
@@ -1933,7 +1835,6 @@ const App: React.FC = () => {
       setIsGroupLoading(false);
   };
 
-  // ... (Other handlers unchanged: handleSaveNote, handleSupportSubmit, handleSaveNews, startEditingNote, handleToggleTicketStatus, handleShareApp, handleCreateGroup, handleJoinGroup, handleReaction)
   const handleSaveNote = async (logId: string) => {
       const { error } = await supabase.from('reading_logs').update({ user_notes: tempNoteContent }).eq('id', logId);
       if (!error) { await fetchData(); if(isAdmin) fetchAdminData(); setEditingNoteId(null); setTempNoteContent(''); showNotification('Nota salva!', 'success'); } 
@@ -1972,7 +1873,6 @@ const App: React.FC = () => {
       if(error) showNotification('Erro ao criar: ' + error.message, 'error'); 
       else { 
           await supabase.from('group_members').insert({ group_id: group.id, user_id: user.id, user_name: user.user_metadata?.full_name || 'Admin', role: 'admin', last_active: new Date().toISOString() }); 
-          // Update local state to include new group and switch to it
           setUserGroups([...userGroups, group]);
           setActiveGroupId(group.id);
           setIsAddingGroup(false);
@@ -1985,7 +1885,6 @@ const App: React.FC = () => {
       const { data: group, error: searchError } = await supabase.from('groups').select('*').eq('code', joinCode.toUpperCase()).single();
       if(searchError || !group) showNotification('Grupo não encontrado.', 'error');
       else { 
-          // Check if already member
           if (userGroups.some(g => g.id === group.id)) {
               showNotification('Você já é membro deste grupo!', 'error');
               setActiveGroupId(group.id);
@@ -1999,7 +1898,6 @@ const App: React.FC = () => {
               if(joinError.message.includes('duplicate')) showNotification('Você já está neste grupo!', 'error'); 
               else showNotification('Erro ao entrar: ' + joinError.message, 'error'); 
           } else {
-              // Update local state
               setUserGroups([...userGroups, group]);
               setActiveGroupId(group.id);
               setIsAddingGroup(false);
@@ -2016,7 +1914,6 @@ const App: React.FC = () => {
       await supabase.from('group_activities').update({ [column]: newCount }).eq('id', activityId);
   };
 
-  // --- Render Functions (Simplified for brevity, complex logic stays) ---
   const renderDevotionals = () => {
       if(isEditingDevotional) {
           return (
@@ -2029,7 +1926,6 @@ const App: React.FC = () => {
                    </div>
                    
                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                       {/* Coluna da Transcrição (Esquerda) */}
                        <div className="md:col-span-1 space-y-4">
                            <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-gray-200 dark:border-slate-800">
                                <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Transcrição / Fonte</label>
@@ -2050,7 +1946,6 @@ const App: React.FC = () => {
                            </div>
                        </div>
                        
-                       {/* Coluna do Resultado (Direita) */}
                        <div className="md:col-span-2 space-y-4">
                            <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-gray-200 dark:border-slate-800 shadow-sm">
                                <div className="space-y-4">
@@ -2157,7 +2052,6 @@ const App: React.FC = () => {
                   <div className="space-y-6">
                       {publishedDevotionals.map(devotional => (
                           <div key={devotional.id} className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 overflow-hidden transition-all hover:shadow-md">
-                              {/* Header Card */}
                               <div 
                                   className="p-6 cursor-pointer"
                                   onClick={() => setExpandedDevotionalId(expandedDevotionalId === devotional.id ? null : devotional.id)}
@@ -2179,7 +2073,6 @@ const App: React.FC = () => {
                                   </div>
                               </div>
                               
-                              {/* Expanded Content */}
                               {expandedDevotionalId === devotional.id && (
                                   <div className="px-6 pb-8 animate-fade-in border-t border-gray-100 dark:border-slate-800 pt-6">
                                       <div className="prose prose-indigo dark:prose-invert max-w-none font-serif text-gray-800 dark:text-gray-200 leading-relaxed whitespace-pre-wrap">
@@ -2218,7 +2111,7 @@ const App: React.FC = () => {
       );
   };
 
-  const renderTracker = () => { /* ... existing tracker code ... */ 
+  const renderTracker = () => { 
      if (!selectedBookId) {
       return (
         <div className="max-w-6xl mx-auto animate-fade-in">
@@ -2234,7 +2127,6 @@ const App: React.FC = () => {
              </div>
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-             {/* Antigo e Novo Testamento - Same code as before */}
              <div>
                 <h3 className="font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
                    <Scroll size={20} className="text-indigo-500"/> Antigo Testamento
@@ -2330,10 +2222,8 @@ const App: React.FC = () => {
   const renderCommunity = () => {
       const activeGroup = userGroups.find(g => g.id === activeGroupId);
 
-      // Loading State
       if(isGroupLoading) return <div className="flex justify-center items-center h-64"><Loader2 className="animate-spin text-indigo-600" size={32} /></div>;
 
-      // No Groups or Adding New Group View (Empty State styled)
       if(userGroups.length === 0 || isAddingGroup) {
           return (
               <div className="max-w-4xl mx-auto animate-fade-in">
@@ -2363,13 +2253,11 @@ const App: React.FC = () => {
           );
       }
 
-      // Main Community View with Sidebar
       if (!activeGroup) return null;
 
       return (
           <div className="max-w-7xl mx-auto animate-fade-in flex flex-col lg:flex-row gap-6">
               
-              {/* Group Switcher Sidebar (Desktop: Left Col, Mobile: Top Row) */}
               <div className="lg:w-20 flex lg:flex-col gap-3 overflow-x-auto lg:overflow-visible pb-2 lg:pb-0 shrink-0 border-b lg:border-b-0 lg:border-r border-gray-200 dark:border-slate-800 lg:pr-6">
                   {userGroups.map(group => (
                       <button
@@ -2394,10 +2282,8 @@ const App: React.FC = () => {
                   </button>
               </div>
 
-              {/* Main Feed Content */}
               <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-8">
                   <div className="lg:col-span-2 space-y-6">
-                      {/* Mobile Header for Group */}
                       <div className="lg:hidden bg-white dark:bg-slate-900 p-6 rounded-2xl border border-gray-100 dark:border-slate-800 mb-4">
                           <div className="flex justify-between items-start">
                               <div>
@@ -2436,7 +2322,6 @@ const App: React.FC = () => {
                       ))}
                   </div>
                   
-                  {/* Right Column: Group Details */}
                   <div className="space-y-6">
                        <div className="bg-indigo-600 rounded-2xl p-6 text-white shadow-xl hidden lg:block"><div className="flex justify-between items-start mb-4"><div><p className="text-indigo-200 text-xs font-bold uppercase tracking-wider">GRUPO ATIVO</p><h2 className="text-2xl font-bold font-serif">{activeGroup.name}</h2></div><div className="bg-white/20 p-2 rounded-lg"><Users size={24} /></div></div><div className="bg-black/20 rounded-xl p-4 mb-4 backdrop-blur-sm"><p className="text-xs text-indigo-200 mb-1">CÓDIGO DE CONVITE</p><div className="flex justify-between items-center"><span className="font-mono text-xl font-bold tracking-widest">{activeGroup.code}</span><button onClick={() => { navigator.clipboard.writeText(activeGroup.code); showNotification('Copiado!', 'success'); }} className="text-white hover:text-indigo-200"><Copy size={16} /></button></div></div><button onClick={() => { const text = `Olá! Entre no meu grupo de leitura bíblica '${activeGroup.name}' no App Bíblia Tracker usando o código: ${activeGroup.code}`; window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank'); }} className="w-full bg-[#25D366] hover:bg-[#128C7E] text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-colors shadow-lg"><Share2 size={18} /> {t('comm_btn_invite')}</button></div>
                        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 p-6 shadow-sm"><h3 className="font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2"><Users size={18} className="text-indigo-500"/> {t('comm_members_title')} ({groupMembers.length})</h3><div className="space-y-3">{groupMembers.map(member => { const lastActive = new Date(member.last_active); const today = new Date(); const diffHours = Math.abs(today.getTime() - lastActive.getTime()) / 36e5; let statusColor = 'bg-gray-400'; if (diffHours < 24) statusColor = 'bg-emerald-500'; else if (diffHours < 48) statusColor = 'bg-amber-400'; return (
@@ -2483,13 +2368,12 @@ const App: React.FC = () => {
           </div>
       );
   };
-  const renderAchievements = () => { /* ... existing achievements code ... */ return <div className="max-w-6xl mx-auto animate-fade-in"><div className="text-center mb-8"><div className="inline-flex p-4 bg-yellow-100 dark:bg-yellow-900/30 rounded-full text-yellow-600 dark:text-yellow-400 mb-4"><Trophy size={32} /></div><h2 className="text-2xl font-bold text-gray-900 dark:text-white serif">{t('achiev_title')}</h2><p className="text-gray-500 dark:text-gray-400 mt-2">{t('achiev_subtitle')}</p></div><div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">{ACHIEVEMENTS.map((ach) => { const isUnlocked = unlockedAchievements.has(ach.id); const Icon = IconMap[ach.icon] || Star; return (<div key={ach.id} className={`p-4 rounded-xl border relative overflow-hidden group transition-all ${isUnlocked ? 'bg-white dark:bg-slate-900 border-gray-200 dark:border-slate-800 shadow-sm' : 'bg-gray-50 dark:bg-slate-800/50 border-transparent opacity-60'}`}>{!isUnlocked && (<div className="absolute inset-0 bg-gray-100/50 dark:bg-black/50 backdrop-blur-[1px] z-10 flex items-center justify-center"><Lock className="text-gray-400" size={24} /></div>)}<div className="flex items-start gap-4 relative z-0"><div className={`p-3 rounded-xl ${isUnlocked ? ach.color : 'bg-gray-200 dark:bg-slate-700'} ${isUnlocked ? 'text-gray-800' : 'text-gray-400'}`}><Icon size={24} /></div><div><h4 className="font-bold text-gray-900 dark:text-white">{ach.title}</h4><p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{ach.description}</p>{isUnlocked && (<div className="mt-2 text-[10px] font-bold uppercase tracking-wider text-emerald-600 flex items-center gap-1"><CheckCircle2 size={10} /> {t('achiev_unlocked')}</div>)}</div></div></div>); })}</div></div>; };
-  const renderSupport = () => { /* ... existing support code ... */ return <div className="max-w-2xl mx-auto animate-fade-in"><div className="text-center mb-8"><div className="inline-flex p-4 bg-indigo-100 dark:bg-indigo-900/30 rounded-full text-indigo-600 dark:text-indigo-400 mb-4"><LifeBuoy size={32} /></div><h2 className="text-2xl font-bold text-gray-900 dark:text-white serif">{t('supp_title')}</h2><p className="text-gray-500 dark:text-gray-400 mt-2">{t('supp_subtitle')}</p></div><div className="bg-white dark:bg-slate-900 p-8 rounded-2xl shadow-xl border border-gray-100 dark:border-slate-800">{supportSuccess ? (<div className="text-center py-12"><div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center text-green-600 mx-auto mb-4"><CheckCircle2 size={32} /></div><h3 className="text-xl font-bold text-gray-900 dark:text-white">{t('supp_success_title')}</h3><p className="text-gray-500 dark:text-gray-400 mt-2">{t('supp_success_msg')}</p><button onClick={() => setSupportSuccess(false)} className="mt-6 text-indigo-600 font-bold text-sm hover:underline">Enviar nova mensagem</button></div>) : (<form onSubmit={handleSupportSubmit} className="space-y-6"><div><label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">Tipo de Mensagem</label><div className="grid grid-cols-3 gap-2">{(['question', 'suggestion', 'problem'] as const).map((type) => (<button key={type} type="button" onClick={() => setSupportForm({ ...supportForm, type })} className={`py-2 rounded-lg text-sm font-medium border transition-all ${supportForm.type === type ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-500 text-indigo-700 dark:text-indigo-300' : 'bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-700 text-gray-600 dark:text-gray-400'}`}>{type === 'question' && t('supp_type_question')}{type === 'suggestion' && t('supp_type_suggestion')}{type === 'problem' && t('supp_type_problem')}</button>))}</div></div><div><label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">Sua Mensagem</label><textarea required value={supportForm.message} onChange={(e) => setSupportForm({ ...supportForm, message: e.target.value })} className="w-full p-4 rounded-xl border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none min-h-[150px]" placeholder="Descreva detalhadamente..."></textarea></div><button type="submit" disabled={isSubmittingSupport || !supportForm.message.trim()} className="w-full bg-indigo-600 text-white py-4 rounded-xl font-bold hover:bg-indigo-700 transition-colors shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center gap-2">{isSubmittingSupport ? <Loader2 className="animate-spin" /> : <Send size={20} />} {t('supp_btn_send')}</button></form>)}</div></div>; };
+  const renderAchievements = () => { return <div className="max-w-6xl mx-auto animate-fade-in"><div className="text-center mb-8"><div className="inline-flex p-4 bg-yellow-100 dark:bg-yellow-900/30 rounded-full text-yellow-600 dark:text-yellow-400 mb-4"><Trophy size={32} /></div><h2 className="text-2xl font-bold text-gray-900 dark:text-white serif">{t('achiev_title')}</h2><p className="text-gray-500 dark:text-gray-400 mt-2">{t('achiev_subtitle')}</p></div><div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">{ACHIEVEMENTS.map((ach) => { const isUnlocked = unlockedAchievements.has(ach.id); const Icon = IconMap[ach.icon] || Star; return (<div key={ach.id} className={`p-4 rounded-xl border relative overflow-hidden group transition-all ${isUnlocked ? 'bg-white dark:bg-slate-900 border-gray-200 dark:border-slate-800 shadow-sm' : 'bg-gray-50 dark:bg-slate-800/50 border-transparent opacity-60'}`}>{!isUnlocked && (<div className="absolute inset-0 bg-gray-100/50 dark:bg-black/50 backdrop-blur-[1px] z-10 flex items-center justify-center"><Lock className="text-gray-400" size={24} /></div>)}<div className="flex items-start gap-4 relative z-0"><div className={`p-3 rounded-xl ${isUnlocked ? ach.color : 'bg-gray-200 dark:bg-slate-700'} ${isUnlocked ? 'text-gray-800' : 'text-gray-400'}`}><Icon size={24} /></div><div><h4 className="font-bold text-gray-900 dark:text-white">{ach.title}</h4><p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{ach.description}</p>{isUnlocked && (<div className="mt-2 text-[10px] font-bold uppercase tracking-wider text-emerald-600 flex items-center gap-1"><CheckCircle2 size={10} /> {t('achiev_unlocked')}</div>)}</div></div></div>); })}</div></div>; };
+  const renderSupport = () => { return <div className="max-w-2xl mx-auto animate-fade-in"><div className="text-center mb-8"><div className="inline-flex p-4 bg-indigo-100 dark:bg-indigo-900/30 rounded-full text-indigo-600 dark:text-indigo-400 mb-4"><LifeBuoy size={32} /></div><h2 className="text-2xl font-bold text-gray-900 dark:text-white serif">{t('supp_title')}</h2><p className="text-gray-500 dark:text-gray-400 mt-2">{t('supp_subtitle')}</p></div><div className="bg-white dark:bg-slate-900 p-8 rounded-2xl shadow-xl border border-gray-100 dark:border-slate-800">{supportSuccess ? (<div className="text-center py-12"><div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center text-green-600 mx-auto mb-4"><CheckCircle2 size={32} /></div><h3 className="text-xl font-bold text-gray-900 dark:text-white">{t('supp_success_title')}</h3><p className="text-gray-500 dark:text-gray-400 mt-2">{t('supp_success_msg')}</p><button onClick={() => setSupportSuccess(false)} className="mt-6 text-indigo-600 font-bold text-sm hover:underline">Enviar nova mensagem</button></div>) : (<form onSubmit={handleSupportSubmit} className="space-y-6"><div><label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">Tipo de Mensagem</label><div className="grid grid-cols-3 gap-2">{(['question', 'suggestion', 'problem'] as const).map((type) => (<button key={type} type="button" onClick={() => setSupportForm({ ...supportForm, type })} className={`py-2 rounded-lg text-sm font-medium border transition-all ${supportForm.type === type ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-500 text-indigo-700 dark:text-indigo-300' : 'bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-700 text-gray-600 dark:text-gray-400'}`}>{type === 'question' && t('supp_type_question')}{type === 'suggestion' && t('supp_type_suggestion')}{type === 'problem' && t('supp_type_problem')}</button>))}</div></div><div><label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">Sua Mensagem</label><textarea required value={supportForm.message} onChange={(e) => setSupportForm({ ...supportForm, message: e.target.value })} className="w-full p-4 rounded-xl border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none min-h-[150px]" placeholder="Descreva detalhadamente..."></textarea></div><button type="submit" disabled={isSubmittingSupport || !supportForm.message.trim()} className="w-full bg-indigo-600 text-white py-4 rounded-xl font-bold hover:bg-indigo-700 transition-colors shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center gap-2">{isSubmittingSupport ? <Loader2 className="animate-spin" /> : <Send size={20} />} {t('supp_btn_send')}</button></form>)}</div></div>; };
 
   return (
     <div className={`min-h-screen transition-colors ${theme === 'dark' ? 'dark bg-slate-950' : 'bg-slate-50'}`}>
       
-      {/* Toast Notification */}
       {notification && (
         <NotificationToast 
           message={notification.message} 
@@ -2506,7 +2390,6 @@ const App: React.FC = () => {
           <LoginScreen onLogin={setUser} />
       ) : (
           <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-slate-950 text-gray-900 dark:text-white">
-              {/* Sidebar Desktop */}
               <aside className="hidden md:flex flex-col w-64 bg-white dark:bg-slate-900 border-r border-gray-200 dark:border-slate-800 z-20 transition-colors">
                   <div className="p-6 flex items-center gap-3">
                       <div className="bg-indigo-600 p-2 rounded-lg text-white shadow-lg shadow-indigo-200 dark:shadow-none">
@@ -2563,7 +2446,6 @@ const App: React.FC = () => {
                   </div>
               </aside>
 
-              {/* Mobile Header & Content */}
               <main className="flex-1 flex flex-col h-full overflow-hidden relative transition-colors">
                   <header className="md:hidden h-16 bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-800 flex items-center justify-between px-4 z-20 shrink-0">
                       <div className="flex items-center gap-2">
@@ -2577,7 +2459,6 @@ const App: React.FC = () => {
                       </button>
                   </header>
 
-                  {/* Mobile Menu */}
                   {mobileMenuOpen && (
                     <div className="absolute inset-0 z-50 bg-white dark:bg-slate-900 p-4 animate-fade-in md:hidden flex flex-col">
                         <div className="flex justify-end mb-4">
@@ -2612,9 +2493,7 @@ const App: React.FC = () => {
                     </div>
                   )}
 
-                  {/* Main Scrollable Content */}
                   <div className="flex-1 overflow-y-auto p-4 md:p-8 relative scroll-smooth">
-                      {/* Top Bar Desktop */}
                       <div className="hidden md:flex justify-between items-center mb-8">
                           <div>
                               <h1 className="text-2xl font-bold text-gray-900 dark:text-white transition-colors">
@@ -2653,11 +2532,9 @@ const App: React.FC = () => {
                           </div>
                       </div>
 
-                      {/* Tab Content */}
                       
                       {activeTab === 'dashboard' && (
                         <div className="space-y-6 animate-fade-in">
-                          {/* Welcome / Plan Widget */}
                           <div className={`rounded-2xl p-8 text-white relative overflow-hidden shadow-xl ${isGoldenTheme ? 'bg-gradient-to-br from-gray-900 to-black border border-yellow-500/30' : 'bg-indigo-600'}`}>
                              <div className="absolute right-0 top-0 h-full w-1/3 bg-gradient-to-l from-white/10 to-transparent pointer-events-none"></div>
                              <div className="relative z-10 max-w-2xl">
@@ -2708,7 +2585,6 @@ const App: React.FC = () => {
                              </div>
                           </div>
 
-                          {/* Site News Banner */}
                           {siteNews && showNews && (
                              <div className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800 rounded-xl p-4 flex items-start justify-between gap-4 animate-fade-in">
                                  <div className="flex items-start gap-3">
@@ -2759,7 +2635,6 @@ const App: React.FC = () => {
                               />
                           </div>
 
-                          {/* Simulador de Ritmo */}
                           <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-gray-100 dark:border-slate-800 shadow-sm animate-fade-in">
                               <h3 className="font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
                                   <Calculator size={18} className="text-indigo-500" /> {t('dash_sim_title')}
@@ -2793,7 +2668,6 @@ const App: React.FC = () => {
                               </div>
                           </div>
 
-                          {/* Completion Badge Activation */}
                           {totalReadCount >= TOTAL_CHAPTERS_BIBLE && !isGoldenTheme && (
                               <div className="bg-gradient-to-r from-yellow-400 to-amber-500 rounded-2xl p-6 text-white shadow-xl flex items-center justify-between gap-4 animate-pulse">
                                   <div className="flex items-center gap-4">
@@ -2814,7 +2688,6 @@ const App: React.FC = () => {
                               </div>
                           )}
 
-                          {/* Invite Friends Banner */}
                           <div className="bg-gradient-to-r from-emerald-500 to-teal-600 rounded-2xl p-6 text-white shadow-lg flex flex-col sm:flex-row justify-between items-center gap-6 relative overflow-hidden">
                               <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/3 blur-3xl"></div>
                               
@@ -2872,8 +2745,6 @@ const App: React.FC = () => {
                                                   )}
                                               </div>
                                               
-                                              {/* AI Reflection Removed */}
-
                                               {editingNoteId === log.id ? (
                                                   <div className="mt-4 animate-fade-in">
                                                       <textarea 
@@ -2911,8 +2782,7 @@ const App: React.FC = () => {
 
                       {activeTab === 'admin' && isAdmin && (
                           <div className="space-y-8 animate-fade-in">
-                              {/* Conteúdo Admin Existente... */}
-                              {/* Sub Menu */}
+                              
                               <div className="flex overflow-x-auto gap-2 pb-2 mb-4 bg-white dark:bg-slate-900 p-2 rounded-xl sticky top-0 z-10 shadow-sm border border-gray-100 dark:border-slate-800">
                                   {([
                                       { id: 'overview', label: t('admin_tab_metrics') },
@@ -2930,7 +2800,7 @@ const App: React.FC = () => {
                                       </button>
                                   ))}
                               </div>
-                              {/* Views do Admin */}
+                              
                               {adminView === 'overview' && (
                                   <div className="space-y-6">
                                       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
@@ -3033,7 +2903,6 @@ const App: React.FC = () => {
 
                               {adminView === 'plans' && (
                                   <div className="space-y-6">
-                                      {/* Plan Creator */}
                                       <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-gray-200 dark:border-slate-800">
                                           <div className="flex justify-between items-center mb-6">
                                               <h3 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
@@ -3132,7 +3001,6 @@ const App: React.FC = () => {
                                           )}
                                       </div>
 
-                                      {/* Existing Plans List */}
                                       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-800 overflow-hidden">
                                           <div className="p-6 border-b border-gray-100 dark:border-slate-800 bg-gray-50 dark:bg-slate-950">
                                               <h3 className="font-bold text-gray-900 dark:text-white">Planos Ativos na Plataforma</h3>
@@ -3162,7 +3030,6 @@ const App: React.FC = () => {
                                                                       const newPlans = { ...customPlans };
                                                                       delete newPlans[key];
                                                                       setCustomPlans(newPlans);
-                                                                      // Try delete from DB
                                                                       await supabase.from('reading_plans').delete().eq('id', key);
                                                                       showNotification('Plano removido.', 'success');
                                                                   }
@@ -3182,7 +3049,6 @@ const App: React.FC = () => {
 
                               {adminView === 'users' && (
                                   <div className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-800 overflow-hidden">
-                                      {/* ... tabela de usuarios existente ... */}
                                       <div className="p-6 border-b border-gray-100 dark:border-slate-800 flex justify-between items-center">
                                           <h3 className="font-bold text-lg text-gray-900 dark:text-white">Usuários da Plataforma</h3>
                                           <div className="relative">
@@ -3202,7 +3068,6 @@ const App: React.FC = () => {
                                               </thead>
                                               <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
                                                   {(() => {
-                                                      // Derive unique users from logs
                                                       const uniqueUsersMap: Record<string, {name: string, email: string, count: number}> = {};
                                                       adminLogs.forEach(log => {
                                                           if(!uniqueUsersMap[log.user_id]) uniqueUsersMap[log.user_id] = { name: log.user_name || 'N/A', email: log.user_email || 'N/A', count: 0 };
@@ -3282,7 +3147,6 @@ const App: React.FC = () => {
                   </div>
               </main>
 
-              {/* Modals Global */}
               {isPlanModalOpen && <PlanSelectionModal onClose={() => setIsPlanModalOpen(false)} onSelectPlan={handleSelectPlan} availablePlans={availablePlans} />}
               {readingChapter && (
                 <BibleReaderModal 
@@ -3323,6 +3187,4 @@ const App: React.FC = () => {
       )}
     </div>
   );
-};
-
-export default App;
+}

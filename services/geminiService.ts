@@ -1,11 +1,14 @@
 import { GoogleGenAI } from "@google/genai";
 import { DevotionalStyle } from '../types';
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Chave da API configurada diretamente
+const API_KEY = 'AIzaSyA6OCv5X0ps7Shu_0OKYrqs2o4P1YiD3ME';
+
+const ai = new GoogleGenAI({ apiKey: API_KEY });
 
 // Função existente (mantida para compatibilidade)
 export const generateDevotional = async (bookName: string, chapters: number[], style: DevotionalStyle = 'theologian') => {
-  if (!process.env.API_KEY) {
+  if (!API_KEY) {
       console.warn("API Key not found. AI features disabled.");
       return "Configuração de IA pendente.";
   }
@@ -86,7 +89,7 @@ export const generateDevotional = async (bookName: string, chapters: number[], s
 
 // Nova Função para Devocionais Completos
 export const generateDevotionalFromTranscript = async (transcript: string) => {
-    if (!process.env.API_KEY) throw new Error("API Key não configurada");
+    if (!API_KEY) throw new Error("API Key não configurada");
 
     const prompt = `
       Você é um assistente teológico que sintetiza a sabedoria de grandes homens de Deus.
