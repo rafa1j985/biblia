@@ -77,8 +77,11 @@ export const generateDevotional = async (bookName: string, chapters: number[], s
       contents: prompt,
     });
     return response.text?.trim() || "Não foi possível gerar a reflexão no momento.";
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error generating devotional:", error);
+    if (error.message?.includes('403') || error.message?.includes('PERMISSION_DENIED')) {
+        return "Erro de Permissão (403): Sua chave de API do Gemini foi revogada ou vazada. Gere uma nova chave no Google AI Studio.";
+    }
     return "Erro ao conectar com o serviço de IA. Tente novamente mais tarde.";
   }
 };
@@ -123,8 +126,11 @@ export const generateDevotionalFromTranscript = async (transcript: string) => {
         });
         
         return JSON.parse(response.text || "{}");
-    } catch (error) {
+    } catch (error: any) {
         console.error("Erro na geração do devocional:", error);
+        if (error.message?.includes('403') || error.message?.includes('PERMISSION_DENIED')) {
+            throw new Error("Sua chave de API do Gemini foi bloqueada (vazamento detectado). Atualize a chave no .env.local.");
+        }
         throw error;
     }
 }
