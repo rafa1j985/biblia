@@ -1,27 +1,13 @@
 import { GoogleGenAI } from "@google/genai";
 import { DevotionalStyle } from '../types';
 
-// Helper to safely get API key without crashing if process is undefined
-const getApiKey = () => {
-  try {
-    if (typeof process !== 'undefined' && process.env) {
-      return process.env.API_KEY;
-    }
-  } catch (e) {
-    console.warn("Error accessing process.env", e);
-  }
-  return undefined;
-};
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 export const generateDevotional = async (bookName: string, chapters: number[], style: DevotionalStyle = 'theologian') => {
-  const apiKey = getApiKey();
-  
-  if (!apiKey) {
+  if (!process.env.API_KEY) {
       console.warn("API Key not found. AI features disabled.");
-      return "Configuração de IA pendente (API_KEY não encontrada).";
+      return "Configuração de IA pendente.";
   }
-
-  const ai = new GoogleGenAI({ apiKey });
 
   const chaptersStr = chapters.join(', ');
   let roleInstruction = '';
@@ -90,64 +76,10 @@ export const generateDevotional = async (bookName: string, chapters: number[], s
       model: 'gemini-3-flash-preview',
       contents: prompt,
     });
+    // Directly access text property
     return response.text?.trim() || "Não foi possível gerar a reflexão no momento.";
-  } catch (error: any) {
+  } catch (error) {
     console.error("Error generating devotional:", error);
-    if (error.message?.includes('403') || error.message?.includes('PERMISSION_DENIED')) {
-        return "Erro de Permissão (403): Sua chave de API do Gemini foi revogada ou vazada. Gere uma nova chave no Google AI Studio.";
-    }
     return "Erro ao conectar com o serviço de IA. Tente novamente mais tarde.";
   }
 };
-
-export const generateDevotionalFromTranscript = async (transcript: string) => {
-    const apiKey = getApiKey();
-    if (!apiKey) throw new Error("API Key não configurada");
-
-    const ai = new GoogleGenAI({ apiKey });
-
-    const prompt = `
-      Você é um assistente teológico que sintetiza a sabedoria de grandes homens de Deus.
-      Atue com a profundidade bíblica, seriedade e paixão pelo Evangelho de uma combinação entre **C.H. Spurgeon, John Piper, Augustus Nicodemus, Hernandes Dias Lopes e Luiz Sayão**.
-
-      **Sua Missão:**
-      Analise a transcrição abaixo (de um culto ou pregação) e transforme-a em um Devocional Estruturado.
-
-      **Diretrizes Teológicas (Batista Reformada / Clássica):**
-      1.  **Cristocêntrico:** Tudo deve apontar para a suficiência de Cristo.
-      2.  **Sola Scriptura:** A base é a Bíblia, não opiniões humanas ou autoajuda.
-      3.  **Anti-Prosperidade:** Rejeite qualquer teologia da prosperidade ou coaching superficial. O foco é santidade, glória de Deus e arrependimento.
-      4.  **Tom:** Solene, porém esperançoso. Profundo, mas acessível. Cheio de graça.
-
-      **Formato de Saída (JSON Obrigatório):**
-      Retorne APENAS um objeto JSON válido com os seguintes campos:
-      {
-        "title": "Um título curto e chamativo (máx 60 caracteres)",
-        "verse_reference": "A referência bíblica principal (ex: Romanos 8:28)",
-        "verse_text": "O texto do versículo escrito por extenso (Versão NVI ou Almeida)",
-        "content": "A reflexão devocional (aprox. 200-300 palavras). Deve ser um texto corrido, inspirador e teologicamente robusto.",
-        "conclusion": "Uma conclusão curta ou uma oração final de 1 ou 2 frases."
-      }
-
-      **Transcrição para análise:**
-      "${transcript.substring(0, 15000)}" // Limitando caracteres para segurança
-    `;
-
-    try {
-        const response = await ai.models.generateContent({
-            model: 'gemini-3-flash-preview',
-            contents: prompt,
-            config: {
-                responseMimeType: "application/json"
-            }
-        });
-        
-        return JSON.parse(response.text || "{}");
-    } catch (error: any) {
-        console.error("Erro na geração do devocional:", error);
-        if (error.message?.includes('403') || error.message?.includes('PERMISSION_DENIED')) {
-            throw new Error("Sua chave de API do Gemini foi bloqueada (vazamento detectado). Atualize a chave no .env.local.");
-        }
-        throw error;
-    }
-}

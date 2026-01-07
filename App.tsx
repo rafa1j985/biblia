@@ -87,9 +87,7 @@ import {
   MoreHorizontal,
   PlusCircle,
   UserCog,
-  UserMinus,
-  FileText,
-  Sparkles
+  UserMinus
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -108,10 +106,11 @@ import {
   Area
 } from 'recharts';
 import { BIBLE_BOOKS, TOTAL_CHAPTERS_BIBLE, ADMIN_EMAILS, PLANS_CONFIG, ACHIEVEMENTS, DEFAULT_TEXTS } from './constants';
-import { BibleBook, ReadChaptersMap, ReadingLog, UserPlan, PlanType, SupportTicket, Group, GroupMember, GroupActivity, ActivityType, PlanConfig, Devotional } from './types';
+import { BibleBook, ReadChaptersMap, ReadingLog, UserPlan, PlanType, SupportTicket, Group, GroupMember, GroupActivity, ActivityType, PlanConfig } from './types';
 import { supabase } from './services/supabase';
-import { generateDevotionalFromTranscript } from './services/geminiService';
 
+// ... (Constants omitted for brevity, keeping existing code structure)
+// --- Versículos Diários ---
 const DAILY_VERSES = [
   { text: "Lâmpada para os meus pés é tua palavra, e luz para o meu caminho.", ref: "Salmos 119:105" },
   { text: "Busquem, pois, em primeiro lugar o Reino de Deus e a sua justiça, e todas essas coisas lhes serão acrescentadas.", ref: "Mateus 6:33" },
@@ -150,21 +149,32 @@ const BIBLE_API_MAPPING: Record<string, string> = {
 
 const PAULINE_BOOKS = ['ROM', '1CO', '2CO', 'GAL', 'EPH', 'PHP', 'COL', '1TH', '2TH', '1TI', '2TI', 'TIT', 'PHM'];
 
+// --- Helper Functions ---
 const calculateAchievements = (logs: ReadingLog[], chaptersMap: ReadChaptersMap) => {
-    // ... (same as original code)
     if (!logs.length) return new Set<number>();
+
     const unlocked = new Set<number>();
+
     const isBookComplete = (id: string) => (chaptersMap[id]?.length || 0) === BIBLE_BOOKS.find(b => b.id === id)?.chapters;
-    
+
     const hasEarlyMorning = logs.some(l => {
         const hour = new Date(l.timestamp).getHours();
         return hour >= 0 && hour < 6;
     });
     if (hasEarlyMorning) unlocked.add(1); 
-    const hasMorning = logs.some(l => { const hour = new Date(l.timestamp).getHours(); return hour >= 0 && hour < 8; });
+
+    const hasMorning = logs.some(l => {
+        const hour = new Date(l.timestamp).getHours();
+        return hour >= 0 && hour < 8;
+    });
     if (hasMorning) unlocked.add(2); 
-    const hasLateNight = logs.some(l => { const hour = new Date(l.timestamp).getHours(); return hour >= 22; });
+
+    const hasLateNight = logs.some(l => {
+        const hour = new Date(l.timestamp).getHours();
+        return hour >= 22;
+    });
     if (hasLateNight) unlocked.add(3);
+
     let maxStreak = 0;
     if (logs.length > 0) {
         const sortedDates = [...new Set(logs.map(l => l.date))].sort();
@@ -173,103 +183,165 @@ const calculateAchievements = (logs: ReadingLog[], chaptersMap: ReadChaptersMap)
             const prev = new Date(sortedDates[i-1]);
             const curr = new Date(sortedDates[i]);
             const diffDays = Math.round((curr.getTime() - prev.getTime()) / (1000 * 60 * 60 * 24));
-            if (diffDays === 1) currentRun++; else currentRun = 1;
+            if (diffDays === 1) currentRun++;
+            else currentRun = 1;
             maxStreak = Math.max(maxStreak, currentRun);
         }
         if (sortedDates.length === 1) maxStreak = 1;
     }
-    if (maxStreak >= 3) unlocked.add(4); if (maxStreak >= 7) unlocked.add(5); if (maxStreak >= 30) unlocked.add(6); if (maxStreak >= 365) unlocked.add(8);
+
+    if (maxStreak >= 3) unlocked.add(4);
+    if (maxStreak >= 7) unlocked.add(5);
+    if (maxStreak >= 30) unlocked.add(6);
+    if (maxStreak >= 365) unlocked.add(8);
+    
     if (['GEN', 'EXO', 'LEV', 'NUM', 'DEU'].every(isBookComplete)) unlocked.add(21);
+    
     const historicalOT = ['JOS', 'JDG', 'RUT', '1SA', '2SA', '1KI', '2KI', '1CH', '2CH', 'EZR', 'NEH', 'EST'];
     if (historicalOT.every(isBookComplete)) unlocked.add(22);
+    
     const poetical = ['JOB', 'PSA', 'PRO', 'ECC', 'SNG'];
     if (poetical.every(isBookComplete)) unlocked.add(23);
+
     if (['MAT', 'MRK', 'LUK', 'JHN'].every(isBookComplete)) unlocked.add(26);
+    
     if (isBookComplete('ACT')) unlocked.add(27);
+    
     if (PAULINE_BOOKS.every(isBookComplete)) unlocked.add(28);
+    
     if (isBookComplete('REV')) unlocked.add(30);
+
     if (isBookComplete('PRO')) unlocked.add(37);
+
     if (isBookComplete('PSA')) unlocked.add(38);
+
     const allOT = BIBLE_BOOKS.filter(b => b.testament === 'Old');
     if (allOT.every(b => isBookComplete(b.id))) unlocked.add(31);
+
     const allNT = BIBLE_BOOKS.filter(b => b.testament === 'New');
     if (allNT.every(b => isBookComplete(b.id))) unlocked.add(32);
+
     if (allOT.every(b => isBookComplete(b.id)) && allNT.every(b => isBookComplete(b.id))) unlocked.add(33);
+    
     const maxChaptersInDay = logs.reduce((max, log) => Math.max(max, log.chapters.length), 0);
     if (maxChaptersInDay >= 10) unlocked.add(72);
+
     const chaptersReadByDateAndBook: Record<string, Set<number>> = {};
     const uniqueDates = new Set<string>();
+
     logs.forEach(log => {
         uniqueDates.add(log.date);
         const key = `${log.date}|${log.bookId}`;
-        if (!chaptersReadByDateAndBook[key]) { chaptersReadByDateAndBook[key] = new Set(); }
+        if (!chaptersReadByDateAndBook[key]) {
+            chaptersReadByDateAndBook[key] = new Set();
+        }
         log.chapters.forEach(c => chaptersReadByDateAndBook[key].add(c));
     });
+
     let hasImmersion = false;
     for (const [key, chaptersSet] of Object.entries(chaptersReadByDateAndBook)) {
         const [_, bookId] = key.split('|');
         const book = BIBLE_BOOKS.find(b => b.id === bookId);
-        if (book && chaptersSet.size === book.chapters) { hasImmersion = true; break; }
+        if (book && chaptersSet.size === book.chapters) {
+            hasImmersion = true;
+            break;
+        }
     }
     if (hasImmersion) unlocked.add(73);
+
     let hasWeekend = false;
     const sortedDates = Array.from(uniqueDates).sort();
+    
     for (const dateStr of sortedDates) {
         const dateObj = new Date(`${dateStr}T12:00:00`);
+        
         if (dateObj.getDay() === 6) {
-            const nextDay = new Date(dateObj); nextDay.setDate(dateObj.getDate() + 1);
+            const nextDay = new Date(dateObj);
+            nextDay.setDate(dateObj.getDate() + 1);
             const nextDayStr = nextDay.toISOString().split('T')[0];
-            if (uniqueDates.has(nextDayStr)) { hasWeekend = true; break; }
+            
+            if (uniqueDates.has(nextDayStr)) {
+                hasWeekend = true;
+                break;
+            }
         }
     }
     if (hasWeekend) unlocked.add(75);
+
     if (logs.some(l => l.userNotes && l.userNotes.trim().length > 0)) unlocked.add(55);
+
     const notesCount = logs.filter(l => l.userNotes && l.userNotes.trim().length > 0).length;
     if (notesCount >= 10) unlocked.add(56);
+
     if (logs.length > 0) {
         const sorted = [...logs].sort((a,b) => a.timestamp - b.timestamp);
         const first = sorted[0].timestamp;
         const last = sorted[sorted.length-1].timestamp;
         const diffDays = (last - first) / (1000 * 3600 * 24);
-        if (diffDays >= 6) unlocked.add(92); if (diffDays >= 29) unlocked.add(93);
+        
+        if (diffDays >= 6) unlocked.add(92); 
+        if (diffDays >= 29) unlocked.add(93);
     }
+    
     if (unlocked.has(33) && unlocked.has(8)) unlocked.add(117);
+
     return unlocked;
 };
 
 const getAdvancedStats = (logs: ReadingLog[], chaptersMap: ReadChaptersMap, totalRead: number) => {
   if (logs.length < 2) return { avgChaptersPerDay: 0, projection: { date: 'Indefinido', daysRemaining: 0 } };
+  
   const sortedLogs = [...logs].sort((a, b) => a.timestamp - b.timestamp);
   const startDate = sortedLogs[0].timestamp;
   const lastDate = sortedLogs[sortedLogs.length - 1].timestamp;
+  
   const msPerDay = 1000 * 60 * 60 * 24;
   const daysElapsed = Math.max(1, (lastDate - startDate) / msPerDay);
+  
   const avgChaptersPerDay = totalRead / daysElapsed;
+  
   const remainingChapters = TOTAL_CHAPTERS_BIBLE - totalRead;
   const daysRemaining = avgChaptersPerDay > 0 ? Math.ceil(remainingChapters / avgChaptersPerDay) : 0;
-  const projectionDate = new Date(); projectionDate.setDate(projectionDate.getDate() + daysRemaining);
-  return { avgChaptersPerDay, projection: { date: avgChaptersPerDay > 0 ? projectionDate.toLocaleDateString('pt-BR') : 'Indefinido', daysRemaining } };
+  
+  const projectionDate = new Date();
+  projectionDate.setDate(projectionDate.getDate() + daysRemaining);
+  
+  return {
+    avgChaptersPerDay,
+    projection: {
+      date: avgChaptersPerDay > 0 ? projectionDate.toLocaleDateString('pt-BR') : 'Indefinido',
+      daysRemaining
+    }
+  };
 };
 
 const getStreakMessage = (streak: number) => {
-    if (streak === 0) return "Comece hoje!"; if (streak < 3) return "Bom começo!"; if (streak < 7) return "Continue assim!"; if (streak < 30) return "Impressionante!"; return "Lendário!";
+    if (streak === 0) return "Comece hoje!";
+    if (streak < 3) return "Bom começo!";
+    if (streak < 7) return "Continue assim!";
+    if (streak < 30) return "Impressionante!";
+    return "Lendário!";
 };
 
 const calculateSimulationDate = (pace: number, totalRead: number) => {
     const remaining = TOTAL_CHAPTERS_BIBLE - totalRead;
     if (remaining <= 0) return "Concluído!";
     const days = Math.ceil(remaining / pace);
-    const date = new Date(); date.setDate(date.getDate() + days);
+    const date = new Date();
+    date.setDate(date.getDate() + days);
     return date.toLocaleDateString('pt-BR');
 };
 
-// ... (Rest of helper components: NotificationToast, ConfirmationModal, etc.)
 const handleSendPasswordReset = async (email: string) => {
     if (!confirm(`Enviar email de redefinição de senha para ${email}?`)) return;
-    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
-    if (error) alert("Erro ao enviar email: " + error.message); else alert("Email de redefinição enviado!");
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+         redirectTo: window.location.origin,
+    });
+    if (error) alert("Erro ao enviar email: " + error.message);
+    else alert("Email de redefinição enviado!");
 };
 
+// --- Custom Toast Component ---
 const NotificationToast = ({ message, type, onClose }: { message: string, type: 'success' | 'error', onClose: () => void }) => {
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -298,6 +370,7 @@ const NotificationToast = ({ message, type, onClose }: { message: string, type: 
   );
 };
 
+// --- Confirmation Modal ---
 const ConfirmationModal = ({ isOpen, onClose, onConfirm, title, message, confirmText = "Confirmar", cancelText = "Cancelar", isDestructive = false }: { isOpen: boolean, onClose: () => void, onConfirm: () => void, title: string, message: string, confirmText?: string, cancelText?: string, isDestructive?: boolean }) => {
   if (!isOpen) return null;
   
@@ -325,6 +398,7 @@ const ConfirmationModal = ({ isOpen, onClose, onConfirm, title, message, confirm
   );
 };
 
+// ... (TransferAdminModal, StatCard, BibleReaderModal, LoginScreen, ChangePasswordModal, PlanSelectionModal, UserInspectorModal remain unchanged)
 const TransferAdminModal = ({ isOpen, onClose, onConfirm, members, successorId, setSuccessorId }: { isOpen: boolean, onClose: () => void, onConfirm: () => void, members: GroupMember[], successorId: string, setSuccessorId: (id: string) => void }) => {
   if (!isOpen) return null;
 
@@ -377,6 +451,7 @@ const TransferAdminModal = ({ isOpen, onClose, onConfirm, members, successorId, 
   );
 };
 
+// ... (Other helpers same)
 const StatCard = ({ title, value, subtext, icon, highlight = false, colorClass = "bg-indigo-600", progress }: { title: string; value: string | number; subtext?: string; icon: React.ReactNode, highlight?: boolean, colorClass?: string, progress?: number }) => (
   <div className={`rounded-xl p-6 shadow-sm border flex flex-col justify-between transition-colors ${highlight ? `${colorClass} border-transparent text-white` : 'bg-white dark:bg-slate-900 border-gray-100 dark:border-slate-800'}`}>
     <div className="flex items-start justify-between w-full">
@@ -397,7 +472,6 @@ const StatCard = ({ title, value, subtext, icon, highlight = false, colorClass =
   </div>
 );
 
-// ... (BibleReaderModal, LoginScreen, ChangePasswordModal, PlanSelectionModal, UserInspectorModal)
 const BibleReaderModal = ({ book, chapter, onClose, onNext, onPrev }: { book: BibleBook, chapter: number, onClose: () => void, onNext?: () => void, onPrev?: () => void }) => {
   const [text, setText] = useState<string>('');
   const [verses, setVerses] = useState<{number: number, text: string}[]>([]);
@@ -452,6 +526,7 @@ const BibleReaderModal = ({ book, chapter, onClose, onNext, onPrev }: { book: Bi
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
       <div className="bg-white dark:bg-slate-900 w-full max-w-3xl h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-gray-200 dark:border-slate-700 transition-colors">
         
+        {/* Header */}
         <div className="p-4 border-b border-gray-100 dark:border-slate-800 flex justify-between items-center bg-gray-50 dark:bg-slate-950">
           <div className="flex items-center gap-4">
              <button onClick={onPrev} disabled={!onPrev} className="p-2 hover:bg-gray-200 dark:hover:bg-slate-800 rounded-full disabled:opacity-30 transition-colors">
@@ -470,6 +545,7 @@ const BibleReaderModal = ({ book, chapter, onClose, onNext, onPrev }: { book: Bi
           </button>
         </div>
 
+        {/* Content */}
         <div className="flex-1 overflow-y-auto p-6 md:p-8 bg-white dark:bg-slate-900 text-gray-900 dark:text-gray-100">
           {loading ? (
              <div className="h-full flex flex-col items-center justify-center gap-3 text-gray-400 dark:text-gray-500">
@@ -501,6 +577,7 @@ const BibleReaderModal = ({ book, chapter, onClose, onNext, onPrev }: { book: Bi
           )}
         </div>
 
+        {/* Footer Hint */}
         <div className="p-3 border-t border-gray-100 dark:border-slate-800 bg-gray-50 dark:bg-slate-950 text-center">
             <p className="text-xs text-gray-400">Não se esqueça de marcar como lido após terminar.</p>
         </div>
@@ -510,10 +587,11 @@ const BibleReaderModal = ({ book, chapter, onClose, onNext, onPrev }: { book: Bi
 };
 
 const LoginScreen = ({ onLogin }: { onLogin: (user: any) => void }) => {
+  // ... (LoginScreen implementation same as before)
   const [authMode, setAuthMode] = useState<'login' | 'register' | 'forgot'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [name, setName] = useState('');
+  const [name, setName] = useState(''); // Para cadastro
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [loading, setLoading] = useState(false);
@@ -890,13 +968,17 @@ const UserInspectorModal = ({ userId, allLogs, onClose }: { userId: string, allL
     );
 };
 
-export default function App() {
+// --- Main App Component ---
+
+const App: React.FC = () => {
+  // ... (State variables same as before)
   const [user, setUser] = useState<any>(null); 
   const [loadingAuth, setLoadingAuth] = useState(true);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
   
   const [notification, setNotification] = useState<{message: string, type: 'success' | 'error'} | null>(null);
 
+  // --- Confirmation Modal State ---
   const [confirmModal, setConfirmModal] = useState<{
       isOpen: boolean;
       title: string;
@@ -905,7 +987,7 @@ export default function App() {
       isDestructive?: boolean;
   }>({ isOpen: false, title: '', message: '', onConfirm: () => {} });
 
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'tracker' | 'history' | 'community' | 'admin' | 'achievements' | 'support' | 'devotionals'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'tracker' | 'history' | 'community' | 'admin' | 'achievements' | 'support'>('dashboard');
   const [selectedBookId, setSelectedBookId] = useState<string | null>(null);
   
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
@@ -936,6 +1018,7 @@ export default function App() {
   const [editingNews, setEditingNews] = useState('');
   const [showNews, setShowNews] = useState(true);
 
+  // --- CMS States ---
   const [appTexts, setAppTexts] = useState<Record<string, string>>(DEFAULT_TEXTS);
   const [editingTexts, setEditingTexts] = useState<Record<string, string>>(DEFAULT_TEXTS);
   const [isSavingTexts, setIsSavingTexts] = useState(false);
@@ -950,10 +1033,12 @@ export default function App() {
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [tempNoteContent, setTempNoteContent] = useState('');
 
+  // --- Community State ---
   const [userGroups, setUserGroups] = useState<Group[]>([]);
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
   const [isAddingGroup, setIsAddingGroup] = useState(false);
 
+  // --- Community Admin Features State ---
   const [memberToKick, setMemberToKick] = useState<GroupMember | null>(null);
   const [isTransferringAdmin, setIsTransferringAdmin] = useState(false);
   const [successorId, setSuccessorId] = useState<string>('');
@@ -964,40 +1049,38 @@ export default function App() {
   const [joinCode, setJoinCode] = useState('');
   const [newGroupName, setNewGroupName] = useState('');
 
+  // --- New States for Features ---
   const [dailyVerse, setDailyVerse] = useState<{text: string, ref: string} | null>(null);
-  const [simulatedPace, setSimulatedPace] = useState<number>(3); 
+  const [simulatedPace, setSimulatedPace] = useState<number>(3); // Capítulos por dia default para simulação
   const [isGoldenTheme, setIsGoldenTheme] = useState(false);
 
+  // --- Dynamic Plans State ---
   const [customPlans, setCustomPlans] = useState<Record<string, PlanConfig>>({});
   const [availablePlans, setAvailablePlans] = useState<Record<string, PlanConfig>>({});
   
+  // Plan Creator State
   const [newPlanForm, setNewPlanForm] = useState<Partial<PlanConfig>>({ scope: 'ALL', days: 30, title: '', description: '' });
   const [selectedBooksForPlan, setSelectedBooksForPlan] = useState<string[]>([]);
   const [isCreatingPlan, setIsCreatingPlan] = useState(false);
 
+  // Admin Inspector State
   const [inspectingUserId, setInspectingUserId] = useState<string | null>(null);
   const [userToDelete, setUserToDelete] = useState<{id: string, name: string} | null>(null);
-
-  const [devotionals, setDevotionals] = useState<Devotional[]>([]);
-  const [isGeneratingDevotional, setIsGeneratingDevotional] = useState(false);
-  const [devotionalTranscript, setDevotionalTranscript] = useState('');
-  const [devotionalForm, setDevotionalForm] = useState<Partial<Devotional> | null>(null);
-  const [isEditingDevotional, setIsEditingDevotional] = useState(false);
-  const [expandedDevotionalId, setExpandedDevotionalId] = useState<string | null>(null);
 
   const showNotification = useCallback((message: string, type: 'success' | 'error' = 'success') => {
       setNotification({ message, type });
   }, []);
 
+  // --- CMS Helper ---
   const t = useCallback((key: string) => {
     return appTexts[key] || DEFAULT_TEXTS[key] || key;
   }, [appTexts]);
 
-  // ... (rest of helper functions: isAdmin, isGroupOwner, effects, API calls - same as before)
   const isAdmin = useMemo(() => {
     return user && ADMIN_EMAILS.includes(user.email);
   }, [user]);
 
+  // Check if current user is owner of the active group
   const isGroupOwner = useMemo(() => {
       if (!user || !activeGroupId) return false;
       const group = userGroups.find(g => g.id === activeGroupId);
@@ -1008,7 +1091,7 @@ export default function App() {
     const root = window.document.documentElement;
     root.classList.remove('light', 'dark', 'golden');
     if (isGoldenTheme) {
-        root.classList.add('golden', 'dark'); 
+        root.classList.add('golden', 'dark'); // Golden implies dark mode base
         localStorage.setItem('theme', 'golden');
     } else {
         root.classList.add(theme);
@@ -1017,26 +1100,22 @@ export default function App() {
   }, [theme, isGoldenTheme]);
 
   useEffect(() => {
+      // Load Daily Verse on Mount
       const randomVerse = DAILY_VERSES[Math.floor(Math.random() * DAILY_VERSES.length)];
       setDailyVerse(randomVerse);
       
+      // Check local storage for golden theme preference (if saved as 'golden' in theme)
       if (localStorage.getItem('theme') === 'golden') {
           setIsGoldenTheme(true);
       }
       
+      // Load Texts
       fetchAppTexts();
-      fetchDevotionals();
   }, []);
 
-  const fetchDevotionals = async () => {
-    const { data, error } = await supabase.from('devotionals')
-        .select('*')
-        .order('created_at', { ascending: false });
-    
-    if (data) setDevotionals(data as Devotional[]);
-  };
-
   const fetchAppTexts = async () => {
+    // Assuming a table 'app_config' where we store text overrides as individual rows or a big JSON
+    // Strategy: Store individual keys as rows { key: 'nav_dashboard', value: '...' }
     const { data, error } = await supabase.from('app_config').select('key, value').in('key', Object.keys(DEFAULT_TEXTS));
     if (data) {
         const loadedTexts = { ...DEFAULT_TEXTS };
@@ -1055,13 +1134,18 @@ export default function App() {
         value: editingTexts[key]
     }));
 
+    // Reset default values if they match default (delete from db)
     const resets = Object.keys(editingTexts).filter(key => editingTexts[key] === DEFAULT_TEXTS[key]).map(key => key);
 
+    // Upsert changes
     if (updates.length > 0) {
         const { error } = await supabase.from('app_config').upsert(updates, { onConflict: 'key' });
         if(error) console.error("Error saving texts", error);
     }
     
+    // Delete resets (optional, or just update to default)
+    // Simpler: Just upsert everything that is different from default, but here we keep it simple.
+    // If we want to really "reset" we should delete the row. 
     if (resets.length > 0) {
         await supabase.from('app_config').delete().in('key', resets);
     }
@@ -1074,6 +1158,7 @@ export default function App() {
   const handleRestoreDefaults = async () => {
       if(!confirm('Tem certeza que deseja restaurar todos os textos originais?')) return;
       setIsSavingTexts(true);
+      // Delete all text keys from DB
       await supabase.from('app_config').delete().in('key', Object.keys(DEFAULT_TEXTS));
       setAppTexts(DEFAULT_TEXTS);
       setEditingTexts(DEFAULT_TEXTS);
@@ -1082,6 +1167,7 @@ export default function App() {
   };
 
   useEffect(() => {
+     // Merge static plans with custom plans
      const staticPlans: Record<string, PlanConfig> = {};
      Object.entries(PLANS_CONFIG).forEach(([k, v]) => {
          staticPlans[k] = { ...v, id: k, is_active: true };
@@ -1109,7 +1195,16 @@ export default function App() {
         const { data: { session }, error } = await supabase.auth.getSession();
         
         if (error) {
-           console.error("Session check error:", error.message);
+           if (error.message.includes('Refresh Token') || error.message.includes('refresh_token')) {
+             console.warn("Invalid refresh token, signing out to clear state.");
+             Object.keys(localStorage).forEach(key => {
+                 if (key.startsWith('sb-')) localStorage.removeItem(key);
+             });
+             await supabase.auth.signOut().catch(() => {});
+             setUser(null);
+           } else {
+             console.error("Session check error:", error.message);
+           }
         }
         setUser(session?.user ?? null);
       } catch (err) {
@@ -1125,7 +1220,7 @@ export default function App() {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
-      const e = event as string; 
+      const e = event as string;
       if (e === 'SIGNED_OUT' || e === 'USER_DELETED') {
         setUser(null);
       } else if (e === 'TOKEN_REFRESH_REVOKED') {
@@ -1177,18 +1272,22 @@ export default function App() {
       }
   };
 
+  // REFACTORED: Removed activeGroupId from dependency array to prevent auto-refetching
   const fetchGroupData = useCallback(async () => {
       if(!user) return;
       setIsGroupLoading(true);
+      // 1. Fetch all memberships for the user
       const { data: memberData, error } = await supabase.from('group_members').select('group_id').eq('user_id', user.id);
       
       if(memberData && memberData.length > 0) {
           const groupIds = memberData.map(m => m.group_id);
           
+          // 2. Fetch Group Details for all groups
           const { data: groupsData } = await supabase.from('groups').select('*').in('id', groupIds);
           
           if (groupsData) {
               setUserGroups(groupsData);
+              // Set active group if none selected
               setActiveGroupId(prevId => {
                   if (!prevId || !groupsData.find(g => g.id === prevId)) {
                       return groupsData[0].id;
@@ -1201,8 +1300,9 @@ export default function App() {
           setActiveGroupId(null);
       }
       setIsGroupLoading(false);
-  }, [user]);
+  }, [user]); // activeGroupId removed from dependency array
 
+  // Fetch details for the active group
   const fetchGroupDetails = useCallback(async () => {
       if (!activeGroupId) {
           setGroupMembers([]);
@@ -1210,9 +1310,11 @@ export default function App() {
           return;
       }
 
+      // Fetch Members
       const { data: allMembers } = await supabase.from('group_members').select('*').eq('group_id', activeGroupId);
       setGroupMembers(allMembers || []);
 
+      // Fetch Activity Feed
       const { data: activityData } = await supabase.from('group_activities')
             .select('*')
             .eq('group_id', activeGroupId)
@@ -1221,13 +1323,16 @@ export default function App() {
       setGroupActivity(activityData || []);
   }, [activeGroupId]);
 
+  // Trigger details fetch when active group changes
   useEffect(() => {
       if (user && activeGroupId) {
           fetchGroupDetails();
       }
   }, [user, activeGroupId, fetchGroupDetails]);
 
+  // Fetch Custom Plans
   const fetchCustomPlans = useCallback(async () => {
+     // NOTE: We assume reading_plans table exists. If not, this might fail silently or we just use local state for demo.
      const { data, error } = await supabase.from('reading_plans').select('*').eq('is_active', true);
      if (data) {
          const planMap: Record<string, PlanConfig> = {};
@@ -1243,11 +1348,12 @@ export default function App() {
       fetchData();
       fetchNews();
       fetchGroupData();
-      fetchCustomPlans(); 
+      fetchCustomPlans(); // Try to load custom plans
       if (isAdmin) fetchAdminData();
     }
   }, [user, fetchData, isAdmin, fetchGroupData, fetchCustomPlans]);
 
+  // ... (processLogs, unlockedAchievements, fetchAdminData, adminStats same as before)
   const processLogs = (data: any[], setLogs: Function, setMap: Function) => {
       const logs = data.map((item: any) => ({
         id: item.id,
@@ -1292,8 +1398,9 @@ export default function App() {
       const uniqueUsers = new Set(adminLogs.map(l => l.user_email)).size;
       const totalReadings = adminLogs.length;
       
+      // Calculate books completed globally (approx)
       let booksCompleted = 0;
-      const userReadMap: Record<string, Record<string, number>> = {}; 
+      const userReadMap: Record<string, Record<string, number>> = {}; // user -> book -> count
       adminLogs.forEach(log => {
           if (!userReadMap[log.user_id]) userReadMap[log.user_id] = {};
           if (!userReadMap[log.user_id][log.book_id]) userReadMap[log.user_id][log.book_id] = 0;
@@ -1307,10 +1414,12 @@ export default function App() {
           });
       });
 
+      // Calculate medals
       let totalMedals = 0;
       const userLogsMap: Record<string, ReadingLog[]> = {};
 
       adminLogs.forEach((rawLog: any) => {
+          // Normalize user_id
           const uid = rawLog.user_id;
           if(!uid) return;
           
@@ -1336,6 +1445,7 @@ export default function App() {
           const map: ReadChaptersMap = {};
           logs.forEach(l => {
               if (!map[l.bookId]) map[l.bookId] = [];
+              // Use Set to ensure uniqueness per book
               const uniqueChapters = new Set([...map[l.bookId], ...l.chapters]);
               map[l.bookId] = Array.from(uniqueChapters);
           });
@@ -1354,10 +1464,11 @@ export default function App() {
       };
   }, [adminLogs]);
 
-  // ... (Plan handlers and logic)
+  // --- Handlers ---
   const handleSelectPlan = (config: PlanConfig) => {
     if (!user) return;
     
+    // Calculate daily target based on config
     let totalChaptersInScope = 0;
     const bookList = config.scope === 'CUSTOM' ? (config.books || []) : BIBLE_BOOKS.map(b => b.id);
     
@@ -1393,6 +1504,7 @@ export default function App() {
     showNotification(`Plano "${config.title}" ativado com sucesso!`, 'success');
   };
 
+  // --- Wrapper Functions for Modal ---
   const handleAbandonPlanRequest = () => {
       setConfirmModal({
           isOpen: true,
@@ -1409,6 +1521,7 @@ export default function App() {
       showNotification("Plano removido. Você está livre para escolher outro.", "success");
   };
 
+  // --- Admin User Deletion ---
   const handleDeleteUserRequest = (uid: string, name: string) => {
       setUserToDelete({ id: uid, name });
       setConfirmModal({
@@ -1422,24 +1535,17 @@ export default function App() {
 
   const executeDeleteUser = async () => {
       if (!userToDelete) return;
-      
-      setIsAdminLoading(true);
 
+      // Chama a função RPC criada no Supabase
       const { error } = await supabase.rpc('delete_user_by_admin', { target_user_id: userToDelete.id });
 
       if (error) {
           console.error("Erro ao excluir usuário:", error);
-          if (error.message?.includes('function') || error.code === '42883') { 
-             alert("Atenção: A função de banco de dados necessária não foi encontrada.\n\nVocê precisa rodar o código SQL no painel do Supabase para que a exclusão funcione.");
-          } else {
-             showNotification('Erro ao excluir usuário: ' + error.message, 'error');
-          }
+          showNotification('Erro ao excluir usuário. Verifique se a função RPC foi criada no Banco de Dados.', 'error');
       } else {
           showNotification(`Usuário ${userToDelete.name} excluído com sucesso.`, 'success');
-          setAdminLogs(prev => prev.filter(l => l.user_id !== userToDelete.id));
-          fetchAdminData(); 
+          fetchAdminData(); // Refresh list
       }
-      setIsAdminLoading(false);
       setUserToDelete(null);
   };
 
@@ -1502,8 +1608,10 @@ export default function App() {
           is_active: true
       };
 
+      // Tentar salvar no banco (assumindo tabela reading_plans)
       const { error } = await supabase.from('reading_plans').insert(newPlanConfig);
       
+      // Mesmo se der erro (tabela não existe), atualizamos localmente para a sessão
       setCustomPlans(prev => ({ ...prev, [planId]: newPlanConfig }));
       
       if (error) {
@@ -1527,82 +1635,7 @@ export default function App() {
     setActiveTab('tracker');
   };
 
-  const handleGenerateDevotional = async () => {
-      if(!devotionalTranscript.trim()) {
-          showNotification("Insira a transcrição para gerar o devocional.", 'error');
-          return;
-      }
-      setIsGeneratingDevotional(true);
-      try {
-          const result = await generateDevotionalFromTranscript(devotionalTranscript);
-          setDevotionalForm({
-              ...result,
-              status: 'draft',
-              transcript_source: devotionalTranscript
-          });
-          setIsEditingDevotional(true);
-      } catch (e: any) {
-          // Provide more context for API key errors
-          if (e.message?.includes('403') || e.message?.includes('PERMISSION_DENIED')) {
-             showNotification("Erro 403: Chave de API inválida ou expirada. Verifique suas configurações.", 'error');
-          } else {
-             showNotification("Erro ao gerar: " + e.message, 'error');
-          }
-      } finally {
-          setIsGeneratingDevotional(false);
-      }
-  };
-
-  const handleSaveDevotional = async (status: 'draft' | 'published') => {
-      if(!devotionalForm || !devotionalForm.title || !devotionalForm.content) return;
-      
-      // FIX: Workaround for missing 'conclusion' column in DB
-      // We merge conclusion into content and exclude it from the payload
-      const contentWithConclusion = devotionalForm.conclusion 
-        ? `${devotionalForm.content}\n\n**Conclusão/Oração:**\n${devotionalForm.conclusion}`
-        : devotionalForm.content;
-
-      // Create payload excluding 'conclusion' and 'id'
-      const payload: any = {
-          title: devotionalForm.title,
-          verse_text: devotionalForm.verse_text,
-          verse_reference: devotionalForm.verse_reference,
-          content: contentWithConclusion,
-          status: status,
-          transcript_source: devotionalForm.transcript_source,
-          updated_at: new Date().toISOString()
-      };
-
-      let error;
-      if (devotionalForm.id) {
-          const { error: err } = await supabase.from('devotionals').update(payload).eq('id', devotionalForm.id);
-          error = err;
-      } else {
-          const { error: err } = await supabase.from('devotionals').insert(payload);
-          error = err;
-      }
-
-      if(error) {
-          showNotification("Erro ao salvar: " + error.message, 'error');
-      } else {
-          showNotification(status === 'published' ? "Devocional publicado!" : "Rascunho salvo.", 'success');
-          setIsEditingDevotional(false);
-          setDevotionalForm(null);
-          setDevotionalTranscript('');
-          fetchDevotionals();
-      }
-  };
-
-  const handleDeleteDevotional = async (id: string) => {
-      if(!confirm("Tem certeza que deseja excluir este devocional?")) return;
-      const { error } = await supabase.from('devotionals').delete().eq('id', id);
-      if(error) showNotification("Erro ao excluir", 'error');
-      else {
-          showNotification("Excluído com sucesso", 'success');
-          fetchDevotionals();
-      }
-  };
-
+  // ... (rest of helper functions remain same) ...
   const totalReadCount = useMemo(() => {
     let count = 0;
     Object.values(readChapters).forEach((chapters) => {
@@ -1635,6 +1668,7 @@ export default function App() {
     return streak;
   }, [readingLogs]);
 
+  // ... (Other handlers like logout, saveSession, etc. remain same) ...
   const handleLogout = async () => {
     await supabase.auth.signOut();
     setUser(null); 
@@ -1662,6 +1696,7 @@ export default function App() {
     const prevChaptersRead = readChapters[selectedBookId]?.length || 0;
     const prevAchievements = new Set(unlockedAchievements);
     
+    // Log reading primarily (keeps personal history)
     const logEntry: any = {
         user_id: user.id,
         user_email: user.email, 
@@ -1672,7 +1707,7 @@ export default function App() {
         chapters: sessionSelectedChapters.sort((a, b) => a - b),
         ai_reflection: '',
         user_notes: '',
-        group_id: activeGroupId 
+        group_id: activeGroupId // Stores the currently active group in the personal log, or null
     };
     
     const { error } = await supabase.from('reading_logs').insert(logEntry).select().single();
@@ -1681,18 +1716,23 @@ export default function App() {
     } else {
         await fetchData();
         
+        // Broadcast activity to ALL user groups
         if (userGroups.length > 0) {
             const chaptersJustRead = sessionSelectedChapters.length;
             const bookIsComplete = (prevChaptersRead + chaptersJustRead) >= book.chapters;
 
             for (const group of userGroups) {
+                // Log Reading Activity
                 await logGroupActivity(group.id, 'READING', { bookId: selectedBookId, chapters: sessionSelectedChapters, text: '' });
                 
+                // Log Book Completion if applicable
                 if (bookIsComplete) {
                      await logGroupActivity(group.id, 'BOOK_COMPLETE', { bookId: selectedBookId });
                 }
             }
             
+            // Update last active status for user in group_members table
+            // We do this for all groups user belongs to
             const groupIds = userGroups.map(g => g.id);
             await supabase.from('group_members')
                 .update({ last_active: new Date().toISOString() })
@@ -1717,9 +1757,11 @@ export default function App() {
         data: data,
         created_at: new Date().toISOString()
     });
-    if(!error && groupId === activeGroupId) fetchGroupDetails(); 
+    if(!error && groupId === activeGroupId) fetchGroupDetails(); // Refresh if looking at this group
   };
   
+  // --- Community Admin Actions ---
+
   const handleKickMemberRequest = (member: GroupMember) => {
       setMemberToKick(member);
       setConfirmModal({
@@ -1760,6 +1802,7 @@ export default function App() {
   const executeDeleteGroup = async () => {
       if (!activeGroupId) return;
       setIsGroupLoading(true);
+      // Assuming Cascade Delete is set up on DB for members/activities linked to group
       const { error } = await supabase.from('groups').delete().eq('id', activeGroupId);
 
       if (error) {
@@ -1777,19 +1820,24 @@ export default function App() {
   const handleLeaveGroupRequest = () => {
       if (!activeGroupId || !user) return;
 
+      // Check if user is the Owner/Admin of this specific group
       if (isGroupOwner) {
+          // If only 1 member (the owner), suggest deleting
           if (groupMembers.length <= 1) {
               setConfirmModal({
                   isOpen: true,
                   title: 'Sair e Excluir',
                   message: 'Você é o único membro. Sair irá excluir a comunidade permanentemente.',
-                  onConfirm: executeDeleteGroup, 
+                  onConfirm: executeDeleteGroup, // Re-use delete logic
                   isDestructive: true
               });
           } else {
+              // If owner leaves but others remain, MUST transfer admin
               setIsTransferringAdmin(true);
           }
       } else {
+          // Regular member leaving
+          // Capture current activeGroupId to pass to execution
           const targetGroupId = activeGroupId;
           setConfirmModal({
               isOpen: true,
@@ -1805,6 +1853,7 @@ export default function App() {
       if (!activeGroupId || !successorId) return;
       setIsGroupLoading(true);
 
+      // 1. Update Group Owner
       const { error: groupError } = await supabase
           .from('groups')
           .update({ owner_id: successorId })
@@ -1816,18 +1865,21 @@ export default function App() {
           return;
       }
 
+      // 2. Update Members Roles (Promote successor)
       await supabase
           .from('group_members')
           .update({ role: 'admin' })
           .eq('group_id', activeGroupId)
           .eq('user_id', successorId);
 
+      // 3. Remove Current User
       await executeLeaveGroup(activeGroupId);
       
       setSuccessorId('');
       setIsTransferringAdmin(false);
   };
 
+  // REFACTORED: Accept targetGroupId to ensure correct group is deleted regardless of current state
   const executeLeaveGroup = async (targetGroupId: string) => {
       if (!user || !targetGroupId) return;
       setIsGroupLoading(true);
@@ -1840,10 +1892,13 @@ export default function App() {
       if (error) {
           showNotification('Erro ao sair do grupo: ' + error.message, 'error');
       } else {
+          // Remove from local list safely using functional update to ensure we have latest list
           setUserGroups(prevGroups => {
               const updatedGroups = prevGroups.filter(g => g.id !== targetGroupId);
               
+              // Determine new active group
               if (updatedGroups.length > 0) {
+                  // If we deleted the active group, switch to the first one available
                   setActiveGroupId(currentActive => currentActive === targetGroupId ? updatedGroups[0].id : currentActive);
               } else {
                   setActiveGroupId(null);
@@ -1856,6 +1911,7 @@ export default function App() {
       setIsGroupLoading(false);
   };
 
+  // ... (Other handlers unchanged: handleSaveNote, handleSupportSubmit, handleSaveNews, startEditingNote, handleToggleTicketStatus, handleShareApp, handleCreateGroup, handleJoinGroup, handleReaction)
   const handleSaveNote = async (logId: string) => {
       const { error } = await supabase.from('reading_logs').update({ user_notes: tempNoteContent }).eq('id', logId);
       if (!error) { await fetchData(); if(isAdmin) fetchAdminData(); setEditingNoteId(null); setTempNoteContent(''); showNotification('Nota salva!', 'success'); } 
@@ -1894,6 +1950,7 @@ export default function App() {
       if(error) showNotification('Erro ao criar: ' + error.message, 'error'); 
       else { 
           await supabase.from('group_members').insert({ group_id: group.id, user_id: user.id, user_name: user.user_metadata?.full_name || 'Admin', role: 'admin', last_active: new Date().toISOString() }); 
+          // Update local state to include new group and switch to it
           setUserGroups([...userGroups, group]);
           setActiveGroupId(group.id);
           setIsAddingGroup(false);
@@ -1906,6 +1963,7 @@ export default function App() {
       const { data: group, error: searchError } = await supabase.from('groups').select('*').eq('code', joinCode.toUpperCase()).single();
       if(searchError || !group) showNotification('Grupo não encontrado.', 'error');
       else { 
+          // Check if already member
           if (userGroups.some(g => g.id === group.id)) {
               showNotification('Você já é membro deste grupo!', 'error');
               setActiveGroupId(group.id);
@@ -1919,6 +1977,7 @@ export default function App() {
               if(joinError.message.includes('duplicate')) showNotification('Você já está neste grupo!', 'error'); 
               else showNotification('Erro ao entrar: ' + joinError.message, 'error'); 
           } else {
+              // Update local state
               setUserGroups([...userGroups, group]);
               setActiveGroupId(group.id);
               setIsAddingGroup(false);
@@ -1935,797 +1994,1106 @@ export default function App() {
       await supabase.from('group_activities').update({ [column]: newCount }).eq('id', activityId);
   };
 
-  const renderDevotionals = () => {
-      if(isEditingDevotional) {
-          return (
-              <div className="max-w-4xl mx-auto animate-fade-in pb-12">
-                   <div className="flex justify-between items-center mb-6">
-                       <h2 className="text-2xl font-bold font-serif text-gray-900 dark:text-white">Criar Devocional</h2>
-                       <button onClick={() => { setIsEditingDevotional(false); setDevotionalForm(null); }} className="text-gray-500 hover:text-gray-900 dark:hover:text-white">
-                           <X size={24} />
-                       </button>
-                   </div>
-                   
-                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                       <div className="md:col-span-1 space-y-4">
-                           <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-gray-200 dark:border-slate-800">
-                               <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Transcrição / Fonte</label>
-                               <textarea 
-                                   className="w-full h-[500px] text-xs p-3 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg outline-none resize-none"
-                                   value={devotionalTranscript}
-                                   onChange={e => setDevotionalTranscript(e.target.value)}
-                                   placeholder="Cole aqui o texto da pregação..."
-                               ></textarea>
-                               <button 
-                                   onClick={handleGenerateDevotional}
-                                   disabled={isGeneratingDevotional}
-                                   className="w-full mt-2 bg-indigo-600 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-                               >
-                                   {isGeneratingDevotional ? <Loader2 className="animate-spin" /> : <Sparkles size={18} />}
-                                   Gerar com IA
-                               </button>
-                           </div>
-                       </div>
-                       
-                       <div className="md:col-span-2 space-y-4">
-                           <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-gray-200 dark:border-slate-800 shadow-sm">
-                               <div className="space-y-4">
-                                   <div>
-                                       <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Título</label>
-                                       <input 
-                                           type="text" 
-                                           value={devotionalForm?.title || ''}
-                                           onChange={e => setDevotionalForm({...devotionalForm, title: e.target.value})}
-                                           className="w-full text-xl font-bold font-serif p-2 border-b border-gray-200 dark:border-slate-700 bg-transparent outline-none dark:text-white"
-                                           placeholder="Título do Devocional"
-                                       />
-                                   </div>
-                                   <div className="grid grid-cols-2 gap-4">
-                                        <div>
-                                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Ref. Bíblica</label>
-                                            <input 
-                                                type="text" 
-                                                value={devotionalForm?.verse_reference || ''}
-                                                onChange={e => setDevotionalForm({...devotionalForm, verse_reference: e.target.value})}
-                                                className="w-full p-2 bg-gray-50 dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 outline-none text-sm"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Texto do Versículo</label>
-                                            <input 
-                                                type="text" 
-                                                value={devotionalForm?.verse_text || ''}
-                                                onChange={e => setDevotionalForm({...devotionalForm, verse_text: e.target.value})}
-                                                className="w-full p-2 bg-gray-50 dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 outline-none text-sm italic"
-                                            />
-                                        </div>
-                                   </div>
-                                   <div>
-                                       <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Reflexão</label>
-                                       <textarea 
-                                           value={devotionalForm?.content || ''}
-                                           onChange={e => setDevotionalForm({...devotionalForm, content: e.target.value})}
-                                           className="w-full h-80 p-4 bg-gray-50 dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 outline-none text-base leading-relaxed resize-none font-serif text-gray-800 dark:text-gray-200"
-                                           placeholder="O conteúdo gerado pela IA aparecerá aqui..."
-                                       ></textarea>
-                                   </div>
-                                   <div>
-                                       <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Conclusão / Oração</label>
-                                       <textarea 
-                                           value={devotionalForm?.conclusion || ''}
-                                           onChange={e => setDevotionalForm({...devotionalForm, conclusion: e.target.value})}
-                                           className="w-full h-24 p-3 bg-gray-50 dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 outline-none text-sm resize-none italic"
-                                           placeholder="Conclusão..."
-                                       ></textarea>
-                                   </div>
-                               </div>
-                               <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-100 dark:border-slate-800">
-                                   <button 
-                                       onClick={() => handleSaveDevotional('draft')}
-                                       className="px-4 py-2 text-sm font-bold text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
-                                   >
-                                       Salvar Rascunho
-                                   </button>
-                                   <button 
-                                       onClick={() => handleSaveDevotional('published')}
-                                       className="px-6 py-2 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-lg transition-colors flex items-center gap-2"
-                                   >
-                                       <Send size={16} /> Publicar
-                                   </button>
-                               </div>
-                           </div>
-                       </div>
-                   </div>
-              </div>
-          )
-      }
-
-      const publishedDevotionals = devotionals.filter(d => d.status === 'published' || isAdmin);
-
+  // --- Render Functions (Simplified for brevity, complex logic stays) ---
+  const renderTracker = () => { /* ... existing tracker code ... */ 
+     if (!selectedBookId) {
       return (
-          <div className="max-w-4xl mx-auto animate-fade-in pb-12">
-              <div className="flex justify-between items-end mb-8">
-                  <div>
-                      <div className="flex items-center gap-3 mb-2">
-                           <div className="bg-amber-100 dark:bg-amber-900/30 p-3 rounded-full text-amber-600 dark:text-amber-500">
-                               <FileText size={24} />
+        <div className="max-w-6xl mx-auto animate-fade-in">
+          <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
+             <div>
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white serif">{t('tracker_title')}</h2>
+                <p className="text-gray-500 dark:text-gray-400">{t('tracker_subtitle')}</p>
+             </div>
+             <div className="flex bg-white dark:bg-slate-800 p-1 rounded-lg border border-gray-200 dark:border-slate-700">
+                 <div className="px-4 py-2 text-sm font-bold text-gray-400">{t('tracker_tab_old')}</div>
+                 <div className="w-px bg-gray-200 dark:bg-slate-700 mx-1"></div>
+                 <div className="px-4 py-2 text-sm font-bold text-gray-400">{t('tracker_tab_new')}</div>
+             </div>
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+             {/* Antigo e Novo Testamento - Same code as before */}
+             <div>
+                <h3 className="font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                   <Scroll size={20} className="text-indigo-500"/> Antigo Testamento
+                </h3>
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+                   {BIBLE_BOOKS.filter(b => b.testament === 'Old').map(book => {
+                      const isComplete = (readChapters[book.id]?.length || 0) === book.chapters;
+                      const progress = ((readChapters[book.id]?.length || 0) / book.chapters) * 100;
+                      return (
+                         <button key={book.id} onClick={() => setSelectedBookId(book.id)} className={`p-3 rounded-xl border text-left transition-all hover:shadow-md relative overflow-hidden group ${isComplete ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800' : 'bg-white dark:bg-slate-900 border-gray-200 dark:border-slate-800 hover:border-indigo-300'}`}>
+                           <div className="relative z-10">
+                              <div className="flex justify-between items-start mb-1">
+                                 <span className={`font-bold text-sm ${isComplete ? 'text-indigo-700 dark:text-indigo-300' : 'text-gray-700 dark:text-gray-200'}`}>{book.name}</span>
+                                 {isComplete && <CheckCircle2 size={14} className="text-indigo-500" />}
+                              </div>
+                              <div className="w-full bg-gray-100 dark:bg-slate-800 h-1.5 rounded-full mt-2">
+                                 <div className="bg-indigo-500 h-1.5 rounded-full" style={{ width: `${progress}%` }}></div>
+                              </div>
                            </div>
-                           <h2 className="text-3xl font-bold font-serif text-gray-900 dark:text-white">Devocionais</h2>
-                      </div>
-                      <p className="text-gray-500 dark:text-gray-400">Reflexões profundas para nutrir sua alma, baseadas na sã doutrina.</p>
+                         </button>
+                      );
+                   })}
+                </div>
+             </div>
+             <div>
+                <h3 className="font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                   <Cross size={20} className="text-purple-500"/> Novo Testamento
+                </h3>
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+                   {BIBLE_BOOKS.filter(b => b.testament === 'New').map(book => {
+                      const isComplete = (readChapters[book.id]?.length || 0) === book.chapters;
+                      const progress = ((readChapters[book.id]?.length || 0) / book.chapters) * 100;
+                      return (
+                         <button key={book.id} onClick={() => setSelectedBookId(book.id)} className={`p-3 rounded-xl border text-left transition-all hover:shadow-md relative overflow-hidden group ${isComplete ? 'bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-800' : 'bg-white dark:bg-slate-900 border-gray-200 dark:border-slate-800 hover:border-purple-300'}`}>
+                           <div className="relative z-10">
+                              <div className="flex justify-between items-start mb-1">
+                                 <span className={`font-bold text-sm ${isComplete ? 'text-purple-700 dark:text-purple-300' : 'text-gray-700 dark:text-gray-200'}`}>{book.name}</span>
+                                 {isComplete && <CheckCircle2 size={14} className="text-purple-500" />}
+                              </div>
+                              <div className="w-full bg-gray-100 dark:bg-slate-800 h-1.5 rounded-full mt-2">
+                                 <div className="bg-purple-500 h-1.5 rounded-full" style={{ width: `${progress}%` }}></div>
+                              </div>
+                           </div>
+                         </button>
+                      );
+                   })}
+                </div>
+             </div>
+          </div>
+        </div>
+      );
+    }
+    const book = BIBLE_BOOKS.find(b => b.id === selectedBookId)!;
+    const chapters = Array.from({ length: book.chapters }, (_, i) => i + 1);
+    const readList = readChapters[book.id] || [];
+    return (
+      <div className="max-w-4xl mx-auto animate-fade-in">
+         <button onClick={() => { setSelectedBookId(null); setSessionSelectedChapters([]); }} className="mb-6 text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white flex items-center gap-2 transition-colors">
+            <ChevronLeft size={20} /> {t('tracker_back_btn')}
+         </button>
+         <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 p-6 md:p-8">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+               <div><h2 className="text-3xl font-bold text-gray-900 dark:text-white serif mb-1">{book.name}</h2><p className="text-gray-500 dark:text-gray-400">{book.chapters} Capítulos • {book.category}</p></div>
+               <div className="flex bg-gray-100 dark:bg-slate-800 p-1 rounded-lg">
+                  <button onClick={() => setTrackerMode('select')} className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${trackerMode === 'select' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-white shadow-sm' : 'text-gray-500 dark:text-gray-400'}`}>{t('tracker_btn_mark')}</button>
+                  <button onClick={() => setTrackerMode('read')} className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${trackerMode === 'read' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-white shadow-sm' : 'text-gray-500 dark:text-gray-400'}`}>{t('tracker_btn_read')}</button>
+               </div>
+            </div>
+            <div className="grid grid-cols-5 sm:grid-cols-8 md:grid-cols-10 gap-3">
+               {chapters.map(chap => {
+                  const isRead = readList.includes(chap);
+                  const isSelected = sessionSelectedChapters.includes(chap);
+                  return (
+                     <button key={chap} onClick={() => handleToggleChapter(chap)} className={`aspect-square rounded-xl flex items-center justify-center font-bold text-sm transition-all duration-200 ${trackerMode === 'read' ? 'bg-gray-50 dark:bg-slate-800 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 text-gray-700 dark:text-gray-300' : isRead ? 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300' : isSelected ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200 dark:shadow-none transform scale-110' : 'bg-gray-50 dark:bg-slate-800 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700'}`}>
+                        {trackerMode === 'read' && <BookOpen size={14} className="mr-1 opacity-50"/>} {chap}
+                     </button>
+                  );
+               })}
+            </div>
+            {trackerMode === 'select' && (
+               <div className="mt-8 pt-6 border-t border-gray-100 dark:border-slate-800">
+                  <div className="flex justify-end items-center gap-4">
+                      <div className="text-sm text-gray-500 dark:text-gray-400">{sessionSelectedChapters.length} {t('tracker_selected_count')}</div>
+                      <button onClick={handleSaveSession} disabled={sessionSelectedChapters.length === 0} className="bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-indigo-700 text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-indigo-200 dark:shadow-none flex items-center gap-2 transition-all"><Save size={20} /> {t('tracker_btn_save')}</button>
                   </div>
-                  {isAdmin && (
-                      <button 
-                          onClick={() => { setIsEditingDevotional(true); setDevotionalForm({}); setDevotionalTranscript(''); }}
-                          className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold shadow-lg hover:bg-indigo-700 transition-colors flex items-center gap-2"
-                      >
-                          <Plus size={18} /> Novo Devocional
+               </div>
+            )}
+            {trackerMode === 'read' && <div className="mt-8 pt-6 border-t border-gray-100 dark:border-slate-800 text-center text-gray-500 dark:text-gray-400 text-sm">Clique em um capítulo acima para abrir o modo de leitura.</div>}
+         </div>
+      </div>
+    );
+  };
+  const renderCommunity = () => {
+      const activeGroup = userGroups.find(g => g.id === activeGroupId);
+
+      // Loading State
+      if(isGroupLoading) return <div className="flex justify-center items-center h-64"><Loader2 className="animate-spin text-indigo-600" size={32} /></div>;
+
+      // No Groups or Adding New Group View (Empty State styled)
+      if(userGroups.length === 0 || isAddingGroup) {
+          return (
+              <div className="max-w-4xl mx-auto animate-fade-in">
+                  {userGroups.length > 0 && (
+                      <button onClick={() => setIsAddingGroup(false)} className="mb-4 text-sm text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white flex items-center gap-2">
+                          <ChevronLeft size={16} /> Voltar para comunidades
                       </button>
                   )}
+                  <div className="flex flex-col md:flex-row gap-8 items-stretch">
+                      <div className="flex-1 bg-white dark:bg-slate-900 p-8 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 flex flex-col justify-center text-center">
+                          <div className="w-16 h-16 bg-indigo-100 dark:bg-indigo-900/30 rounded-full flex items-center justify-center text-indigo-600 dark:text-indigo-400 mx-auto mb-6"><Users size={32} /></div>
+                          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">{t('comm_create_title')}</h2>
+                          <p className="text-gray-500 dark:text-gray-400 mb-6">{t('comm_create_desc')}</p>
+                          <input type="text" placeholder="Nome do Grupo (ex: Família Silva)" className="w-full p-3 rounded-lg border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 mb-4" value={newGroupName} onChange={e => setNewGroupName(e.target.value)} />
+                          <button onClick={handleCreateGroup} disabled={!newGroupName.trim()} className="bg-indigo-600 text-white w-full py-3 rounded-xl font-bold hover:bg-indigo-700 transition-colors">{t('comm_create_btn')}</button>
+                      </div>
+                      <div className="flex items-center justify-center"><span className="text-gray-400 font-bold uppercase tracking-widest text-sm">OU</span></div>
+                      <div className="flex-1 bg-white dark:bg-slate-900 p-8 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 flex flex-col justify-center text-center">
+                          <div className="w-16 h-16 bg-emerald-100 dark:bg-emerald-900/30 rounded-full flex items-center justify-center text-emerald-600 dark:text-emerald-400 mx-auto mb-6"><LogIn size={32} /></div>
+                          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">{t('comm_join_title')}</h2>
+                          <p className="text-gray-500 dark:text-gray-400 mb-6">{t('comm_join_desc')}</p>
+                          <input type="text" placeholder="Código (ex: A7X9B2)" className="w-full p-3 rounded-lg border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 mb-4 uppercase tracking-widest text-center font-mono" maxLength={6} value={joinCode} onChange={e => setJoinCode(e.target.value)} />
+                          <button onClick={handleJoinGroup} disabled={joinCode.length < 6} className="bg-emerald-600 text-white w-full py-3 rounded-xl font-bold hover:bg-emerald-700 transition-colors">{t('comm_join_btn')}</button>
+                      </div>
+                  </div>
+              </div>
+          );
+      }
+
+      // Main Community View with Sidebar
+      if (!activeGroup) return null;
+
+      return (
+          <div className="max-w-7xl mx-auto animate-fade-in flex flex-col lg:flex-row gap-6">
+              
+              {/* Group Switcher Sidebar (Desktop: Left Col, Mobile: Top Row) */}
+              <div className="lg:w-20 flex lg:flex-col gap-3 overflow-x-auto lg:overflow-visible pb-2 lg:pb-0 shrink-0 border-b lg:border-b-0 lg:border-r border-gray-200 dark:border-slate-800 lg:pr-6">
+                  {userGroups.map(group => (
+                      <button
+                          key={group.id}
+                          onClick={() => setActiveGroupId(group.id)}
+                          className={`w-12 h-12 lg:w-16 lg:h-16 rounded-2xl flex items-center justify-center font-bold text-xl transition-all shadow-sm shrink-0 ${
+                              activeGroupId === group.id 
+                              ? 'bg-indigo-600 text-white ring-4 ring-indigo-100 dark:ring-indigo-900/50 scale-105' 
+                              : 'bg-white dark:bg-slate-800 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700'
+                          }`}
+                          title={group.name}
+                      >
+                          {group.name.charAt(0).toUpperCase()}
+                      </button>
+                  ))}
+                  <button
+                      onClick={() => setIsAddingGroup(true)}
+                      className="w-12 h-12 lg:w-16 lg:h-16 rounded-2xl flex items-center justify-center font-bold text-xl bg-gray-100 dark:bg-slate-800 text-gray-400 hover:bg-gray-200 dark:hover:bg-slate-700 transition-all shrink-0 border-2 border-dashed border-gray-300 dark:border-slate-600"
+                      title="Adicionar Comunidade"
+                  >
+                      <Plus size={24} />
+                  </button>
               </div>
 
-              {publishedDevotionals.length === 0 ? (
-                  <div className="text-center py-20 bg-white dark:bg-slate-900 rounded-2xl border border-dashed border-gray-200 dark:border-slate-800">
-                      <FileText size={48} className="mx-auto text-gray-300 mb-4" />
-                      <p className="text-gray-500">Nenhum devocional publicado ainda.</p>
-                  </div>
-              ) : (
-                  <div className="space-y-6">
-                      {publishedDevotionals.map(devotional => (
-                          <div key={devotional.id} className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 overflow-hidden transition-all hover:shadow-md">
-                              <div 
-                                  className="p-6 cursor-pointer"
-                                  onClick={() => setExpandedDevotionalId(expandedDevotionalId === devotional.id ? null : devotional.id)}
-                              >
-                                  <div className="flex justify-between items-start">
-                                      <div>
-                                          {isAdmin && devotional.status === 'draft' && (
-                                              <span className="bg-gray-200 text-gray-600 text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wide mb-2 inline-block">Rascunho</span>
-                                          )}
-                                          <span className="text-indigo-600 dark:text-indigo-400 text-xs font-bold uppercase tracking-widest block mb-2">
-                                              {new Date(devotional.created_at).toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' })}
-                                          </span>
-                                          <h3 className="text-xl md:text-2xl font-bold font-serif text-gray-900 dark:text-white mb-2">{devotional.title}</h3>
-                                          <p className="text-sm text-gray-500 dark:text-gray-400 font-serif italic">"{devotional.verse_text}" — {devotional.verse_reference}</p>
-                                      </div>
-                                      <div className={`p-2 rounded-full bg-gray-50 dark:bg-slate-800 text-gray-400 transition-transform duration-300 ${expandedDevotionalId === devotional.id ? 'rotate-180' : ''}`}>
-                                          <ChevronDown size={20} />
-                                      </div>
+              {/* Main Feed Content */}
+              <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-8">
+                  <div className="lg:col-span-2 space-y-6">
+                      {/* Mobile Header for Group */}
+                      <div className="lg:hidden bg-white dark:bg-slate-900 p-6 rounded-2xl border border-gray-100 dark:border-slate-800 mb-4">
+                          <div className="flex justify-between items-start">
+                              <div>
+                                  <h2 className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">{activeGroup.name}</h2>
+                                  <div className="flex items-center gap-2 mt-2">
+                                      <span className="bg-gray-100 dark:bg-slate-800 px-3 py-1 rounded-md font-mono text-sm font-bold">{activeGroup.code}</span>
+                                      <button onClick={() => { const text = `Olá! Entre no meu grupo de leitura bíblica '${activeGroup.name}' no App Bíblia Tracker usando o código: ${activeGroup.code}`; window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank'); }} className="text-[#25D366] font-bold text-sm flex items-center gap-1 hover:underline"><Share2 size={16} /> Convidar</button>
                                   </div>
                               </div>
-                              
-                              {expandedDevotionalId === devotional.id && (
-                                  <div className="px-6 pb-8 animate-fade-in border-t border-gray-100 dark:border-slate-800 pt-6">
-                                      <div className="prose prose-indigo dark:prose-invert max-w-none font-serif text-gray-800 dark:text-gray-200 leading-relaxed whitespace-pre-wrap">
-                                          {devotional.content}
-                                      </div>
-                                      
-                                      {devotional.conclusion && (
-                                          <div className="mt-8 p-4 bg-amber-50 dark:bg-amber-900/10 rounded-xl border border-amber-100 dark:border-amber-900/30">
-                                              <p className="text-amber-800 dark:text-amber-200 italic font-medium text-center">
-                                                  {devotional.conclusion}
-                                              </p>
-                                          </div>
-                                      )}
+                              <button onClick={handleLeaveGroupRequest} className="text-red-500 hover:text-red-700 bg-red-50 dark:bg-red-900/20 p-2 rounded-lg" title="Sair do Grupo">
+                                  <LogOut size={20} />
+                              </button>
+                          </div>
+                      </div>
 
-                                      {isAdmin && (
-                                          <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-100 dark:border-slate-800">
-                                              <button 
-                                                  onClick={() => { setDevotionalForm(devotional); setDevotionalTranscript(devotional.transcript_source || ''); setIsEditingDevotional(true); }}
-                                                  className="text-gray-500 hover:text-indigo-600 text-sm font-bold flex items-center gap-1"
-                                              >
-                                                  <Edit size={16} /> Editar
-                                              </button>
-                                              <button 
-                                                  onClick={() => handleDeleteDevotional(devotional.id)}
-                                                  className="text-gray-500 hover:text-red-600 text-sm font-bold flex items-center gap-1"
-                                              >
-                                                  <Trash2 size={16} /> Excluir
-                                              </button>
-                                          </div>
-                                      )}
+                      <div className="flex items-center gap-2 mb-2"><Activity size={20} className="text-indigo-500"/> <h3 className="font-bold text-lg text-gray-900 dark:text-white">{t('comm_feed_title')}</h3></div>
+                      
+                      {groupActivity.length === 0 ? <div className="text-center py-12 bg-white dark:bg-slate-900 rounded-2xl border border-dashed border-gray-300 dark:border-slate-700"><p className="text-gray-500">Nenhuma atividade recente neste grupo.</p></div> : groupActivity.map(activity => (
+                          <div key={activity.id} className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm relative overflow-hidden group hover:shadow-md transition-all">
+                              {activity.type === 'BOOK_COMPLETE' && <div className="absolute top-0 left-0 w-1 h-full bg-yellow-400"></div>}
+                              {activity.type === 'ACHIEVEMENT' && <div className="absolute top-0 left-0 w-1 h-full bg-purple-500"></div>}
+                              {activity.type === 'PLAN_COMPLETE' && <div className="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>}
+                              {activity.type === 'READING' && <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500"></div>}
+                              <div className="flex items-start gap-4">
+                                  <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-white shadow-sm shrink-0 ${activity.type === 'ACHIEVEMENT' ? 'bg-purple-500' : activity.type === 'BOOK_COMPLETE' ? 'bg-yellow-500' : activity.type === 'PLAN_COMPLETE' ? 'bg-blue-500' : 'bg-indigo-500'}`}>{activity.user_name.charAt(0)}</div>
+                                  <div className="flex-1">
+                                      <div className="flex justify-between items-start"><div><span className="font-bold text-gray-900 dark:text-white">{activity.user_name} </span><span className="text-gray-600 dark:text-gray-400 text-sm">{activity.type === 'READING' && 'registrou uma leitura'}{activity.type === 'BOOK_COMPLETE' && 'completou um livro! 🎉'}{activity.type === 'PLAN_COMPLETE' && 'finalizou um Plano de Leitura! 🏁'}{activity.type === 'ACHIEVEMENT' && 'desbloqueou uma conquista! 🏆'}</span></div><span className="text-xs text-gray-400">{new Date(activity.created_at).toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'})}</span></div>
+                                      {activity.type === 'READING' && (<div className="mt-2"><p className="font-serif text-lg text-gray-800 dark:text-gray-200">{BIBLE_BOOKS.find(b => b.id === activity.data.bookId)?.name} <span className="text-indigo-600 dark:text-indigo-400">{activity.data.chapters?.join(', ')}</span></p>{activity.data.text && (<p className="text-sm text-gray-500 dark:text-gray-400 mt-1 italic border-l-2 border-indigo-100 dark:border-indigo-900 pl-3">"{activity.data.text}"</p>)}</div>)}
+                                      {activity.type === 'BOOK_COMPLETE' && (<div className="mt-2 bg-yellow-50 dark:bg-yellow-900/20 p-3 rounded-lg border border-yellow-100 dark:border-yellow-900/30"><p className="font-bold text-yellow-800 dark:text-yellow-200 flex items-center gap-2"><CheckCircle2 size={18} /> Livro de {BIBLE_BOOKS.find(b => b.id === activity.data.bookId)?.name} Finalizado!</p></div>)}
+                                      {activity.type === 'PLAN_COMPLETE' && (<div className="mt-2 bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg border border-blue-100 dark:border-blue-900/30"><p className="font-bold text-blue-800 dark:text-blue-200 flex items-center gap-2"><Flag size={18} /> Plano Concluído: {activity.data.planName}</p></div>)}
+                                      {activity.type === 'ACHIEVEMENT' && (<div className="mt-2 bg-purple-50 dark:bg-purple-900/20 p-3 rounded-lg border border-purple-100 dark:border-purple-900/30"><p className="font-bold text-purple-800 dark:text-purple-200 flex items-center gap-2"><Award size={18} /> Nova Medalha: {activity.data.achievementTitle}</p></div>)}
+                                      <div className="flex gap-4 mt-4"><button onClick={() => handleReaction(activity.id, 'amen')} className={`flex items-center gap-1.5 text-sm font-medium transition-colors ${activity.user_has_reacted ? 'text-emerald-600' : 'text-gray-500 hover:text-emerald-600'}`}><HandHeart size={18} /> <span>Amém {activity.amen_count > 0 && `(${activity.amen_count})`}</span></button><button onClick={() => handleReaction(activity.id, 'fire')} className={`flex items-center gap-1.5 text-sm font-medium transition-colors ${activity.user_has_reacted ? 'text-orange-500' : 'text-gray-500 hover:text-orange-500'}`}><Flame size={18} /> <span>Glória {activity.fire_count > 0 && `(${activity.fire_count})`}</span></button></div>
                                   </div>
-                              )}
+                              </div>
                           </div>
                       ))}
                   </div>
-              )}
+                  
+                  {/* Right Column: Group Details */}
+                  <div className="space-y-6">
+                       <div className="bg-indigo-600 rounded-2xl p-6 text-white shadow-xl hidden lg:block"><div className="flex justify-between items-start mb-4"><div><p className="text-indigo-200 text-xs font-bold uppercase tracking-wider">GRUPO ATIVO</p><h2 className="text-2xl font-bold font-serif">{activeGroup.name}</h2></div><div className="bg-white/20 p-2 rounded-lg"><Users size={24} /></div></div><div className="bg-black/20 rounded-xl p-4 mb-4 backdrop-blur-sm"><p className="text-xs text-indigo-200 mb-1">CÓDIGO DE CONVITE</p><div className="flex justify-between items-center"><span className="font-mono text-xl font-bold tracking-widest">{activeGroup.code}</span><button onClick={() => { navigator.clipboard.writeText(activeGroup.code); showNotification('Copiado!', 'success'); }} className="text-white hover:text-indigo-200"><Copy size={16} /></button></div></div><button onClick={() => { const text = `Olá! Entre no meu grupo de leitura bíblica '${activeGroup.name}' no App Bíblia Tracker usando o código: ${activeGroup.code}`; window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank'); }} className="w-full bg-[#25D366] hover:bg-[#128C7E] text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-colors shadow-lg"><Share2 size={18} /> {t('comm_btn_invite')}</button></div>
+                       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 p-6 shadow-sm"><h3 className="font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2"><Users size={18} className="text-indigo-500"/> {t('comm_members_title')} ({groupMembers.length})</h3><div className="space-y-3">{groupMembers.map(member => { const lastActive = new Date(member.last_active); const today = new Date(); const diffHours = Math.abs(today.getTime() - lastActive.getTime()) / 36e5; let statusColor = 'bg-gray-400'; if (diffHours < 24) statusColor = 'bg-emerald-500'; else if (diffHours < 48) statusColor = 'bg-amber-400'; return (
+                           <div key={member.id} className="flex items-center justify-between">
+                               <div className="flex items-center gap-3">
+                                   <div className="w-8 h-8 rounded-full bg-gray-100 dark:bg-slate-800 flex items-center justify-center text-gray-600 dark:text-gray-400 text-xs font-bold">{member.user_name.charAt(0)}</div>
+                                   <div>
+                                       <p className="text-sm font-bold text-gray-900 dark:text-white">{member.user_name} {member.user_id === activeGroup.owner_id && <Crown size={12} className="inline text-yellow-500 ml-1" />}</p>
+                                       <p className="text-[10px] text-gray-400">{member.role === 'admin' ? 'Administrador' : 'Membro'}</p>
+                                   </div>
+                               </div>
+                               <div className="flex items-center gap-2">
+                                   <div title={diffHours < 24 ? "Leu hoje" : "Não lê há dias"} className={`w-3 h-3 rounded-full ${statusColor} ring-2 ring-white dark:ring-slate-900`}></div>
+                                   {isGroupOwner && member.user_id !== user.id && (
+                                       <button 
+                                           onClick={() => handleKickMemberRequest(member)}
+                                           className="text-gray-400 hover:text-red-500 transition-colors p-1"
+                                           title="Remover Membro"
+                                       >
+                                           <Trash2 size={14} />
+                                       </button>
+                                   )}
+                               </div>
+                           </div>
+                       ); })}</div></div>
+                       
+                       <button 
+                          onClick={handleLeaveGroupRequest}
+                          className="w-full border border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400 py-3 rounded-xl font-bold hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors flex items-center justify-center gap-2 hidden lg:flex"
+                       >
+                          <LogOut size={18} /> {isGroupOwner && groupMembers.length <= 1 ? 'Excluir Grupo' : 'Sair do Grupo'}
+                       </button>
+
+                       {isGroupOwner && (
+                           <button 
+                              onClick={handleDeleteGroupRequest}
+                              className="w-full border border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400 py-3 rounded-xl font-bold hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors flex items-center justify-center gap-2 hidden lg:flex mt-2"
+                           >
+                              <Trash2 size={18} /> Excluir Comunidade
+                           </button>
+                       )}
+                  </div>
+              </div>
           </div>
       );
   };
-
-  if (loadingAuth) {
-    return (
-      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center text-indigo-600">
-        <Loader2 size={48} className="animate-spin mb-4" />
-        <p className="font-medium animate-pulse">Carregando...</p>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return <LoginScreen onLogin={setUser} />;
-  }
+  const renderAchievements = () => { /* ... existing achievements code ... */ return <div className="max-w-6xl mx-auto animate-fade-in"><div className="text-center mb-8"><div className="inline-flex p-4 bg-yellow-100 dark:bg-yellow-900/30 rounded-full text-yellow-600 dark:text-yellow-400 mb-4"><Trophy size={32} /></div><h2 className="text-2xl font-bold text-gray-900 dark:text-white serif">{t('achiev_title')}</h2><p className="text-gray-500 dark:text-gray-400 mt-2">{t('achiev_subtitle')}</p></div><div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">{ACHIEVEMENTS.map((ach) => { const isUnlocked = unlockedAchievements.has(ach.id); const Icon = IconMap[ach.icon] || Star; return (<div key={ach.id} className={`p-4 rounded-xl border relative overflow-hidden group transition-all ${isUnlocked ? 'bg-white dark:bg-slate-900 border-gray-200 dark:border-slate-800 shadow-sm' : 'bg-gray-50 dark:bg-slate-800/50 border-transparent opacity-60'}`}>{!isUnlocked && (<div className="absolute inset-0 bg-gray-100/50 dark:bg-black/50 backdrop-blur-[1px] z-10 flex items-center justify-center"><Lock className="text-gray-400" size={24} /></div>)}<div className="flex items-start gap-4 relative z-0"><div className={`p-3 rounded-xl ${isUnlocked ? ach.color : 'bg-gray-200 dark:bg-slate-700'} ${isUnlocked ? 'text-gray-800' : 'text-gray-400'}`}><Icon size={24} /></div><div><h4 className="font-bold text-gray-900 dark:text-white">{ach.title}</h4><p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{ach.description}</p>{isUnlocked && (<div className="mt-2 text-[10px] font-bold uppercase tracking-wider text-emerald-600 flex items-center gap-1"><CheckCircle2 size={10} /> {t('achiev_unlocked')}</div>)}</div></div></div>); })}</div></div>; };
+  const renderSupport = () => { /* ... existing support code ... */ return <div className="max-w-2xl mx-auto animate-fade-in"><div className="text-center mb-8"><div className="inline-flex p-4 bg-indigo-100 dark:bg-indigo-900/30 rounded-full text-indigo-600 dark:text-indigo-400 mb-4"><LifeBuoy size={32} /></div><h2 className="text-2xl font-bold text-gray-900 dark:text-white serif">{t('supp_title')}</h2><p className="text-gray-500 dark:text-gray-400 mt-2">{t('supp_subtitle')}</p></div><div className="bg-white dark:bg-slate-900 p-8 rounded-2xl shadow-xl border border-gray-100 dark:border-slate-800">{supportSuccess ? (<div className="text-center py-12"><div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center text-green-600 mx-auto mb-4"><CheckCircle2 size={32} /></div><h3 className="text-xl font-bold text-gray-900 dark:text-white">{t('supp_success_title')}</h3><p className="text-gray-500 dark:text-gray-400 mt-2">{t('supp_success_msg')}</p><button onClick={() => setSupportSuccess(false)} className="mt-6 text-indigo-600 font-bold text-sm hover:underline">Enviar nova mensagem</button></div>) : (<form onSubmit={handleSupportSubmit} className="space-y-6"><div><label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">Tipo de Mensagem</label><div className="grid grid-cols-3 gap-2">{(['question', 'suggestion', 'problem'] as const).map((type) => (<button key={type} type="button" onClick={() => setSupportForm({ ...supportForm, type })} className={`py-2 rounded-lg text-sm font-medium border transition-all ${supportForm.type === type ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-500 text-indigo-700 dark:text-indigo-300' : 'bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-700 text-gray-600 dark:text-gray-400'}`}>{type === 'question' && t('supp_type_question')}{type === 'suggestion' && t('supp_type_suggestion')}{type === 'problem' && t('supp_type_problem')}</button>))}</div></div><div><label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">Sua Mensagem</label><textarea required value={supportForm.message} onChange={(e) => setSupportForm({ ...supportForm, message: e.target.value })} className="w-full p-4 rounded-xl border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none min-h-[150px]" placeholder="Descreva detalhadamente..."></textarea></div><button type="submit" disabled={isSubmittingSupport || !supportForm.message.trim()} className="w-full bg-indigo-600 text-white py-4 rounded-xl font-bold hover:bg-indigo-700 transition-colors shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center gap-2">{isSubmittingSupport ? <Loader2 className="animate-spin" /> : <Send size={20} />} {t('supp_btn_send')}</button></form>)}</div></div>; };
 
   return (
-    <div className={`min-h-screen flex transition-colors duration-300 ${isGoldenTheme ? 'golden dark' : theme === 'dark' ? 'dark' : ''} bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans`}>
-       {notification && (
-          <NotificationToast 
-            message={notification.message} 
-            type={notification.type} 
-            onClose={() => setNotification(null)} 
-          />
-       )}
-       
-       <ConfirmationModal 
-          isOpen={confirmModal.isOpen}
-          onClose={() => setConfirmModal({ ...confirmModal, isOpen: false })}
-          onConfirm={confirmModal.onConfirm}
-          title={confirmModal.title}
-          message={confirmModal.message}
-          isDestructive={confirmModal.isDestructive}
-       />
+    <div className={`min-h-screen transition-colors ${theme === 'dark' ? 'dark bg-slate-950' : 'bg-slate-50'}`}>
+      
+      {/* Toast Notification */}
+      {notification && (
+        <NotificationToast 
+          message={notification.message} 
+          type={notification.type} 
+          onClose={() => setNotification(null)} 
+        />
+      )}
 
-       <TransferAdminModal
-          isOpen={isTransferringAdmin}
-          onClose={() => { setIsTransferringAdmin(false); setSuccessorId(''); }}
-          onConfirm={executeTransferAndLeave}
-          members={groupMembers.filter(m => m.user_id !== user.id)}
-          successorId={successorId}
-          setSuccessorId={setSuccessorId}
-       />
-
-       {readingChapter && (
-          <BibleReaderModal 
-            book={readingChapter.book} 
-            chapter={readingChapter.chapter} 
-            onClose={() => setReadingChapter(null)}
-            onNext={() => {
-                if (readingChapter.chapter < readingChapter.book.chapters) {
-                    setReadingChapter({ ...readingChapter, chapter: readingChapter.chapter + 1 });
-                }
-            }}
-            onPrev={() => {
-                if (readingChapter.chapter > 1) {
-                    setReadingChapter({ ...readingChapter, chapter: readingChapter.chapter - 1 });
-                }
-            }}
-          />
-       )}
-
-       {isPlanModalOpen && (
-          <PlanSelectionModal 
-            onClose={() => setIsPlanModalOpen(false)}
-            onSelectPlan={handleSelectPlan}
-            availablePlans={availablePlans}
-          />
-       )}
-
-       {isChangePasswordOpen && (
-          <ChangePasswordModal onClose={() => setIsChangePasswordOpen(false)} />
-       )}
-
-       {inspectingUserId && (
-          <UserInspectorModal 
-             userId={inspectingUserId}
-             allLogs={adminLogs}
-             onClose={() => setInspectingUserId(null)}
-          />
-       )}
-
-       {mobileMenuOpen && (
-         <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={() => setMobileMenuOpen(false)}></div>
-       )}
-
-       <aside className={`fixed md:sticky top-0 left-0 h-screen w-72 bg-white dark:bg-slate-900 border-r border-gray-200 dark:border-slate-800 z-50 transform transition-transform duration-300 overflow-y-auto ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
-          <div className="p-6">
-             <div className="flex items-center gap-3 mb-8">
-                <div className="bg-indigo-600 text-white p-2 rounded-lg">
-                   <Book size={24} />
-                </div>
-                <div>
-                   <h1 className="font-bold text-xl tracking-tight serif">Bíblia Tracker</h1>
-                   <p className="text-xs text-gray-500">Sua jornada diária</p>
-                </div>
-             </div>
-
-             <nav className="space-y-1">
-                {[
-                   { id: 'dashboard', icon: LayoutDashboard, label: t('nav_dashboard') },
-                   { id: 'tracker', icon: BookOpen, label: t('nav_tracker') },
-                   { id: 'community', icon: Users, label: t('nav_community') },
-                   { id: 'devotionals', icon: FileText, label: 'Devocionais' },
-                   { id: 'history', icon: History, label: t('nav_history') },
-                   { id: 'achievements', icon: Trophy, label: t('nav_achievements') },
-                   { id: 'support', icon: LifeBuoy, label: t('nav_support') },
-                ].map(item => (
-                   <button
-                      key={item.id}
-                      onClick={() => { setActiveTab(item.id as any); setMobileMenuOpen(false); }}
-                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all ${activeTab === item.id ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-800'}`}
-                   >
-                      <item.icon size={20} />
-                      {item.label}
-                   </button>
-                ))}
-                
-                {isAdmin && (
-                   <button
-                      onClick={() => { setActiveTab('admin'); setMobileMenuOpen(false); }}
-                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all mt-4 ${activeTab === 'admin' ? 'bg-slate-800 text-white' : 'bg-slate-100 dark:bg-slate-800 text-gray-700 dark:text-gray-300'}`}
-                   >
-                      <Shield size={20} />
-                      {t('nav_admin')}
-                   </button>
-                )}
-             </nav>
+      {loadingAuth ? (
+          <div className="flex h-screen items-center justify-center">
+              <Loader2 className="animate-spin text-indigo-600" size={48} />
           </div>
-
-          <div className="p-4 mt-auto border-t border-gray-100 dark:border-slate-800">
-             <div className="flex items-center gap-3 px-4 py-3 mb-2">
-                 <div className="w-10 h-10 rounded-full bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-700 dark:text-indigo-300 font-bold">
-                    {user.email?.charAt(0).toUpperCase()}
-                 </div>
-                 <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold truncate">{user.user_metadata?.full_name || 'Usuário'}</p>
-                    <p className="text-xs text-gray-500 truncate">{user.email}</p>
-                 </div>
-             </div>
-             
-             <div className="grid grid-cols-2 gap-2">
-                <button onClick={toggleTheme} className="flex items-center justify-center gap-2 p-2 rounded-lg bg-gray-50 dark:bg-slate-800 hover:bg-gray-100 text-xs font-medium">
-                   {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
-                   {theme === 'dark' ? 'Claro' : 'Escuro'}
-                </button>
-                <button onClick={() => setIsChangePasswordOpen(true)} className="flex items-center justify-center gap-2 p-2 rounded-lg bg-gray-50 dark:bg-slate-800 hover:bg-gray-100 text-xs font-medium">
-                   <KeyRound size={16} />
-                   Senha
-                </button>
-             </div>
-             <button onClick={handleLogout} className="w-full mt-2 flex items-center justify-center gap-2 p-2 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 text-xs font-medium transition-colors">
-                <LogOut size={16} />
-                {t('nav_logout')}
-             </button>
-             
-             {unlockedAchievements.has(117) && !isGoldenTheme && (
-                <button onClick={activateGoldenTheme} className="w-full mt-2 text-[10px] text-amber-500 hover:underline text-center">
-                    Ativar Tema Peregrino
-                </button>
-             )}
-          </div>
-       </aside>
-
-       <main className="flex-1 min-w-0 md:h-screen md:overflow-y-auto">
-          <div className="md:hidden p-4 flex items-center justify-between border-b border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900 sticky top-0 z-30">
-             <div className="flex items-center gap-3">
-                 <button onClick={() => setMobileMenuOpen(true)} className="p-2 -ml-2 text-gray-600 dark:text-gray-300">
-                    <Menu size={24} />
-                 </button>
-                 <span className="font-bold font-serif text-lg">Bíblia Tracker</span>
-             </div>
-             <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold text-xs">
-                {user.email?.charAt(0).toUpperCase()}
-             </div>
-          </div>
-
-          <div className="p-4 md:p-8 max-w-7xl mx-auto">
-             
-             {activeTab === 'dashboard' && (
-                <div className="space-y-6 animate-fade-in">
-                    <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
-                        <div>
-                            <h2 className="text-3xl font-bold font-serif text-gray-900 dark:text-white">
-                                Olá, {user.user_metadata?.full_name?.split(' ')[0] || 'Viajante'}!
-                            </h2>
-                            <p className="text-gray-500 dark:text-gray-400 mt-1">{t('dash_welcome_title')}</p>
-                        </div>
-                        <button onClick={handleShareApp} className="flex items-center gap-2 px-4 py-2 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 rounded-lg text-sm font-bold hover:bg-indigo-100 transition-colors">
-                            <Share2 size={16} /> Compartilhar App
-                        </button>
-                    </div>
-
-                    {dailyVerse && (
-                        <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-2xl p-6 text-white shadow-lg relative overflow-hidden group">
-                             <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
-                                <Book size={120} />
-                             </div>
-                             <div className="relative z-10">
-                                 <span className="bg-white/20 px-3 py-1 rounded-full text-xs font-bold backdrop-blur-sm mb-4 inline-block">Versículo do Dia</span>
-                                 <p className="text-xl md:text-2xl font-serif font-medium leading-relaxed mb-4">"{dailyVerse.text}"</p>
-                                 <p className="text-indigo-100 font-bold">— {dailyVerse.ref}</p>
-                             </div>
-                        </div>
-                    )}
-
-                    {siteNews && showNews && (
-                        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 p-4 rounded-xl flex gap-3 relative animate-fade-in">
-                            <Megaphone className="text-blue-500 flex-shrink-0" size={24} />
-                            <div className="flex-1">
-                                <h4 className="font-bold text-blue-700 dark:text-blue-300 mb-1">Novidades</h4>
-                                <p className="text-sm text-blue-600 dark:text-blue-400 whitespace-pre-wrap">{siteNews}</p>
-                            </div>
-                            <button onClick={() => setShowNews(false)} className="text-blue-400 hover:text-blue-600 absolute top-2 right-2">
-                                <X size={16} />
-                            </button>
-                        </div>
-                    )}
-
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <StatCard 
-                           title={t('dash_stat_read')} 
-                           value={totalReadCount} 
-                           subtext={`de ${TOTAL_CHAPTERS_BIBLE} capítulos`} 
-                           icon={<BookOpen size={20}/>} 
-                           progress={completionPercentage}
-                        />
-                        <StatCard 
-                           title={t('dash_stat_streak')} 
-                           value={`${currentStreak} dias`} 
-                           subtext={getStreakMessage(currentStreak)} 
-                           icon={<Flame size={20} className={currentStreak > 0 ? "text-orange-500" : ""} />} 
-                        />
-                        <StatCard 
-                           title="Medalhas" 
-                           value={unlockedAchievements.size} 
-                           subtext={`de ${ACHIEVEMENTS.length} conquistas`} 
-                           icon={<Trophy size={20} className="text-yellow-500" />} 
-                        />
-                        <StatCard 
-                           title={t('dash_stat_pace')} 
-                           value={advancedStats.avgChaptersPerDay.toFixed(1)} 
-                           subtext="capítulos/dia" 
-                           icon={<Activity size={20} />} 
-                        />
-                    </div>
-                    
-                    <div className="grid md:grid-cols-2 gap-6">
-                        <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm flex flex-col h-full">
-                            <div className="flex justify-between items-center mb-6">
-                                <h3 className="font-bold text-lg flex items-center gap-2">
-                                    <Target className="text-indigo-500" /> 
-                                    {t('dash_plan_active')}
-                                </h3>
-                                {userPlan && (
-                                    <button onClick={handleAbandonPlanRequest} className="text-xs text-red-400 hover:text-red-600 font-medium">
-                                        Abandonar
-                                    </button>
-                                )}
-                            </div>
-
-                            {!userPlan ? (
-                                <div className="flex-1 flex flex-col items-center justify-center text-center p-4">
-                                    <div className="bg-gray-100 dark:bg-slate-800 p-4 rounded-full mb-4">
-                                        <CalendarRange size={32} className="text-gray-400" />
-                                    </div>
-                                    <p className="text-gray-500 dark:text-gray-400 mb-6 text-sm max-w-xs">{t('dash_no_plan_msg')}</p>
-                                    <button 
-                                        onClick={() => setIsPlanModalOpen(true)}
-                                        className="bg-indigo-600 text-white px-6 py-2 rounded-xl font-bold shadow-lg hover:bg-indigo-700 transition-colors"
-                                    >
-                                        {t('dash_btn_choose_plan')}
-                                    </button>
-                                </div>
-                            ) : (
-                                <div className="space-y-4">
-                                    <div>
-                                        <h4 className="font-bold text-xl text-gray-900 dark:text-white">{userPlan.title}</h4>
-                                        <p className="text-sm text-gray-500 dark:text-gray-400">{userPlan.description}</p>
-                                    </div>
-                                    
-                                    {getPlanProgress && (
-                                        <div className="space-y-4 mt-4">
-                                            <div>
-                                                <div className="flex justify-between text-sm mb-1">
-                                                    <span className="font-medium text-gray-600 dark:text-gray-400">{t('dash_plan_progress')}</span>
-                                                    <span className="font-bold text-indigo-600">{getPlanProgress.percent.toFixed(1)}%</span>
-                                                </div>
-                                                <div className="w-full h-2 bg-gray-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                                                    <div className="h-full bg-indigo-500 rounded-full transition-all duration-1000" style={{ width: `${getPlanProgress.percent}%` }}></div>
-                                                </div>
-                                            </div>
-                                            
-                                            <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl border border-indigo-100 dark:border-indigo-800/50">
-                                                <p className="text-xs font-bold text-indigo-500 uppercase mb-2">Leitura de Hoje</p>
-                                                {getPlanProgress.nextBatch.length > 0 ? (
-                                                    <div>
-                                                        <div className="flex flex-wrap gap-2 mb-3">
-                                                            {getPlanProgress.nextBatch.map((item, idx) => (
-                                                                <span key={idx} className="bg-white dark:bg-slate-800 text-gray-800 dark:text-gray-200 px-2 py-1 rounded text-xs font-mono font-bold border border-gray-200 dark:border-slate-700">
-                                                                    {BIBLE_BOOKS.find(b => b.id === item.bookId)?.name} {item.chapter}
-                                                                </span>
-                                                            ))}
-                                                        </div>
-                                                        <button 
-                                                            onClick={() => handleQuickRead(getPlanProgress.nextBatch)}
-                                                            className="w-full py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 transition-colors"
-                                                        >
-                                                            {t('dash_btn_read_now')}
-                                                        </button>
-                                                    </div>
-                                                ) : (
-                                                    <div className="text-center py-2">
-                                                        <CheckCircle2 size={32} className="mx-auto text-green-500 mb-2" />
-                                                        <p className="font-bold text-green-600 dark:text-green-400">{t('dash_daily_goal')}</p>
-                                                        <p className="text-xs text-green-500/80">Volte amanhã para mais!</p>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-                        </div>
-
-                        <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm">
-                            <h3 className="font-bold text-lg mb-4 flex items-center gap-2">
-                                <Calculator className="text-indigo-500" />
-                                {t('dash_sim_title')}
-                            </h3>
-                            <div className="space-y-6">
-                                <p className="text-sm text-gray-500 dark:text-gray-400">{t('dash_sim_desc')}</p>
-                                
-                                <div className="space-y-2">
-                                    <div className="flex justify-between">
-                                        <span className="text-sm font-medium">Ritmo: <strong className="text-indigo-600">{simulatedPace} caps/dia</strong></span>
-                                    </div>
-                                    <input 
-                                        type="range" 
-                                        min="1" 
-                                        max="20" 
-                                        value={simulatedPace} 
-                                        onChange={(e) => setSimulatedPace(parseInt(e.target.value))}
-                                        className="w-full accent-indigo-600 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
-                                    />
-                                    <div className="flex justify-between text-xs text-gray-400">
-                                        <span>1 cap</span>
-                                        <span>20 caps</span>
-                                    </div>
-                                </div>
-
-                                <div className="bg-gray-50 dark:bg-slate-800 p-4 rounded-xl text-center">
-                                    <p className="text-xs text-gray-500 uppercase mb-1">{t('dash_stat_prediction')}</p>
-                                    <p className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">
-                                        {calculateSimulationDate(simulatedPace, totalReadCount)}
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-             )}
-
-             {activeTab === 'tracker' && (
-                <div className="animate-fade-in space-y-6">
-                    <div className="flex items-center justify-between">
-                        <div>
-                             <h2 className="text-2xl font-bold font-serif text-gray-900 dark:text-white">{t('tracker_title')}</h2>
-                             <p className="text-gray-500 dark:text-gray-400">{t('tracker_subtitle')}</p>
-                        </div>
-                        {trackerMode === 'read' && (
-                            <button 
-                                onClick={() => { setTrackerMode('select'); setSelectedBookId(null); setSessionSelectedChapters([]); }}
-                                className="flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-gray-300 rounded-lg text-sm font-bold hover:bg-gray-200 dark:hover:bg-slate-700 transition-colors"
-                            >
-                                <ChevronLeft size={16} /> {t('tracker_back_btn')}
-                            </button>
-                        )}
-                    </div>
-
-                    {trackerMode === 'select' ? (
-                        <div className="space-y-8">
-                            {[
-                                { title: t('tracker_tab_old'), books: BIBLE_BOOKS.filter(b => b.testament === 'Old') },
-                                { title: t('tracker_tab_new'), books: BIBLE_BOOKS.filter(b => b.testament === 'New') }
-                            ].map((section) => (
-                                <div key={section.title}>
-                                    <h3 className="font-bold text-lg text-gray-500 dark:text-gray-400 mb-4 border-b border-gray-200 dark:border-slate-800 pb-2">{section.title}</h3>
-                                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-                                        {section.books.map(book => {
-                                            const progress = readChapters[book.id]?.length || 0;
-                                            const isComplete = progress === book.chapters;
-                                            return (
-                                                <button
-                                                    key={book.id}
-                                                    onClick={() => { setSelectedBookId(book.id); setTrackerMode('read'); }}
-                                                    className={`p-3 rounded-xl border text-left transition-all hover:shadow-md relative overflow-hidden group ${
-                                                        isComplete 
-                                                            ? 'bg-green-50 dark:bg-green-900/10 border-green-200 dark:border-green-900/30' 
-                                                            : progress > 0 
-                                                                ? 'bg-indigo-50 dark:bg-indigo-900/10 border-indigo-200 dark:border-indigo-900/30'
-                                                                : 'bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-500'
-                                                    }`}
-                                                >
-                                                    <div className="flex justify-between items-start mb-2">
-                                                        <span className={`font-bold font-serif ${isComplete ? 'text-green-700 dark:text-green-400' : 'text-gray-800 dark:text-gray-200'}`}>
-                                                            {book.name}
-                                                        </span>
-                                                        {isComplete && <CheckCircle2 size={16} className="text-green-500" />}
-                                                    </div>
-                                                    
-                                                    <div className="w-full bg-gray-200 dark:bg-slate-700 h-1.5 rounded-full overflow-hidden mt-2">
-                                                        <div 
-                                                            className={`h-full rounded-full ${isComplete ? 'bg-green-500' : 'bg-indigo-500'}`} 
-                                                            style={{ width: `${(progress / book.chapters) * 100}%` }}
-                                                        ></div>
-                                                    </div>
-                                                    <p className="text-[10px] text-gray-500 mt-1 text-right">{progress}/{book.chapters}</p>
-                                                </button>
-                                            )
-                                        })}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    ) : (
-                        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 p-6">
-                             {selectedBookId && (
-                                <>
-                                    <div className="flex flex-col md:flex-row justify-between md:items-center gap-4 mb-6 border-b border-gray-100 dark:border-slate-800 pb-4">
-                                        <div>
-                                            <h3 className="text-2xl font-bold font-serif text-gray-900 dark:text-white flex items-center gap-2">
-                                                {BIBLE_BOOKS.find(b => b.id === selectedBookId)?.name}
-                                                <span className="text-sm bg-gray-100 dark:bg-slate-800 text-gray-500 px-2 py-1 rounded-lg font-sans font-normal">
-                                                    {readChapters[selectedBookId]?.length || 0} / {BIBLE_BOOKS.find(b => b.id === selectedBookId)?.chapters}
-                                                </span>
-                                            </h3>
-                                        </div>
-                                        {sessionSelectedChapters.length > 0 && (
-                                            <div className="flex items-center gap-3 animate-fade-in">
-                                                <span className="text-sm text-gray-500 hidden md:inline">
-                                                    {sessionSelectedChapters.length} {t('tracker_selected_count')}
-                                                </span>
-                                                <button 
-                                                    onClick={handleSaveSession}
-                                                    className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-xl font-bold shadow-lg shadow-indigo-200 dark:shadow-none transition-all flex items-center gap-2"
-                                                >
-                                                    <Save size={18} /> {t('tracker_btn_save')}
-                                                </button>
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    <div className="grid grid-cols-5 sm:grid-cols-8 md:grid-cols-10 gap-2 md:gap-3">
-                                        {Array.from({ length: BIBLE_BOOKS.find(b => b.id === selectedBookId)!.chapters }, (_, i) => i + 1).map(chapter => {
-                                            const isRead = readChapters[selectedBookId!]?.includes(chapter);
-                                            const isSelected = sessionSelectedChapters.includes(chapter);
-                                            
-                                            return (
-                                                <button
-                                                    key={chapter}
-                                                    onClick={() => handleToggleChapter(chapter)}
-                                                    className={`aspect-square rounded-lg flex items-center justify-center font-bold text-sm transition-all duration-200 relative group
-                                                        ${isRead 
-                                                            ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 cursor-default' 
-                                                            : isSelected
-                                                                ? 'bg-indigo-600 text-white shadow-md scale-105'
-                                                                : 'bg-gray-50 dark:bg-slate-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-slate-700'
-                                                        }
-                                                    `}
-                                                >
-                                                    {chapter}
-                                                    {isRead && <Check size={12} className="absolute bottom-1 right-1 opacity-50" />}
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-                                    
-                                    <div className="mt-6 pt-4 border-t border-gray-100 dark:border-slate-800 flex justify-end">
-                                        <p className="text-xs text-gray-400 flex items-center gap-2">
-                                            <span className="w-3 h-3 bg-green-100 dark:bg-green-900/30 rounded inline-block"></span> Lido
-                                            <span className="w-3 h-3 bg-indigo-600 rounded inline-block ml-2"></span> Selecionado
-                                            <span className="w-3 h-3 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded inline-block ml-2"></span> Pendente
-                                        </p>
-                                    </div>
-                                </>
-                             )}
-                        </div>
-                    )}
-                </div>
-             )}
-
-             {activeTab === 'devotionals' && renderDevotionals()}
-
-             {activeTab === 'achievements' && (
-                <div className="animate-fade-in">
-                    <div className="mb-6">
-                        <h2 className="text-2xl font-bold font-serif text-gray-900 dark:text-white">{t('achiev_title')}</h2>
-                        <p className="text-gray-500 dark:text-gray-400">{t('achiev_subtitle')}</p>
-                    </div>
-                    
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                        {ACHIEVEMENTS.map(achievement => {
-                            const isUnlocked = unlockedAchievements.has(achievement.id);
-                            const Icon = IconMap[achievement.icon] || Trophy;
-                            
-                            return (
-                                <div 
-                                    key={achievement.id}
-                                    className={`relative p-5 rounded-2xl border transition-all duration-300 ${
-                                        isUnlocked 
-                                            ? 'bg-white dark:bg-slate-900 border-indigo-100 dark:border-indigo-900/30 shadow-sm hover:shadow-md' 
-                                            : 'bg-gray-50 dark:bg-slate-800/50 border-transparent opacity-60 grayscale'
-                                    }`}
-                                >
-                                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-4 text-white shadow-lg ${isUnlocked ? achievement.color.replace('bg-', 'bg-') : 'bg-gray-300 dark:bg-slate-700'}`}>
-                                        <Icon size={24} className={isUnlocked ? "text-slate-800" : "text-gray-500"} />
-                                    </div>
-                                    <h3 className="font-bold text-gray-900 dark:text-white mb-1">{achievement.title}</h3>
-                                    <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">{achievement.description}</p>
-                                    
-                                    <div className="mt-3 pt-3 border-t border-gray-50 dark:border-slate-800 flex justify-between items-center">
-                                        <span className={`text-[10px] font-bold uppercase tracking-wider ${isUnlocked ? 'text-green-500' : 'text-gray-400'}`}>
-                                            {isUnlocked ? t('achiev_unlocked') : t('achiev_locked')}
-                                        </span>
-                                        {isUnlocked && <Star size={12} className="text-yellow-400 fill-yellow-400" />}
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
-             )}
-             
-             {activeTab === 'support' && (
-                 <div className="max-w-xl mx-auto animate-fade-in">
-                     <div className="text-center mb-8">
-                         <div className="w-16 h-16 bg-indigo-100 dark:bg-indigo-900/30 rounded-2xl flex items-center justify-center mx-auto mb-4 text-indigo-600 dark:text-indigo-400">
-                             <HeartHandshake size={32} />
-                         </div>
-                         <h2 className="text-2xl font-bold font-serif text-gray-900 dark:text-white">{t('supp_title')}</h2>
-                         <p className="text-gray-500 dark:text-gray-400">{t('supp_subtitle')}</p>
-                     </div>
-                     
-                     <form onSubmit={handleSupportSubmit} className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 space-y-4">
-                         <div>
-                             <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">Tipo de Contato</label>
-                             <div className="flex gap-2">
-                                 {['question', 'suggestion', 'problem'].map(type => (
-                                     <button
-                                        type="button"
-                                        key={type}
-                                        onClick={() => setSupportForm({...supportForm, type})}
-                                        className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${supportForm.type === type ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300' : 'border-gray-200 dark:border-slate-700 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-800'}`}
-                                     >
-                                         {t(`supp_type_${type}`)}
-                                     </button>
-                                 ))}
-                             </div>
-                         </div>
-                         <div>
-                             <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">Mensagem</label>
-                             <textarea 
-                                 value={supportForm.message}
-                                 onChange={e => setSupportForm({...supportForm, message: e.target.value})}
-                                 className="w-full h-32 p-3 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none resize-none"
-                                 placeholder="Digite sua mensagem aqui..."
-                                 required
-                             ></textarea>
-                         </div>
-                         <button 
-                             type="submit" 
-                             disabled={isSubmittingSupport}
-                             className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold hover:bg-indigo-700 transition-colors shadow-lg flex justify-center items-center"
-                         >
-                             {isSubmittingSupport ? <Loader2 className="animate-spin" /> : t('supp_btn_send')}
-                         </button>
-                     </form>
-                 </div>
-             )}
-             
-             {['community', 'history', 'admin'].includes(activeTab) && activeTab !== 'devotionals' && (
-                 <div className="flex flex-col items-center justify-center py-20 text-center animate-fade-in">
-                      <div className="bg-gray-100 dark:bg-slate-800 p-6 rounded-full mb-4">
-                          {activeTab === 'community' && <Users size={48} className="text-gray-400" />}
-                          {activeTab === 'history' && <History size={48} className="text-gray-400" />}
-                          {activeTab === 'admin' && <Shield size={48} className="text-gray-400" />}
+      ) : !user ? (
+          <LoginScreen onLogin={setUser} />
+      ) : (
+          <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-slate-950 text-gray-900 dark:text-white">
+              {/* Sidebar Desktop */}
+              <aside className="hidden md:flex flex-col w-64 bg-white dark:bg-slate-900 border-r border-gray-200 dark:border-slate-800 z-20 transition-colors">
+                  <div className="p-6 flex items-center gap-3">
+                      <div className="bg-indigo-600 p-2 rounded-lg text-white shadow-lg shadow-indigo-200 dark:shadow-none">
+                          <Book size={24} />
                       </div>
-                      <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Em Construção</h2>
-                      <p className="text-gray-500">A aba {t(`nav_${activeTab}`)} está sendo preparada.</p>
-                 </div>
-             )}
+                      <span className="font-bold text-xl tracking-tight serif">Bíblia Tracker</span>
+                  </div>
+                  
+                  <nav className="flex-1 px-4 space-y-2 overflow-y-auto py-4">
+                      {[
+                        { id: 'dashboard', label: t('nav_dashboard'), icon: LayoutDashboard },
+                        { id: 'tracker', label: t('nav_tracker'), icon: BookOpen },
+                        { id: 'community', label: t('nav_community'), icon: Users },
+                        { id: 'history', label: t('nav_history'), icon: History },
+                        { id: 'achievements', label: t('nav_achievements'), icon: Trophy },
+                        { id: 'support', label: t('nav_support'), icon: LifeBuoy },
+                      ].map(item => (
+                          <button 
+                            key={item.id}
+                            onClick={() => setActiveTab(item.id as any)} 
+                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium ${
+                                activeTab === item.id 
+                                ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400' 
+                                : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-800'
+                            }`}
+                          >
+                              <item.icon size={20} /> {item.label}
+                          </button>
+                      ))}
+                      
+                      {isAdmin && (
+                          <button 
+                            onClick={() => setActiveTab('admin')} 
+                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium ${
+                                activeTab === 'admin' 
+                                ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400' 
+                                : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-800'
+                            }`}
+                          >
+                              <ShieldAlert size={20} /> {t('nav_admin')}
+                          </button>
+                      )}
+                  </nav>
 
+                  <div className="p-4 border-t border-gray-200 dark:border-slate-800">
+                      <button onClick={toggleTheme} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors mb-2">
+                          {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
+                          <span>{theme === 'dark' ? t('nav_theme_light') : t('nav_theme_dark')}</span>
+                      </button>
+                      <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                          <LogOut size={20} /> {t('nav_logout')}
+                      </button>
+                  </div>
+              </aside>
+
+              {/* Mobile Header & Content */}
+              <main className="flex-1 flex flex-col h-full overflow-hidden relative transition-colors">
+                  <header className="md:hidden h-16 bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-800 flex items-center justify-between px-4 z-20 shrink-0">
+                      <div className="flex items-center gap-2">
+                          <div className="bg-indigo-600 p-1.5 rounded-lg text-white">
+                              <Book size={20} />
+                          </div>
+                          <span className="font-bold text-lg serif">Bíblia Tracker</span>
+                      </div>
+                      <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="p-2 text-gray-600 dark:text-gray-300">
+                          {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+                      </button>
+                  </header>
+
+                  {/* Mobile Menu */}
+                  {mobileMenuOpen && (
+                    <div className="absolute inset-0 z-50 bg-white dark:bg-slate-900 p-4 animate-fade-in md:hidden flex flex-col">
+                        <div className="flex justify-end mb-4">
+                            <button onClick={() => setMobileMenuOpen(false)} className="p-2 text-gray-500"><X size={24} /></button>
+                        </div>
+                        <nav className="space-y-2 flex-1 overflow-y-auto">
+                             {[
+                                { id: 'dashboard', label: t('nav_dashboard'), icon: LayoutDashboard },
+                                { id: 'tracker', label: t('nav_tracker'), icon: BookOpen },
+                                { id: 'community', label: t('nav_community'), icon: Users },
+                                { id: 'history', label: t('nav_history'), icon: History },
+                                { id: 'achievements', label: t('nav_achievements'), icon: Trophy },
+                                { id: 'support', label: t('nav_support'), icon: LifeBuoy },
+                             ].map(item => (
+                                <button 
+                                    key={item.id}
+                                    onClick={() => { setActiveTab(item.id as any); setMobileMenuOpen(false); }} 
+                                    className="w-full p-4 rounded-xl bg-gray-50 dark:bg-slate-800 flex items-center gap-3 font-bold text-gray-800 dark:text-gray-200"
+                                >
+                                    <item.icon /> {item.label}
+                                </button>
+                             ))}
+                             {isAdmin && <button onClick={() => { setActiveTab('admin'); setMobileMenuOpen(false); }} className="w-full p-4 rounded-xl bg-gray-50 dark:bg-slate-800 flex items-center gap-3 font-bold text-indigo-600"><ShieldAlert /> {t('nav_admin')}</button>}
+                        </nav>
+                        <div className="mt-4 space-y-3 shrink-0">
+                             <button onClick={toggleTheme} className="w-full p-4 rounded-xl border border-gray-200 dark:border-slate-700 flex items-center justify-center gap-2 text-gray-600 dark:text-gray-300">
+                                {theme === 'dark' ? <Sun /> : <Moon />} {theme === 'dark' ? t('nav_theme_light') : t('nav_theme_dark')}
+                             </button>
+                             <button onClick={handleLogout} className="w-full p-4 rounded-xl bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 font-bold flex items-center justify-center gap-2"><LogOut /> {t('nav_logout')}</button>
+                        </div>
+                    </div>
+                  )}
+
+                  {/* Main Scrollable Content */}
+                  <div className="flex-1 overflow-y-auto p-4 md:p-8 relative scroll-smooth">
+                      {/* Top Bar Desktop */}
+                      <div className="hidden md:flex justify-between items-center mb-8">
+                          <div>
+                              <h1 className="text-2xl font-bold text-gray-900 dark:text-white transition-colors">
+                                  {activeTab === 'dashboard' && t('nav_dashboard')}
+                                  {activeTab === 'tracker' && t('nav_tracker')}
+                                  {activeTab === 'community' && t('nav_community')}
+                                  {activeTab === 'history' && t('nav_history')}
+                                  {activeTab === 'achievements' && t('nav_achievements')}
+                                  {activeTab === 'admin' && 'Painel Administrativo'}
+                                  {activeTab === 'support' && t('nav_support')}
+                              </h1>
+                              <div className="flex items-center gap-2 mt-1">
+                                <p className="text-gray-500 dark:text-gray-400 text-sm">
+                                    Olá, {user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Visitante'}
+                                </p>
+                                {unlockedAchievements.has(117) && (
+                                    <div className="flex items-center gap-1 bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-400 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border border-yellow-200 dark:border-yellow-700">
+                                        <CheckCircle2 size={10} /> Peregrino
+                                    </div>
+                                )}
+                              </div>
+                              {dailyVerse && (
+                                <div className="mt-2 text-xs text-indigo-600 dark:text-indigo-400 italic">
+                                    "{dailyVerse.text}" <span className="font-bold not-italic ml-1">- {dailyVerse.ref}</span>
+                                </div>
+                              )}
+                          </div>
+                          <div className="flex items-center gap-3">
+                              <button onClick={() => setIsChangePasswordOpen(true)} className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-slate-800 text-gray-500 dark:text-gray-400 transition-colors" title="Alterar Senha">
+                                  <KeyRound size={20} />
+                              </button>
+                              <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold shadow-sm ${isGoldenTheme ? 'bg-gradient-to-br from-yellow-400 to-amber-600' : 'bg-indigo-600'}`}>
+                                  {user?.user_metadata?.full_name?.charAt(0) || user?.email?.charAt(0) || 'U'}
+                              </div>
+                          </div>
+                      </div>
+
+                      {/* Tab Content */}
+                      
+                      {activeTab === 'dashboard' && (
+                        <div className="space-y-6 animate-fade-in">
+                          {/* Welcome / Plan Widget */}
+                          <div className={`rounded-2xl p-8 text-white relative overflow-hidden shadow-xl ${isGoldenTheme ? 'bg-gradient-to-br from-gray-900 to-black border border-yellow-500/30' : 'bg-indigo-600'}`}>
+                             <div className="absolute right-0 top-0 h-full w-1/3 bg-gradient-to-l from-white/10 to-transparent pointer-events-none"></div>
+                             <div className="relative z-10 max-w-2xl">
+                                <h2 className={`text-3xl font-bold font-serif mb-2 ${isGoldenTheme ? 'text-yellow-400' : 'text-white'}`}>{t('dash_welcome_title')}</h2>
+                                {userPlan ? (
+                                   <div>
+                                     <div className="flex justify-between items-center mb-4">
+                                        <p className="text-indigo-100">{t('dash_plan_active')} <strong>{userPlan.title}</strong></p>
+                                        <button 
+                                            onClick={handleAbandonPlanRequest}
+                                            className="text-indigo-200 hover:text-white hover:bg-red-500/20 p-2 rounded-full transition-colors"
+                                            title="Abandonar Plano"
+                                        >
+                                            <Trash2 size={16} />
+                                        </button>
+                                     </div>
+                                     {getPlanProgress && (
+                                        <div className="bg-black/20 rounded-xl p-4 mb-4 backdrop-blur-sm">
+                                           <div className="flex justify-between text-sm mb-2 font-medium">
+                                              <span>{t('dash_plan_progress')}</span>
+                                              <span>{Math.round(getPlanProgress.percent)}%</span>
+                                           </div>
+                                           <div className="w-full bg-black/20 rounded-full h-2 mb-4">
+                                              <div className={`h-2 rounded-full transition-all ${isGoldenTheme ? 'bg-yellow-400' : 'bg-white'}`} style={{ width: `${getPlanProgress.percent}%` }}></div>
+                                           </div>
+                                           <div className="flex flex-wrap gap-2 items-center">
+                                              <span className="text-sm text-indigo-100 mr-2">Próximos:</span>
+                                              {getPlanProgress.nextBatch.length > 0 ? getPlanProgress.nextBatch.slice(0, 5).map((item, idx) => (
+                                                  <span key={idx} className="bg-white/20 px-2 py-1 rounded text-xs font-bold">{item.bookId} {item.chapter}</span>
+                                              )) : <span className="text-sm font-bold">{t('dash_daily_goal')}</span>}
+                                           </div>
+                                           {getPlanProgress.nextBatch.length > 0 && (
+                                              <button onClick={() => handleQuickRead(getPlanProgress.nextBatch)} className={`mt-4 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:opacity-90 transition-colors ${isGoldenTheme ? 'bg-yellow-500 text-black' : 'bg-white text-indigo-600'}`}>
+                                                 {t('dash_btn_read_now')} <ArrowRight size={16} />
+                                              </button>
+                                           )}
+                                        </div>
+                                     )}
+                                   </div>
+                                ) : (
+                                   <div>
+                                     <p className="text-indigo-100 mb-6">{t('dash_no_plan_msg')}</p>
+                                     <button onClick={() => setIsPlanModalOpen(true)} className="bg-white text-indigo-600 px-6 py-3 rounded-xl font-bold hover:bg-indigo-50 transition-colors shadow-lg">
+                                        {t('dash_btn_choose_plan')}
+                                     </button>
+                                   </div>
+                                )}
+                             </div>
+                          </div>
+
+                          {/* Site News Banner */}
+                          {siteNews && showNews && (
+                             <div className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800 rounded-xl p-4 flex items-start justify-between gap-4 animate-fade-in">
+                                 <div className="flex items-start gap-3">
+                                     <div className="bg-indigo-100 dark:bg-indigo-800/50 p-2 rounded-lg text-indigo-600 dark:text-indigo-300">
+                                         <Megaphone size={20} />
+                                     </div>
+                                     <div>
+                                         <h4 className="font-bold text-gray-900 dark:text-white text-sm uppercase tracking-wide mb-1">Novidades</h4>
+                                         <p className="text-sm text-gray-600 dark:text-gray-300">{siteNews}</p>
+                                     </div>
+                                 </div>
+                                 <button onClick={() => setShowNews(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+                                     <X size={18} />
+                                 </button>
+                             </div>
+                          )}
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                              <StatCard 
+                                title={t('dash_stat_read')} 
+                                value={totalReadCount} 
+                                subtext={`${completionPercentage.toFixed(1)}% da Bíblia`} 
+                                icon={<BookOpen size={24} />} 
+                                highlight={true} 
+                                colorClass={isGoldenTheme ? 'bg-yellow-600' : 'bg-indigo-600'}
+                                progress={completionPercentage}
+                              />
+                              <StatCard 
+                                title={t('dash_stat_prediction')} 
+                                value={advancedStats.projection.date} 
+                                subtext={`Você vai concluir a Bíblia toda em ${advancedStats.projection.date} nesse ritmo atual.`} 
+                                icon={<Hourglass size={24} />} 
+                                colorClass="bg-purple-600"
+                              />
+                              <StatCard 
+                                title={t('dash_stat_pace')} 
+                                value={advancedStats.avgChaptersPerDay.toFixed(1)} 
+                                subtext="capítulos por dia (média)" 
+                                icon={<Activity size={24} />} 
+                                colorClass="bg-emerald-600"
+                              />
+                              <StatCard 
+                                title={t('dash_stat_streak')} 
+                                value={`${currentStreak} dias`} 
+                                subtext={getStreakMessage(currentStreak)} 
+                                icon={<Flame size={24} />} 
+                                colorClass="bg-orange-500" 
+                              />
+                          </div>
+
+                          {/* Simulador de Ritmo */}
+                          <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-gray-100 dark:border-slate-800 shadow-sm animate-fade-in">
+                              <h3 className="font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                                  <Calculator size={18} className="text-indigo-500" /> {t('dash_sim_title')}
+                              </h3>
+                              <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">{t('dash_sim_desc')}</p>
+                              
+                              <div className="flex flex-col md:flex-row items-center gap-8">
+                                  <div className="flex-1 w-full">
+                                      <div className="flex justify-between mb-2">
+                                          <label className="text-sm font-bold text-gray-700 dark:text-gray-300">Ler {simulatedPace} capítulos por dia</label>
+                                          <span className="text-xs text-gray-400">Arraste para simular</span>
+                                      </div>
+                                      <input 
+                                          type="range" 
+                                          min="1" 
+                                          max="20" 
+                                          value={simulatedPace} 
+                                          onChange={(e) => setSimulatedPace(parseInt(e.target.value))}
+                                          className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700 accent-indigo-600"
+                                      />
+                                      <div className="flex justify-between mt-1 text-xs text-gray-400">
+                                          <span>1 cap/dia</span>
+                                          <span>10 caps/dia</span>
+                                          <span>20 caps/dia</span>
+                                      </div>
+                                  </div>
+                                  <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl min-w-[200px] text-center border border-indigo-100 dark:border-indigo-800">
+                                      <p className="text-xs text-indigo-600 dark:text-indigo-300 uppercase font-bold tracking-wider mb-1">Previsão Simulada</p>
+                                      <p className="text-2xl font-bold text-gray-900 dark:text-white">{calculateSimulationDate(simulatedPace, totalReadCount)}</p>
+                                  </div>
+                              </div>
+                          </div>
+
+                          {/* Completion Badge Activation */}
+                          {totalReadCount >= TOTAL_CHAPTERS_BIBLE && !isGoldenTheme && (
+                              <div className="bg-gradient-to-r from-yellow-400 to-amber-500 rounded-2xl p-6 text-white shadow-xl flex items-center justify-between gap-4 animate-pulse">
+                                  <div className="flex items-center gap-4">
+                                      <div className="bg-white/20 p-3 rounded-full">
+                                          <Gem size={32} className="text-white" />
+                                      </div>
+                                      <div>
+                                          <h3 className="text-xl font-bold">Jornada Completa!</h3>
+                                          <p className="text-yellow-50 text-sm">Você leu toda a Bíblia. Desbloqueie o tema exclusivo.</p>
+                                      </div>
+                                  </div>
+                                  <button 
+                                      onClick={activateGoldenTheme}
+                                      className="bg-white text-amber-600 px-6 py-2 rounded-xl font-bold hover:bg-yellow-50 transition-colors shadow-md"
+                                  >
+                                      Ativar Tema Peregrino
+                                  </button>
+                              </div>
+                          )}
+
+                          {/* Invite Friends Banner */}
+                          <div className="bg-gradient-to-r from-emerald-500 to-teal-600 rounded-2xl p-6 text-white shadow-lg flex flex-col sm:flex-row justify-between items-center gap-6 relative overflow-hidden">
+                              <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/3 blur-3xl"></div>
+                              
+                              <div className="flex items-center gap-4 relative z-10">
+                                  <div className="bg-white/20 p-3 rounded-xl backdrop-blur-sm">
+                                      <Share2 size={28} className="text-white" />
+                                  </div>
+                                  <div>
+                                      <h3 className="text-xl font-bold font-serif">{t('dash_invite_title')}</h3>
+                                      <p className="text-emerald-50 text-sm max-w-md">{t('dash_invite_msg')}</p>
+                                  </div>
+                              </div>
+                              
+                              <button 
+                                  onClick={handleShareApp}
+                                  className="bg-white text-emerald-600 px-6 py-3 rounded-xl font-bold hover:bg-emerald-50 transition-colors shadow-md whitespace-nowrap z-10 flex items-center gap-2"
+                              >
+                                  <Send size={18} /> {t('dash_btn_invite')}
+                              </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {activeTab === 'tracker' && renderTracker()}
+                      
+                      {activeTab === 'achievements' && renderAchievements()}
+                      
+                      {activeTab === 'support' && renderSupport()}
+
+                      {activeTab === 'community' && renderCommunity()}
+
+                      {activeTab === 'history' && (
+                          <div className="space-y-4 animate-fade-in max-w-4xl mx-auto">
+                              {readingLogs.length === 0 ? (
+                                  <div className="text-center py-12 text-gray-500">
+                                      <History size={48} className="mx-auto mb-4 opacity-20" />
+                                      <p>{t('hist_empty')}</p>
+                                  </div>
+                              ) : (
+                                  readingLogs.map(log => {
+                                      const book = BIBLE_BOOKS.find(b => b.id === log.bookId);
+                                      return (
+                                          <div key={log.id} className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-gray-100 dark:border-slate-800 shadow-sm relative">
+                                              <div className="flex justify-between items-start mb-4">
+                                                  <div>
+                                                      <h3 className="font-bold text-lg text-gray-900 dark:text-white serif">{book?.name} <span className="text-indigo-600 dark:text-indigo-400">{log.chapters.join(', ')}</span></h3>
+                                                      <p className="text-xs text-gray-500 dark:text-gray-400">{new Date(log.timestamp).toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                                                  </div>
+                                                  {log.userNotes && (
+                                                      <div className="bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1">
+                                                          <PenTool size={12} /> {t('hist_with_note')}
+                                                      </div>
+                                                  )}
+                                              </div>
+                                              
+                                              {/* AI Reflection Removed */}
+
+                                              {editingNoteId === log.id ? (
+                                                  <div className="mt-4 animate-fade-in">
+                                                      <textarea 
+                                                          className="w-full p-3 rounded-lg border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                                          rows={3}
+                                                          value={tempNoteContent}
+                                                          onChange={e => setTempNoteContent(e.target.value)}
+                                                          placeholder="Escreva suas anotações aqui..."
+                                                      />
+                                                      <div className="flex justify-end gap-2 mt-2">
+                                                          <button onClick={() => setEditingNoteId(null)} className="text-xs text-gray-500 hover:text-gray-700 px-3 py-2">Cancelar</button>
+                                                          <button onClick={() => handleSaveNote(log.id)} className="bg-indigo-600 text-white text-xs px-4 py-2 rounded-lg font-bold hover:bg-indigo-700">Salvar Nota</button>
+                                                      </div>
+                                                  </div>
+                                              ) : (
+                                                  <div className="mt-4">
+                                                      {log.userNotes ? (
+                                                          <div className="bg-gray-50 dark:bg-slate-800 p-4 rounded-lg text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
+                                                              {log.userNotes}
+                                                          </div>
+                                                      ) : (
+                                                          <p className="text-sm text-gray-400 italic">Nenhuma anotação pessoal.</p>
+                                                      )}
+                                                      <button onClick={() => startEditingNote(log)} className="mt-2 text-indigo-600 dark:text-indigo-400 text-xs font-bold hover:underline flex items-center gap-1">
+                                                          <PenLine size={12} /> {log.userNotes ? t('hist_edit_note') : t('hist_add_note')}
+                                                      </button>
+                                                  </div>
+                                              )}
+                                          </div>
+                                      );
+                                  })
+                              )}
+                          </div>
+                      )}
+
+                      {activeTab === 'admin' && isAdmin && (
+                          <div className="space-y-8 animate-fade-in">
+                              
+                              {/* Sub Menu */}
+                              <div className="flex overflow-x-auto gap-2 pb-2 mb-4 bg-white dark:bg-slate-900 p-2 rounded-xl sticky top-0 z-10 shadow-sm border border-gray-100 dark:border-slate-800">
+                                  {([
+                                      { id: 'overview', label: t('admin_tab_metrics') },
+                                      { id: 'plans', label: t('admin_tab_plans') },
+                                      { id: 'content', label: t('admin_tab_content') },
+                                      { id: 'users', label: t('admin_tab_users') },
+                                      { id: 'support', label: t('admin_tab_support') }
+                                  ] as const).map(tab => (
+                                      <button 
+                                          key={tab.id}
+                                          onClick={() => setAdminView(tab.id)}
+                                          className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-colors ${adminView === tab.id ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-slate-700'}`}
+                                      >
+                                          {tab.label}
+                                      </button>
+                                  ))}
+                              </div>
+
+                              {adminView === 'overview' && (
+                                  <div className="space-y-6">
+                                      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+                                          <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-gray-100 dark:border-slate-700 shadow-sm">
+                                              <p className="text-gray-500 dark:text-gray-400 text-xs font-bold uppercase mb-2">Usuários Totais</p>
+                                              <h3 className="text-3xl font-bold text-gray-900 dark:text-white">{adminStats?.uniqueUsers || 0}</h3>
+                                          </div>
+                                          <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-gray-100 dark:border-slate-700 shadow-sm">
+                                              <p className="text-gray-500 dark:text-gray-400 text-xs font-bold uppercase mb-2">Capítulos Lidos</p>
+                                              <h3 className="text-3xl font-bold text-indigo-600 dark:text-indigo-400">{adminStats?.totalChaptersRead || 0}</h3>
+                                          </div>
+                                          <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-gray-100 dark:border-slate-700 shadow-sm">
+                                              <p className="text-gray-500 dark:text-gray-400 text-xs font-bold uppercase mb-2">Livros Concluídos</p>
+                                              <h3 className="text-3xl font-bold text-emerald-600 dark:text-emerald-400">{adminStats?.booksCompleted || 0}</h3>
+                                          </div>
+                                          <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-gray-100 dark:border-slate-700 shadow-sm">
+                                              <p className="text-gray-500 dark:text-gray-400 text-xs font-bold uppercase mb-2">Planos Finalizados</p>
+                                              <h3 className="text-3xl font-bold text-blue-600 dark:text-blue-400">{adminStats?.plansFinished || 0}</h3>
+                                          </div>
+                                          <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-gray-100 dark:border-slate-700 shadow-sm">
+                                              <p className="text-gray-500 dark:text-gray-400 text-xs font-bold uppercase mb-2">Medalhas</p>
+                                              <h3 className="text-3xl font-bold text-yellow-600 dark:text-yellow-400">{adminStats?.medalsEarned || 0}</h3>
+                                          </div>
+                                      </div>
+
+                                      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-800 p-6">
+                                          <h3 className="font-bold text-lg mb-4 text-gray-900 dark:text-white flex items-center gap-2">
+                                              <Megaphone size={20} /> Gerenciar Notícia do Site
+                                          </h3>
+                                          <div className="bg-gray-50 dark:bg-slate-800 p-4 rounded-xl mb-4">
+                                              <p className="text-xs text-gray-500 mb-2">Pré-visualização:</p>
+                                              {editingNews ? (
+                                                  <div className="bg-indigo-50 dark:bg-indigo-900/20 p-3 rounded-lg border border-indigo-100 dark:border-indigo-800 flex items-start gap-3">
+                                                      <Megaphone size={16} className="text-indigo-600 dark:text-indigo-400 mt-1" />
+                                                      <p className="text-sm text-gray-800 dark:text-gray-200">{editingNews}</p>
+                                                  </div>
+                                              ) : <p className="text-sm italic text-gray-400">Nenhuma notícia ativa.</p>}
+                                          </div>
+                                          <textarea 
+                                              value={editingNews} 
+                                              onChange={e => setEditingNews(e.target.value)} 
+                                              className="w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-4 text-sm focus:ring-2 focus:ring-indigo-500 outline-none" 
+                                              placeholder="Escreva um aviso para todos os usuários..."
+                                              rows={3}
+                                          />
+                                          <div className="flex justify-end mt-4">
+                                              <button onClick={handleSaveNews} className="bg-indigo-600 text-white px-6 py-2 rounded-xl font-bold text-sm hover:bg-indigo-700 transition-colors shadow-lg">Publicar Notícia</button>
+                                          </div>
+                                      </div>
+                                  </div>
+                              )}
+
+                              {adminView === 'content' && (
+                                  <div className="space-y-6">
+                                      <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-gray-200 dark:border-slate-800">
+                                          <div className="flex justify-between items-center mb-6">
+                                              <div>
+                                                  <h3 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                                                      <Edit size={24} className="text-indigo-500" /> {t('admin_content_title')}
+                                                  </h3>
+                                                  <p className="text-gray-500 dark:text-gray-400 text-sm">{t('admin_content_subtitle')}</p>
+                                              </div>
+                                              <div className="flex gap-3">
+                                                  <button 
+                                                      onClick={handleRestoreDefaults}
+                                                      className="px-4 py-2 rounded-lg text-sm font-bold text-red-600 bg-red-50 hover:bg-red-100 transition-colors"
+                                                  >
+                                                      {t('admin_btn_restore_defaults')}
+                                                  </button>
+                                                  <button 
+                                                      onClick={handleSaveContent}
+                                                      disabled={isSavingTexts}
+                                                      className="px-6 py-2 rounded-lg text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 transition-colors shadow-lg flex items-center gap-2"
+                                                  >
+                                                      {isSavingTexts && <Loader2 className="animate-spin" size={16} />}
+                                                      {t('admin_btn_save_content')}
+                                                  </button>
+                                              </div>
+                                          </div>
+
+                                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                              {Object.keys(DEFAULT_TEXTS).map((key) => (
+                                                  <div key={key} className="bg-gray-50 dark:bg-slate-800/50 p-4 rounded-xl border border-gray-100 dark:border-slate-700">
+                                                      <label className="block text-xs font-bold text-gray-500 uppercase mb-2 font-mono">{key}</label>
+                                                      <textarea 
+                                                          value={editingTexts[key]} 
+                                                          onChange={(e) => setEditingTexts({ ...editingTexts, [key]: e.target.value })}
+                                                          className="w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg p-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                                          rows={key.includes('msg') || key.includes('desc') ? 3 : 1}
+                                                      />
+                                                      {editingTexts[key] !== DEFAULT_TEXTS[key] && (
+                                                          <p className="text-xs text-amber-500 mt-1 italic">Alterado (Original: "{DEFAULT_TEXTS[key]}")</p>
+                                                      )}
+                                                  </div>
+                                              ))}
+                                          </div>
+                                      </div>
+                                  </div>
+                              )}
+
+                              {adminView === 'plans' && (
+                                  <div className="space-y-6">
+                                      {/* Plan Creator */}
+                                      <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-gray-200 dark:border-slate-800">
+                                          <div className="flex justify-between items-center mb-6">
+                                              <h3 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                                                  <FilePlus size={24} className="text-indigo-500" /> Criar Novo Plano
+                                              </h3>
+                                              <button 
+                                                  onClick={() => setIsCreatingPlan(!isCreatingPlan)}
+                                                  className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${isCreatingPlan ? 'bg-red-100 text-red-600' : 'bg-indigo-100 text-indigo-600'}`}
+                                              >
+                                                  {isCreatingPlan ? 'Cancelar' : 'Novo Plano'}
+                                              </button>
+                                          </div>
+
+                                          {isCreatingPlan && (
+                                              <div className="space-y-4 animate-fade-in bg-gray-50 dark:bg-slate-800/50 p-6 rounded-xl border border-gray-100 dark:border-slate-700">
+                                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                      <div>
+                                                          <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Título do Plano</label>
+                                                          <input 
+                                                              type="text" 
+                                                              className="w-full p-3 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                                                              placeholder="Ex: Desafio de Provérbios"
+                                                              value={newPlanForm.title}
+                                                              onChange={e => setNewPlanForm({...newPlanForm, title: e.target.value})}
+                                                          />
+                                                      </div>
+                                                      <div>
+                                                          <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Duração (Dias)</label>
+                                                          <input 
+                                                              type="number" 
+                                                              className="w-full p-3 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                                                              placeholder="30"
+                                                              value={newPlanForm.days}
+                                                              onChange={e => setNewPlanForm({...newPlanForm, days: parseInt(e.target.value)})}
+                                                          />
+                                                      </div>
+                                                  </div>
+                                                  
+                                                  <div>
+                                                      <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Descrição Curta</label>
+                                                      <input 
+                                                          type="text" 
+                                                          className="w-full p-3 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                                                          placeholder="Ex: Leia um capítulo por dia para adquirir sabedoria."
+                                                          value={newPlanForm.description}
+                                                          onChange={e => setNewPlanForm({...newPlanForm, description: e.target.value})}
+                                                      />
+                                                  </div>
+
+                                                  <div>
+                                                      <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Escopo da Leitura</label>
+                                                      <select 
+                                                          className="w-full p-3 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 mb-2"
+                                                          value={newPlanForm.scope}
+                                                          onChange={e => setNewPlanForm({...newPlanForm, scope: e.target.value as any})}
+                                                      >
+                                                          <option value="ALL">Bíblia Toda</option>
+                                                          <option value="OLD">Antigo Testamento</option>
+                                                          <option value="NEW">Novo Testamento</option>
+                                                          <option value="PAUL">Cartas de Paulo</option>
+                                                          <option value="CUSTOM">Customizado (Selecionar Livros)</option>
+                                                      </select>
+
+                                                      {newPlanForm.scope === 'CUSTOM' && (
+                                                          <div className="mt-4 p-4 bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-700 max-h-60 overflow-y-auto">
+                                                              <p className="text-xs text-gray-500 mb-2 font-bold">SELECIONE OS LIVROS:</p>
+                                                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                                                  {BIBLE_BOOKS.map(book => (
+                                                                      <label key={book.id} className="flex items-center gap-2 text-sm p-1 hover:bg-gray-50 dark:hover:bg-slate-800 rounded cursor-pointer">
+                                                                          <input 
+                                                                              type="checkbox" 
+                                                                              checked={selectedBooksForPlan.includes(book.id)}
+                                                                              onChange={(e) => {
+                                                                                  if(e.target.checked) setSelectedBooksForPlan([...selectedBooksForPlan, book.id]);
+                                                                                  else setSelectedBooksForPlan(selectedBooksForPlan.filter(id => id !== book.id));
+                                                                              }}
+                                                                              className="rounded text-indigo-600 focus:ring-indigo-500"
+                                                                          />
+                                                                          <span className="text-gray-700 dark:text-gray-300">{book.name}</span>
+                                                                      </label>
+                                                                  ))}
+                                                              </div>
+                                                          </div>
+                                                      )}
+                                                  </div>
+
+                                                  <div className="flex justify-end pt-4">
+                                                      <button 
+                                                          onClick={handleCreateCustomPlan}
+                                                          className="bg-emerald-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg hover:bg-emerald-700 transition-colors flex items-center gap-2"
+                                                      >
+                                                          <CheckCircle2 size={20} /> Criar Plano
+                                                      </button>
+                                                  </div>
+                                              </div>
+                                          )}
+                                      </div>
+
+                                      {/* Existing Plans List */}
+                                      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-800 overflow-hidden">
+                                          <div className="p-6 border-b border-gray-100 dark:border-slate-800 bg-gray-50 dark:bg-slate-950">
+                                              <h3 className="font-bold text-gray-900 dark:text-white">Planos Ativos na Plataforma</h3>
+                                          </div>
+                                          <div className="divide-y divide-gray-100 dark:divide-slate-800">
+                                              {Object.entries(availablePlans).map(([key, plan]: [string, PlanConfig]) => (
+                                                  <div key={key} className="p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors">
+                                                      <div>
+                                                          <div className="flex items-center gap-3">
+                                                              <h4 className="font-bold text-gray-900 dark:text-white text-lg">{plan.title}</h4>
+                                                              {key.startsWith('CUSTOM') ? 
+                                                                  <span className="bg-purple-100 text-purple-700 text-xs px-2 py-0.5 rounded-full font-bold">Customizado</span> : 
+                                                                  <span className="bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded-full font-bold">Sistema</span>
+                                                              }
+                                                          </div>
+                                                          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{plan.description}</p>
+                                                          <div className="flex gap-4 mt-2 text-xs font-mono text-gray-400">
+                                                              <span>{plan.days} DIAS</span>
+                                                              <span>•</span>
+                                                              <span>ESCOPO: {plan.scope}</span>
+                                                          </div>
+                                                      </div>
+                                                      {key.startsWith('CUSTOM') && (
+                                                          <button 
+                                                              onClick={async () => {
+                                                                  if(confirm('Deseja excluir este plano?')) {
+                                                                      const newPlans = { ...customPlans };
+                                                                      delete newPlans[key];
+                                                                      setCustomPlans(newPlans);
+                                                                      // Try delete from DB
+                                                                      await supabase.from('reading_plans').delete().eq('id', key);
+                                                                      showNotification('Plano removido.', 'success');
+                                                                  }
+                                                              }}
+                                                              className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors"
+                                                              title="Excluir Plano"
+                                                          >
+                                                              <Trash2 size={20} />
+                                                          </button>
+                                                      )}
+                                                  </div>
+                                              ))}
+                                          </div>
+                                      </div>
+                                  </div>
+                              )}
+
+                              {adminView === 'users' && (
+                                  <div className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-800 overflow-hidden">
+                                      <div className="p-6 border-b border-gray-100 dark:border-slate-800 flex justify-between items-center">
+                                          <h3 className="font-bold text-lg text-gray-900 dark:text-white">Usuários da Plataforma</h3>
+                                          <div className="relative">
+                                              <Search size={18} className="absolute left-3 top-2.5 text-gray-400" />
+                                              <input type="text" placeholder="Buscar email..." className="pl-10 pr-4 py-2 bg-gray-50 dark:bg-slate-800 rounded-lg text-sm outline-none border border-transparent focus:border-indigo-500" />
+                                          </div>
+                                      </div>
+                                      <div className="overflow-x-auto">
+                                          <table className="w-full text-sm text-left">
+                                              <thead className="text-xs text-gray-500 uppercase bg-gray-50 dark:bg-slate-950">
+                                                  <tr>
+                                                      <th className="px-6 py-3">Usuário</th>
+                                                      <th className="px-6 py-3">Email</th>
+                                                      <th className="px-6 py-3 text-center">Leituras</th>
+                                                      <th className="px-6 py-3 text-right">Ações</th>
+                                                  </tr>
+                                              </thead>
+                                              <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
+                                                  {(() => {
+                                                      // Derive unique users from logs
+                                                      const uniqueUsersMap: Record<string, {name: string, email: string, count: number}> = {};
+                                                      adminLogs.forEach(log => {
+                                                          if(!uniqueUsersMap[log.user_id]) uniqueUsersMap[log.user_id] = { name: log.user_name || 'N/A', email: log.user_email || 'N/A', count: 0 };
+                                                          uniqueUsersMap[log.user_id].count += log.chapters.length;
+                                                      });
+                                                      return Object.entries(uniqueUsersMap).map(([uid, u]) => (
+                                                          <tr key={uid} className="hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors">
+                                                              <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">{u.name}</td>
+                                                              <td className="px-6 py-4 text-gray-500">{u.email}</td>
+                                                              <td className="px-6 py-4 text-center">
+                                                                  <span className="bg-indigo-100 text-indigo-700 px-2 py-1 rounded-full text-xs font-bold">{u.count} caps</span>
+                                                              </td>
+                                                              <td className="px-6 py-4 text-right flex justify-end gap-2">
+                                                                  <button 
+                                                                      onClick={() => setInspectingUserId(uid)}
+                                                                      className="text-indigo-600 hover:text-indigo-900 dark:hover:text-indigo-400 font-bold text-xs flex items-center gap-1 bg-indigo-50 dark:bg-indigo-900/20 px-3 py-1.5 rounded-lg"
+                                                                  >
+                                                                      <Eye size={14} /> Ver
+                                                                  </button>
+                                                                  <button 
+                                                                      onClick={() => handleSendPasswordReset(u.email)}
+                                                                      className="text-gray-400 hover:text-gray-600"
+                                                                      title="Resetar Senha"
+                                                                  >
+                                                                      <KeyRound size={16} />
+                                                                  </button>
+                                                                  <button 
+                                                                      onClick={() => handleDeleteUserRequest(uid, u.name)}
+                                                                      className="text-red-400 hover:text-red-600 ml-1"
+                                                                      title="Excluir Usuário"
+                                                                  >
+                                                                      <UserMinus size={16} />
+                                                                  </button>
+                                                              </td>
+                                                          </tr>
+                                                      ));
+                                                  })()}
+                                              </tbody>
+                                          </table>
+                                      </div>
+                                  </div>
+                              )}
+
+                              {adminView === 'support' && (
+                                  <div className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-800 p-6">
+                                      <h3 className="font-bold mb-6 text-xl">Central de Suporte</h3>
+                                      <div className="flex gap-2 mb-6">
+                                          <button onClick={() => setTicketFilter('all')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${ticketFilter === 'all' ? 'bg-indigo-100 text-indigo-700' : 'bg-white border border-gray-200 text-gray-600 dark:bg-slate-800 dark:border-slate-700 dark:text-gray-400'}`}>Todos</button>
+                                          <button onClick={() => setTicketFilter('open')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${ticketFilter === 'open' ? 'bg-indigo-100 text-indigo-700' : 'bg-white border border-gray-200 text-gray-600 dark:bg-slate-800 dark:border-slate-700 dark:text-gray-400'}`}>Abertos</button>
+                                          <button onClick={() => setTicketFilter('resolved')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${ticketFilter === 'resolved' ? 'bg-indigo-100 text-indigo-700' : 'bg-white border border-gray-200 text-gray-600 dark:bg-slate-800 dark:border-slate-700 dark:text-gray-400'}`}>Resolvidos</button>
+                                      </div>
+                                      <div className="space-y-4">
+                                          {supportTickets.length === 0 ? <p className="text-gray-500 italic">Nenhum ticket encontrado.</p> : supportTickets.filter(t => ticketFilter === 'all' || t.status === ticketFilter).map(t => (
+                                              <div key={t.id} className="flex flex-col md:flex-row justify-between items-start md:items-center p-4 border border-gray-100 dark:border-slate-800 rounded-xl hover:shadow-md transition-shadow bg-gray-50 dark:bg-slate-950/50">
+                                                  <div className="mb-2 md:mb-0">
+                                                      <div className="flex items-center gap-3 mb-1">
+                                                          <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded ${t.type === 'problem' ? 'bg-red-100 text-red-600' : t.type === 'suggestion' ? 'bg-blue-100 text-blue-600' : 'bg-yellow-100 text-yellow-600'}`}>
+                                                              {t.type === 'question' ? 'Dúvida' : t.type === 'suggestion' ? 'Sugestão' : 'Problema'}
+                                                          </span>
+                                                          <span className="text-xs text-gray-400">{t.user_email} • {new Date(t.created_at).toLocaleDateString()}</span>
+                                                      </div>
+                                                      <p className="text-sm text-gray-800 dark:text-gray-200 font-medium">{t.message}</p>
+                                                  </div>
+                                                  <button 
+                                                      onClick={() => handleToggleTicketStatus(t.id, t.status)} 
+                                                      className={`text-xs px-4 py-2 rounded-lg font-bold border transition-colors ${t.status === 'open' ? 'bg-white border-red-200 text-red-600 hover:bg-red-50' : 'bg-white border-green-200 text-green-600 hover:bg-green-50'}`}
+                                                  >
+                                                      {t.status === 'open' ? 'Marcar Resolvido' : 'Reabrir Ticket'}
+                                                  </button>
+                                              </div>
+                                          ))}
+                                      </div>
+                                  </div>
+                              )}
+                          </div>
+                      )}
+                  </div>
+              </main>
+
+              {/* Modals Global */}
+              {isPlanModalOpen && <PlanSelectionModal onClose={() => setIsPlanModalOpen(false)} onSelectPlan={handleSelectPlan} availablePlans={availablePlans} />}
+              {readingChapter && (
+                <BibleReaderModal 
+                    book={readingChapter.book} 
+                    chapter={readingChapter.chapter} 
+                    onClose={() => setReadingChapter(null)} 
+                    onNext={() => {
+                        const nextChap = readingChapter.chapter + 1;
+                        if (nextChap <= readingChapter.book.chapters) setReadingChapter({ ...readingChapter, chapter: nextChap });
+                    }}
+                    onPrev={() => {
+                        const prevChap = readingChapter.chapter - 1;
+                        if (prevChap >= 1) setReadingChapter({ ...readingChapter, chapter: prevChap });
+                    }}
+                />
+              )}
+              {isChangePasswordOpen && <ChangePasswordModal onClose={() => setIsChangePasswordOpen(false)} />}
+              {inspectingUserId && <UserInspectorModal userId={inspectingUserId} allLogs={adminLogs} onClose={() => setInspectingUserId(null)} />}
+              {confirmModal.isOpen && (
+                  <ConfirmationModal 
+                      isOpen={confirmModal.isOpen} 
+                      onClose={() => setConfirmModal({...confirmModal, isOpen: false})} 
+                      onConfirm={confirmModal.onConfirm} 
+                      title={confirmModal.title} 
+                      message={confirmModal.message}
+                      isDestructive={confirmModal.isDestructive}
+                  />
+              )}
+              <TransferAdminModal 
+                  isOpen={isTransferringAdmin}
+                  onClose={() => { setIsTransferringAdmin(false); setSuccessorId(''); }}
+                  onConfirm={executeTransferAndLeave}
+                  members={groupMembers.filter(m => m.user_id !== user.id)}
+                  successorId={successorId}
+                  setSuccessorId={setSuccessorId}
+              />
           </div>
-       </main>
+      )}
     </div>
   );
-}
+};
+
+export default App;
