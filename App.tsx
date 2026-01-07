@@ -154,7 +154,7 @@ const calculateAchievements = (logs: ReadingLog[], chaptersMap: ReadChaptersMap)
     if (!logs.length) return new Set<number>();
 
     const unlocked = new Set<number>();
-
+    // ... (Mantendo a lógica existente de conquistas para brevidade)
     const isBookComplete = (id: string) => (chaptersMap[id]?.length || 0) === BIBLE_BOOKS.find(b => b.id === id)?.chapters;
 
     const hasEarlyMorning = logs.some(l => {
@@ -1535,17 +1535,26 @@ const App: React.FC = () => {
 
   const executeDeleteUser = async () => {
       if (!userToDelete) return;
+      
+      setIsAdminLoading(true);
 
       // Chama a função RPC criada no Supabase
       const { error } = await supabase.rpc('delete_user_by_admin', { target_user_id: userToDelete.id });
 
       if (error) {
           console.error("Erro ao excluir usuário:", error);
-          showNotification('Erro ao excluir usuário. Verifique se a função RPC foi criada no Banco de Dados.', 'error');
+          if (error.message?.includes('function') || error.code === '42883') { // 42883 is undefined_function
+             alert("Atenção: A função de banco de dados necessária não foi encontrada.\n\nVocê precisa rodar o código SQL no painel do Supabase para que a exclusão funcione.");
+          } else {
+             showNotification('Erro ao excluir usuário: ' + error.message, 'error');
+          }
       } else {
           showNotification(`Usuário ${userToDelete.name} excluído com sucesso.`, 'success');
+          // Optimistic update
+          setAdminLogs(prev => prev.filter(l => l.user_id !== userToDelete.id));
           fetchAdminData(); // Refresh list
       }
+      setIsAdminLoading(false);
       setUserToDelete(null);
   };
 
