@@ -1,13 +1,27 @@
 import { GoogleGenAI } from "@google/genai";
 import { DevotionalStyle } from '../types';
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Helper to safely get API key without crashing if process is undefined
+const getApiKey = () => {
+  try {
+    if (typeof process !== 'undefined' && process.env) {
+      return process.env.API_KEY;
+    }
+  } catch (e) {
+    console.warn("Error accessing process.env", e);
+  }
+  return undefined;
+};
 
 export const generateDevotional = async (bookName: string, chapters: number[], style: DevotionalStyle = 'theologian') => {
-  if (!process.env.API_KEY) {
+  const apiKey = getApiKey();
+  
+  if (!apiKey) {
       console.warn("API Key not found. AI features disabled.");
-      return "Configuração de IA pendente.";
+      return "Configuração de IA pendente (API_KEY não encontrada).";
   }
+
+  const ai = new GoogleGenAI({ apiKey });
 
   const chaptersStr = chapters.join(', ');
   let roleInstruction = '';
@@ -87,7 +101,10 @@ export const generateDevotional = async (bookName: string, chapters: number[], s
 };
 
 export const generateDevotionalFromTranscript = async (transcript: string) => {
-    if (!process.env.API_KEY) throw new Error("API Key não configurada");
+    const apiKey = getApiKey();
+    if (!apiKey) throw new Error("API Key não configurada");
+
+    const ai = new GoogleGenAI({ apiKey });
 
     const prompt = `
       Você é um assistente teológico que sintetiza a sabedoria de grandes homens de Deus.
