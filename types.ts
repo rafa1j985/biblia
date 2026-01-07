@@ -109,3 +109,15 @@ export interface GroupActivity {
 }
 
 export type DevotionalStyle = 'theologian' | 'pastoral' | 'youth' | 'kids' | 'classic';
+
+export interface Devotional {
+  id: string;
+  title: string;
+  verse_text: string;
+  verse_reference: string;
+  content: string;
+  conclusion: string;
+  status: 'draft' | 'published';
+  transcript_source?: string;
+  created_at: string;
+}

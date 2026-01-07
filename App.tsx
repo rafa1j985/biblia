@@ -87,7 +87,9 @@ import {
   MoreHorizontal,
   PlusCircle,
   UserCog,
-  UserMinus
+  UserMinus,
+  FileText,
+  Sparkles
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -106,11 +108,11 @@ import {
   Area
 } from 'recharts';
 import { BIBLE_BOOKS, TOTAL_CHAPTERS_BIBLE, ADMIN_EMAILS, PLANS_CONFIG, ACHIEVEMENTS, DEFAULT_TEXTS } from './constants';
-import { BibleBook, ReadChaptersMap, ReadingLog, UserPlan, PlanType, SupportTicket, Group, GroupMember, GroupActivity, ActivityType, PlanConfig } from './types';
+import { BibleBook, ReadChaptersMap, ReadingLog, UserPlan, PlanType, SupportTicket, Group, GroupMember, GroupActivity, ActivityType, PlanConfig, Devotional } from './types';
 import { supabase } from './services/supabase';
+import { generateDevotionalFromTranscript } from './services/geminiService';
 
-// ... (Constants omitted for brevity, keeping existing code structure)
-// --- Versículos Diários ---
+// ... (Rest of constants kept same)
 const DAILY_VERSES = [
   { text: "Lâmpada para os meus pés é tua palavra, e luz para o meu caminho.", ref: "Salmos 119:105" },
   { text: "Busquem, pois, em primeiro lugar o Reino de Deus e a sua justiça, e todas essas coisas lhes serão acrescentadas.", ref: "Mateus 6:33" },
@@ -149,32 +151,23 @@ const BIBLE_API_MAPPING: Record<string, string> = {
 
 const PAULINE_BOOKS = ['ROM', '1CO', '2CO', 'GAL', 'EPH', 'PHP', 'COL', '1TH', '2TH', '1TI', '2TI', 'TIT', 'PHM'];
 
-// --- Helper Functions ---
+// ... (Functions calculateAchievements, getAdvancedStats, getStreakMessage, calculateSimulationDate, handleSendPasswordReset remain same)
+
+// --- Helper Functions from Original Code ---
 const calculateAchievements = (logs: ReadingLog[], chaptersMap: ReadChaptersMap) => {
     if (!logs.length) return new Set<number>();
-
     const unlocked = new Set<number>();
-    // ... (Mantendo a lógica existente de conquistas para brevidade)
     const isBookComplete = (id: string) => (chaptersMap[id]?.length || 0) === BIBLE_BOOKS.find(b => b.id === id)?.chapters;
-
+    // ... (Mantendo a lógica existente de conquistas)
     const hasEarlyMorning = logs.some(l => {
         const hour = new Date(l.timestamp).getHours();
         return hour >= 0 && hour < 6;
     });
     if (hasEarlyMorning) unlocked.add(1); 
-
-    const hasMorning = logs.some(l => {
-        const hour = new Date(l.timestamp).getHours();
-        return hour >= 0 && hour < 8;
-    });
+    const hasMorning = logs.some(l => { const hour = new Date(l.timestamp).getHours(); return hour >= 0 && hour < 8; });
     if (hasMorning) unlocked.add(2); 
-
-    const hasLateNight = logs.some(l => {
-        const hour = new Date(l.timestamp).getHours();
-        return hour >= 22;
-    });
+    const hasLateNight = logs.some(l => { const hour = new Date(l.timestamp).getHours(); return hour >= 22; });
     if (hasLateNight) unlocked.add(3);
-
     let maxStreak = 0;
     if (logs.length > 0) {
         const sortedDates = [...new Set(logs.map(l => l.date))].sort();
@@ -183,163 +176,103 @@ const calculateAchievements = (logs: ReadingLog[], chaptersMap: ReadChaptersMap)
             const prev = new Date(sortedDates[i-1]);
             const curr = new Date(sortedDates[i]);
             const diffDays = Math.round((curr.getTime() - prev.getTime()) / (1000 * 60 * 60 * 24));
-            if (diffDays === 1) currentRun++;
-            else currentRun = 1;
+            if (diffDays === 1) currentRun++; else currentRun = 1;
             maxStreak = Math.max(maxStreak, currentRun);
         }
         if (sortedDates.length === 1) maxStreak = 1;
     }
-
-    if (maxStreak >= 3) unlocked.add(4);
-    if (maxStreak >= 7) unlocked.add(5);
-    if (maxStreak >= 30) unlocked.add(6);
-    if (maxStreak >= 365) unlocked.add(8);
-    
+    if (maxStreak >= 3) unlocked.add(4); if (maxStreak >= 7) unlocked.add(5); if (maxStreak >= 30) unlocked.add(6); if (maxStreak >= 365) unlocked.add(8);
     if (['GEN', 'EXO', 'LEV', 'NUM', 'DEU'].every(isBookComplete)) unlocked.add(21);
-    
     const historicalOT = ['JOS', 'JDG', 'RUT', '1SA', '2SA', '1KI', '2KI', '1CH', '2CH', 'EZR', 'NEH', 'EST'];
     if (historicalOT.every(isBookComplete)) unlocked.add(22);
-    
     const poetical = ['JOB', 'PSA', 'PRO', 'ECC', 'SNG'];
     if (poetical.every(isBookComplete)) unlocked.add(23);
-
     if (['MAT', 'MRK', 'LUK', 'JHN'].every(isBookComplete)) unlocked.add(26);
-    
     if (isBookComplete('ACT')) unlocked.add(27);
-    
     if (PAULINE_BOOKS.every(isBookComplete)) unlocked.add(28);
-    
     if (isBookComplete('REV')) unlocked.add(30);
-
     if (isBookComplete('PRO')) unlocked.add(37);
-
     if (isBookComplete('PSA')) unlocked.add(38);
-
     const allOT = BIBLE_BOOKS.filter(b => b.testament === 'Old');
     if (allOT.every(b => isBookComplete(b.id))) unlocked.add(31);
-
     const allNT = BIBLE_BOOKS.filter(b => b.testament === 'New');
     if (allNT.every(b => isBookComplete(b.id))) unlocked.add(32);
-
     if (allOT.every(b => isBookComplete(b.id)) && allNT.every(b => isBookComplete(b.id))) unlocked.add(33);
-    
     const maxChaptersInDay = logs.reduce((max, log) => Math.max(max, log.chapters.length), 0);
     if (maxChaptersInDay >= 10) unlocked.add(72);
-
     const chaptersReadByDateAndBook: Record<string, Set<number>> = {};
     const uniqueDates = new Set<string>();
-
     logs.forEach(log => {
         uniqueDates.add(log.date);
         const key = `${log.date}|${log.bookId}`;
-        if (!chaptersReadByDateAndBook[key]) {
-            chaptersReadByDateAndBook[key] = new Set();
-        }
+        if (!chaptersReadByDateAndBook[key]) { chaptersReadByDateAndBook[key] = new Set(); }
         log.chapters.forEach(c => chaptersReadByDateAndBook[key].add(c));
     });
-
     let hasImmersion = false;
     for (const [key, chaptersSet] of Object.entries(chaptersReadByDateAndBook)) {
         const [_, bookId] = key.split('|');
         const book = BIBLE_BOOKS.find(b => b.id === bookId);
-        if (book && chaptersSet.size === book.chapters) {
-            hasImmersion = true;
-            break;
-        }
+        if (book && chaptersSet.size === book.chapters) { hasImmersion = true; break; }
     }
     if (hasImmersion) unlocked.add(73);
-
     let hasWeekend = false;
     const sortedDates = Array.from(uniqueDates).sort();
-    
     for (const dateStr of sortedDates) {
         const dateObj = new Date(`${dateStr}T12:00:00`);
-        
         if (dateObj.getDay() === 6) {
-            const nextDay = new Date(dateObj);
-            nextDay.setDate(dateObj.getDate() + 1);
+            const nextDay = new Date(dateObj); nextDay.setDate(dateObj.getDate() + 1);
             const nextDayStr = nextDay.toISOString().split('T')[0];
-            
-            if (uniqueDates.has(nextDayStr)) {
-                hasWeekend = true;
-                break;
-            }
+            if (uniqueDates.has(nextDayStr)) { hasWeekend = true; break; }
         }
     }
     if (hasWeekend) unlocked.add(75);
-
     if (logs.some(l => l.userNotes && l.userNotes.trim().length > 0)) unlocked.add(55);
-
     const notesCount = logs.filter(l => l.userNotes && l.userNotes.trim().length > 0).length;
     if (notesCount >= 10) unlocked.add(56);
-
     if (logs.length > 0) {
         const sorted = [...logs].sort((a,b) => a.timestamp - b.timestamp);
         const first = sorted[0].timestamp;
         const last = sorted[sorted.length-1].timestamp;
         const diffDays = (last - first) / (1000 * 3600 * 24);
-        
-        if (diffDays >= 6) unlocked.add(92); 
-        if (diffDays >= 29) unlocked.add(93);
+        if (diffDays >= 6) unlocked.add(92); if (diffDays >= 29) unlocked.add(93);
     }
-    
     if (unlocked.has(33) && unlocked.has(8)) unlocked.add(117);
-
     return unlocked;
 };
 
 const getAdvancedStats = (logs: ReadingLog[], chaptersMap: ReadChaptersMap, totalRead: number) => {
   if (logs.length < 2) return { avgChaptersPerDay: 0, projection: { date: 'Indefinido', daysRemaining: 0 } };
-  
   const sortedLogs = [...logs].sort((a, b) => a.timestamp - b.timestamp);
   const startDate = sortedLogs[0].timestamp;
   const lastDate = sortedLogs[sortedLogs.length - 1].timestamp;
-  
   const msPerDay = 1000 * 60 * 60 * 24;
   const daysElapsed = Math.max(1, (lastDate - startDate) / msPerDay);
-  
   const avgChaptersPerDay = totalRead / daysElapsed;
-  
   const remainingChapters = TOTAL_CHAPTERS_BIBLE - totalRead;
   const daysRemaining = avgChaptersPerDay > 0 ? Math.ceil(remainingChapters / avgChaptersPerDay) : 0;
-  
-  const projectionDate = new Date();
-  projectionDate.setDate(projectionDate.getDate() + daysRemaining);
-  
-  return {
-    avgChaptersPerDay,
-    projection: {
-      date: avgChaptersPerDay > 0 ? projectionDate.toLocaleDateString('pt-BR') : 'Indefinido',
-      daysRemaining
-    }
-  };
+  const projectionDate = new Date(); projectionDate.setDate(projectionDate.getDate() + daysRemaining);
+  return { avgChaptersPerDay, projection: { date: avgChaptersPerDay > 0 ? projectionDate.toLocaleDateString('pt-BR') : 'Indefinido', daysRemaining } };
 };
 
 const getStreakMessage = (streak: number) => {
-    if (streak === 0) return "Comece hoje!";
-    if (streak < 3) return "Bom começo!";
-    if (streak < 7) return "Continue assim!";
-    if (streak < 30) return "Impressionante!";
-    return "Lendário!";
+    if (streak === 0) return "Comece hoje!"; if (streak < 3) return "Bom começo!"; if (streak < 7) return "Continue assim!"; if (streak < 30) return "Impressionante!"; return "Lendário!";
 };
 
 const calculateSimulationDate = (pace: number, totalRead: number) => {
     const remaining = TOTAL_CHAPTERS_BIBLE - totalRead;
     if (remaining <= 0) return "Concluído!";
     const days = Math.ceil(remaining / pace);
-    const date = new Date();
-    date.setDate(date.getDate() + days);
+    const date = new Date(); date.setDate(date.getDate() + days);
     return date.toLocaleDateString('pt-BR');
 };
 
 const handleSendPasswordReset = async (email: string) => {
     if (!confirm(`Enviar email de redefinição de senha para ${email}?`)) return;
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-         redirectTo: window.location.origin,
-    });
-    if (error) alert("Erro ao enviar email: " + error.message);
-    else alert("Email de redefinição enviado!");
+    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
+    if (error) alert("Erro ao enviar email: " + error.message); else alert("Email de redefinição enviado!");
 };
+
+// ... (NotificationToast, ConfirmationModal, TransferAdminModal, StatCard, BibleReaderModal, LoginScreen, ChangePasswordModal, PlanSelectionModal, UserInspectorModal - same as original)
 
 // --- Custom Toast Component ---
 const NotificationToast = ({ message, type, onClose }: { message: string, type: 'success' | 'error', onClose: () => void }) => {
@@ -987,7 +920,7 @@ const App: React.FC = () => {
       isDestructive?: boolean;
   }>({ isOpen: false, title: '', message: '', onConfirm: () => {} });
 
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'tracker' | 'history' | 'community' | 'admin' | 'achievements' | 'support'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'tracker' | 'history' | 'community' | 'admin' | 'achievements' | 'support' | 'devotionals'>('dashboard');
   const [selectedBookId, setSelectedBookId] = useState<string | null>(null);
   
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
@@ -1067,6 +1000,14 @@ const App: React.FC = () => {
   const [inspectingUserId, setInspectingUserId] = useState<string | null>(null);
   const [userToDelete, setUserToDelete] = useState<{id: string, name: string} | null>(null);
 
+  // --- Devotionals State ---
+  const [devotionals, setDevotionals] = useState<Devotional[]>([]);
+  const [isGeneratingDevotional, setIsGeneratingDevotional] = useState(false);
+  const [devotionalTranscript, setDevotionalTranscript] = useState('');
+  const [devotionalForm, setDevotionalForm] = useState<Partial<Devotional> | null>(null);
+  const [isEditingDevotional, setIsEditingDevotional] = useState(false);
+  const [expandedDevotionalId, setExpandedDevotionalId] = useState<string | null>(null);
+
   const showNotification = useCallback((message: string, type: 'success' | 'error' = 'success') => {
       setNotification({ message, type });
   }, []);
@@ -1111,7 +1052,18 @@ const App: React.FC = () => {
       
       // Load Texts
       fetchAppTexts();
+      fetchDevotionals();
   }, []);
+
+  const fetchDevotionals = async () => {
+    // Busca todos se for admin, ou apenas publicados se for user
+    // Por simplificação de segurança do RLS, autenticados podem ver tudo se quiserem, mas filtramos no front.
+    const { data, error } = await supabase.from('devotionals')
+        .select('*')
+        .order('created_at', { ascending: false });
+    
+    if (data) setDevotionals(data as Devotional[]);
+  };
 
   const fetchAppTexts = async () => {
     // Assuming a table 'app_config' where we store text overrides as individual rows or a big JSON
@@ -1644,6 +1596,67 @@ const App: React.FC = () => {
     setActiveTab('tracker');
   };
 
+  // --- Devotionals Handlers ---
+  const handleGenerateDevotional = async () => {
+      if(!devotionalTranscript.trim()) {
+          showNotification("Insira a transcrição para gerar o devocional.", 'error');
+          return;
+      }
+      setIsGeneratingDevotional(true);
+      try {
+          const result = await generateDevotionalFromTranscript(devotionalTranscript);
+          setDevotionalForm({
+              ...result,
+              status: 'draft',
+              transcript_source: devotionalTranscript
+          });
+          setIsEditingDevotional(true);
+      } catch (e: any) {
+          showNotification("Erro ao gerar: " + e.message, 'error');
+      } finally {
+          setIsGeneratingDevotional(false);
+      }
+  };
+
+  const handleSaveDevotional = async (status: 'draft' | 'published') => {
+      if(!devotionalForm || !devotionalForm.title || !devotionalForm.content) return;
+      
+      const payload = {
+          ...devotionalForm,
+          status,
+          updated_at: new Date().toISOString()
+      };
+
+      let error;
+      if (devotionalForm.id) {
+          const { error: err } = await supabase.from('devotionals').update(payload).eq('id', devotionalForm.id);
+          error = err;
+      } else {
+          const { error: err } = await supabase.from('devotionals').insert(payload);
+          error = err;
+      }
+
+      if(error) {
+          showNotification("Erro ao salvar: " + error.message, 'error');
+      } else {
+          showNotification(status === 'published' ? "Devocional publicado!" : "Rascunho salvo.", 'success');
+          setIsEditingDevotional(false);
+          setDevotionalForm(null);
+          setDevotionalTranscript('');
+          fetchDevotionals();
+      }
+  };
+
+  const handleDeleteDevotional = async (id: string) => {
+      if(!confirm("Tem certeza que deseja excluir este devocional?")) return;
+      const { error } = await supabase.from('devotionals').delete().eq('id', id);
+      if(error) showNotification("Erro ao excluir", 'error');
+      else {
+          showNotification("Excluído com sucesso", 'success');
+          fetchDevotionals();
+      }
+  };
+
   // ... (rest of helper functions remain same) ...
   const totalReadCount = useMemo(() => {
     let count = 0;
@@ -2004,6 +2017,207 @@ const App: React.FC = () => {
   };
 
   // --- Render Functions (Simplified for brevity, complex logic stays) ---
+  const renderDevotionals = () => {
+      if(isEditingDevotional) {
+          return (
+              <div className="max-w-4xl mx-auto animate-fade-in pb-12">
+                   <div className="flex justify-between items-center mb-6">
+                       <h2 className="text-2xl font-bold font-serif text-gray-900 dark:text-white">Criar Devocional</h2>
+                       <button onClick={() => { setIsEditingDevotional(false); setDevotionalForm(null); }} className="text-gray-500 hover:text-gray-900 dark:hover:text-white">
+                           <X size={24} />
+                       </button>
+                   </div>
+                   
+                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                       {/* Coluna da Transcrição (Esquerda) */}
+                       <div className="md:col-span-1 space-y-4">
+                           <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-gray-200 dark:border-slate-800">
+                               <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Transcrição / Fonte</label>
+                               <textarea 
+                                   className="w-full h-[500px] text-xs p-3 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg outline-none resize-none"
+                                   value={devotionalTranscript}
+                                   onChange={e => setDevotionalTranscript(e.target.value)}
+                                   placeholder="Cole aqui o texto da pregação..."
+                               ></textarea>
+                               <button 
+                                   onClick={handleGenerateDevotional}
+                                   disabled={isGeneratingDevotional}
+                                   className="w-full mt-2 bg-indigo-600 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                               >
+                                   {isGeneratingDevotional ? <Loader2 className="animate-spin" /> : <Sparkles size={18} />}
+                                   Gerar com IA
+                               </button>
+                           </div>
+                       </div>
+                       
+                       {/* Coluna do Resultado (Direita) */}
+                       <div className="md:col-span-2 space-y-4">
+                           <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-gray-200 dark:border-slate-800 shadow-sm">
+                               <div className="space-y-4">
+                                   <div>
+                                       <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Título</label>
+                                       <input 
+                                           type="text" 
+                                           value={devotionalForm?.title || ''}
+                                           onChange={e => setDevotionalForm({...devotionalForm, title: e.target.value})}
+                                           className="w-full text-xl font-bold font-serif p-2 border-b border-gray-200 dark:border-slate-700 bg-transparent outline-none dark:text-white"
+                                           placeholder="Título do Devocional"
+                                       />
+                                   </div>
+                                   <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Ref. Bíblica</label>
+                                            <input 
+                                                type="text" 
+                                                value={devotionalForm?.verse_reference || ''}
+                                                onChange={e => setDevotionalForm({...devotionalForm, verse_reference: e.target.value})}
+                                                className="w-full p-2 bg-gray-50 dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 outline-none text-sm"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Texto do Versículo</label>
+                                            <input 
+                                                type="text" 
+                                                value={devotionalForm?.verse_text || ''}
+                                                onChange={e => setDevotionalForm({...devotionalForm, verse_text: e.target.value})}
+                                                className="w-full p-2 bg-gray-50 dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 outline-none text-sm italic"
+                                            />
+                                        </div>
+                                   </div>
+                                   <div>
+                                       <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Reflexão</label>
+                                       <textarea 
+                                           value={devotionalForm?.content || ''}
+                                           onChange={e => setDevotionalForm({...devotionalForm, content: e.target.value})}
+                                           className="w-full h-80 p-4 bg-gray-50 dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 outline-none text-base leading-relaxed resize-none font-serif text-gray-800 dark:text-gray-200"
+                                           placeholder="O conteúdo gerado pela IA aparecerá aqui..."
+                                       ></textarea>
+                                   </div>
+                                   <div>
+                                       <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Conclusão / Oração</label>
+                                       <textarea 
+                                           value={devotionalForm?.conclusion || ''}
+                                           onChange={e => setDevotionalForm({...devotionalForm, conclusion: e.target.value})}
+                                           className="w-full h-24 p-3 bg-gray-50 dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 outline-none text-sm resize-none italic"
+                                           placeholder="Conclusão..."
+                                       ></textarea>
+                                   </div>
+                               </div>
+                               <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-100 dark:border-slate-800">
+                                   <button 
+                                       onClick={() => handleSaveDevotional('draft')}
+                                       className="px-4 py-2 text-sm font-bold text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+                                   >
+                                       Salvar Rascunho
+                                   </button>
+                                   <button 
+                                       onClick={() => handleSaveDevotional('published')}
+                                       className="px-6 py-2 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-lg transition-colors flex items-center gap-2"
+                                   >
+                                       <Send size={16} /> Publicar
+                                   </button>
+                               </div>
+                           </div>
+                       </div>
+                   </div>
+              </div>
+          )
+      }
+
+      const publishedDevotionals = devotionals.filter(d => d.status === 'published' || isAdmin);
+
+      return (
+          <div className="max-w-4xl mx-auto animate-fade-in pb-12">
+              <div className="flex justify-between items-end mb-8">
+                  <div>
+                      <div className="flex items-center gap-3 mb-2">
+                           <div className="bg-amber-100 dark:bg-amber-900/30 p-3 rounded-full text-amber-600 dark:text-amber-500">
+                               <FileText size={24} />
+                           </div>
+                           <h2 className="text-3xl font-bold font-serif text-gray-900 dark:text-white">Devocionais</h2>
+                      </div>
+                      <p className="text-gray-500 dark:text-gray-400">Reflexões profundas para nutrir sua alma, baseadas na sã doutrina.</p>
+                  </div>
+                  {isAdmin && (
+                      <button 
+                          onClick={() => { setIsEditingDevotional(true); setDevotionalForm({}); setDevotionalTranscript(''); }}
+                          className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold shadow-lg hover:bg-indigo-700 transition-colors flex items-center gap-2"
+                      >
+                          <Plus size={18} /> Novo Devocional
+                      </button>
+                  )}
+              </div>
+
+              {publishedDevotionals.length === 0 ? (
+                  <div className="text-center py-20 bg-white dark:bg-slate-900 rounded-2xl border border-dashed border-gray-200 dark:border-slate-800">
+                      <FileText size={48} className="mx-auto text-gray-300 mb-4" />
+                      <p className="text-gray-500">Nenhum devocional publicado ainda.</p>
+                  </div>
+              ) : (
+                  <div className="space-y-6">
+                      {publishedDevotionals.map(devotional => (
+                          <div key={devotional.id} className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 overflow-hidden transition-all hover:shadow-md">
+                              {/* Header Card */}
+                              <div 
+                                  className="p-6 cursor-pointer"
+                                  onClick={() => setExpandedDevotionalId(expandedDevotionalId === devotional.id ? null : devotional.id)}
+                              >
+                                  <div className="flex justify-between items-start">
+                                      <div>
+                                          {isAdmin && devotional.status === 'draft' && (
+                                              <span className="bg-gray-200 text-gray-600 text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wide mb-2 inline-block">Rascunho</span>
+                                          )}
+                                          <span className="text-indigo-600 dark:text-indigo-400 text-xs font-bold uppercase tracking-widest block mb-2">
+                                              {new Date(devotional.created_at).toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' })}
+                                          </span>
+                                          <h3 className="text-xl md:text-2xl font-bold font-serif text-gray-900 dark:text-white mb-2">{devotional.title}</h3>
+                                          <p className="text-sm text-gray-500 dark:text-gray-400 font-serif italic">"{devotional.verse_text}" — {devotional.verse_reference}</p>
+                                      </div>
+                                      <div className={`p-2 rounded-full bg-gray-50 dark:bg-slate-800 text-gray-400 transition-transform duration-300 ${expandedDevotionalId === devotional.id ? 'rotate-180' : ''}`}>
+                                          <ChevronDown size={20} />
+                                      </div>
+                                  </div>
+                              </div>
+                              
+                              {/* Expanded Content */}
+                              {expandedDevotionalId === devotional.id && (
+                                  <div className="px-6 pb-8 animate-fade-in border-t border-gray-100 dark:border-slate-800 pt-6">
+                                      <div className="prose prose-indigo dark:prose-invert max-w-none font-serif text-gray-800 dark:text-gray-200 leading-relaxed whitespace-pre-wrap">
+                                          {devotional.content}
+                                      </div>
+                                      
+                                      <div className="mt-8 p-4 bg-amber-50 dark:bg-amber-900/10 rounded-xl border border-amber-100 dark:border-amber-900/30">
+                                          <p className="text-amber-800 dark:text-amber-200 italic font-medium text-center">
+                                              {devotional.conclusion}
+                                          </p>
+                                      </div>
+
+                                      {isAdmin && (
+                                          <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-100 dark:border-slate-800">
+                                              <button 
+                                                  onClick={() => { setDevotionalForm(devotional); setDevotionalTranscript(devotional.transcript_source || ''); setIsEditingDevotional(true); }}
+                                                  className="text-gray-500 hover:text-indigo-600 text-sm font-bold flex items-center gap-1"
+                                              >
+                                                  <Edit size={16} /> Editar
+                                              </button>
+                                              <button 
+                                                  onClick={() => handleDeleteDevotional(devotional.id)}
+                                                  className="text-gray-500 hover:text-red-600 text-sm font-bold flex items-center gap-1"
+                                              >
+                                                  <Trash2 size={16} /> Excluir
+                                              </button>
+                                          </div>
+                                      )}
+                                  </div>
+                              )}
+                          </div>
+                      ))}
+                  </div>
+              )}
+          </div>
+      );
+  };
+
   const renderTracker = () => { /* ... existing tracker code ... */ 
      if (!selectedBookId) {
       return (
@@ -2306,6 +2520,7 @@ const App: React.FC = () => {
                         { id: 'dashboard', label: t('nav_dashboard'), icon: LayoutDashboard },
                         { id: 'tracker', label: t('nav_tracker'), icon: BookOpen },
                         { id: 'community', label: t('nav_community'), icon: Users },
+                        { id: 'devotionals', label: 'Devocionais', icon: FileText },
                         { id: 'history', label: t('nav_history'), icon: History },
                         { id: 'achievements', label: t('nav_achievements'), icon: Trophy },
                         { id: 'support', label: t('nav_support'), icon: LifeBuoy },
@@ -2373,6 +2588,7 @@ const App: React.FC = () => {
                                 { id: 'dashboard', label: t('nav_dashboard'), icon: LayoutDashboard },
                                 { id: 'tracker', label: t('nav_tracker'), icon: BookOpen },
                                 { id: 'community', label: t('nav_community'), icon: Users },
+                                { id: 'devotionals', label: 'Devocionais', icon: FileText },
                                 { id: 'history', label: t('nav_history'), icon: History },
                                 { id: 'achievements', label: t('nav_achievements'), icon: Trophy },
                                 { id: 'support', label: t('nav_support'), icon: LifeBuoy },
@@ -2405,6 +2621,7 @@ const App: React.FC = () => {
                                   {activeTab === 'dashboard' && t('nav_dashboard')}
                                   {activeTab === 'tracker' && t('nav_tracker')}
                                   {activeTab === 'community' && t('nav_community')}
+                                  {activeTab === 'devotionals' && 'Devocionais'}
                                   {activeTab === 'history' && t('nav_history')}
                                   {activeTab === 'achievements' && t('nav_achievements')}
                                   {activeTab === 'admin' && 'Painel Administrativo'}
@@ -2629,6 +2846,8 @@ const App: React.FC = () => {
 
                       {activeTab === 'community' && renderCommunity()}
 
+                      {activeTab === 'devotionals' && renderDevotionals()}
+
                       {activeTab === 'history' && (
                           <div className="space-y-4 animate-fade-in max-w-4xl mx-auto">
                               {readingLogs.length === 0 ? (
@@ -2692,7 +2911,7 @@ const App: React.FC = () => {
 
                       {activeTab === 'admin' && isAdmin && (
                           <div className="space-y-8 animate-fade-in">
-                              
+                              {/* Conteúdo Admin Existente... */}
                               {/* Sub Menu */}
                               <div className="flex overflow-x-auto gap-2 pb-2 mb-4 bg-white dark:bg-slate-900 p-2 rounded-xl sticky top-0 z-10 shadow-sm border border-gray-100 dark:border-slate-800">
                                   {([
@@ -2711,7 +2930,7 @@ const App: React.FC = () => {
                                       </button>
                                   ))}
                               </div>
-
+                              {/* Views do Admin */}
                               {adminView === 'overview' && (
                                   <div className="space-y-6">
                                       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
@@ -2963,6 +3182,7 @@ const App: React.FC = () => {
 
                               {adminView === 'users' && (
                                   <div className="bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-800 overflow-hidden">
+                                      {/* ... tabela de usuarios existente ... */}
                                       <div className="p-6 border-b border-gray-100 dark:border-slate-800 flex justify-between items-center">
                                           <h3 className="font-bold text-lg text-gray-900 dark:text-white">Usuários da Plataforma</h3>
                                           <div className="relative">
