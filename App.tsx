@@ -86,7 +86,8 @@ import {
   Edit,
   MoreHorizontal,
   PlusCircle,
-  UserCog
+  UserCog,
+  UserMinus
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -1064,6 +1065,7 @@ const App: React.FC = () => {
 
   // Admin Inspector State
   const [inspectingUserId, setInspectingUserId] = useState<string | null>(null);
+  const [userToDelete, setUserToDelete] = useState<{id: string, name: string} | null>(null);
 
   const showNotification = useCallback((message: string, type: 'success' | 'error' = 'success') => {
       setNotification({ message, type });
@@ -1517,6 +1519,34 @@ const App: React.FC = () => {
       setUserPlan(null);
       if(user) localStorage.removeItem(`bible_plan_${user.id}`);
       showNotification("Plano removido. Você está livre para escolher outro.", "success");
+  };
+
+  // --- Admin User Deletion ---
+  const handleDeleteUserRequest = (uid: string, name: string) => {
+      setUserToDelete({ id: uid, name });
+      setConfirmModal({
+          isOpen: true,
+          title: 'Excluir Usuário e Dados',
+          message: `ATENÇÃO: Você está prestes a excluir ${name} e TODO o histórico de leitura permanentemente. Esta ação não pode ser desfeita. Deseja continuar?`,
+          onConfirm: executeDeleteUser,
+          isDestructive: true
+      });
+  };
+
+  const executeDeleteUser = async () => {
+      if (!userToDelete) return;
+
+      // Chama a função RPC criada no Supabase
+      const { error } = await supabase.rpc('delete_user_by_admin', { target_user_id: userToDelete.id });
+
+      if (error) {
+          console.error("Erro ao excluir usuário:", error);
+          showNotification('Erro ao excluir usuário. Verifique se a função RPC foi criada no Banco de Dados.', 'error');
+      } else {
+          showNotification(`Usuário ${userToDelete.name} excluído com sucesso.`, 'success');
+          fetchAdminData(); // Refresh list
+      }
+      setUserToDelete(null);
   };
 
   const getPlanProgress = useMemo(() => {
@@ -2961,7 +2991,7 @@ const App: React.FC = () => {
                                                                       onClick={() => setInspectingUserId(uid)}
                                                                       className="text-indigo-600 hover:text-indigo-900 dark:hover:text-indigo-400 font-bold text-xs flex items-center gap-1 bg-indigo-50 dark:bg-indigo-900/20 px-3 py-1.5 rounded-lg"
                                                                   >
-                                                                      <Eye size={14} /> Ver Perfil
+                                                                      <Eye size={14} /> Ver
                                                                   </button>
                                                                   <button 
                                                                       onClick={() => handleSendPasswordReset(u.email)}
@@ -2969,6 +2999,13 @@ const App: React.FC = () => {
                                                                       title="Resetar Senha"
                                                                   >
                                                                       <KeyRound size={16} />
+                                                                  </button>
+                                                                  <button 
+                                                                      onClick={() => handleDeleteUserRequest(uid, u.name)}
+                                                                      className="text-red-400 hover:text-red-600 ml-1"
+                                                                      title="Excluir Usuário"
+                                                                  >
+                                                                      <UserMinus size={16} />
                                                                   </button>
                                                               </td>
                                                           </tr>
