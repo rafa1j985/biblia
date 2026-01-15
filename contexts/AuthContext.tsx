@@ -30,7 +30,7 @@ export const AuthProvider = ({ children }: React.PropsWithChildren) => {
     initAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
+      if (event === 'SIGNED_OUT') {
         setUser(null);
         // Limpar storage local ao sair
         Object.keys(localStorage).forEach(key => {

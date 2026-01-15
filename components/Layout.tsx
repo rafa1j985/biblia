@@ -10,7 +10,7 @@ import { ADMIN_EMAILS } from '../constants';
 
 export default function Layout() {
   const { user, signOut } = useAuth();
-  const { theme, toggleTheme, t, isGoldenTheme, isGoldenTheme: golden, unlockedAchievements, dailyVerse } = useApp();
+  const { theme, toggleTheme, t, isGoldenTheme, dailyVerse } = useApp();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
